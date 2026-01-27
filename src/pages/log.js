@@ -4,50 +4,204 @@
 
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
+import { createYachtHeader } from '../components/header.js';
 import { shipsLogStorage } from '../lib/storage.js';
+import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOADS_PER_ENTITY } from '../lib/uploads.js';
 
 let editingId = null;
+let currentBoatId = null;
+let logFileInput = null;
 
-function render() {
+function render(params = {}) {
+  // Get boat ID from route params
+  currentBoatId = params?.id || window.routeParams?.id;
+  if (!currentBoatId) {
+    const wrapperError = document.createElement('div');
+    wrapperError.innerHTML = '<div class="page-content"><div class="container"><h1>Error</h1><p>Boat ID required</p></div></div>';
+    return wrapperError;
+  }
+
+  const wrapper = document.createElement('div');
+
+  // Yacht header with back arrow using browser history
+  const yachtHeader = createYachtHeader("Ship's Log", true, () => window.history.back());
+  wrapper.appendChild(yachtHeader);
+
+  const pageContent = document.createElement('div');
+  pageContent.className = 'page-content card-color-log';
+
   const container = document.createElement('div');
   container.className = 'container';
-
-  const header = document.createElement('div');
-  header.className = 'page-header';
-  
-  const backLink = document.createElement('a');
-  backLink.href = '#';
-  backLink.className = 'back-button';
-  backLink.innerHTML = `${renderIcon('arrowLeft')} Back`;
-  backLink.addEventListener('click', (e) => {
-    e.preventDefault();
-    navigate('/');
-  });
-  
-  const title = document.createElement('h1');
-  title.textContent = "Ship's Log";
-  
-  header.appendChild(backLink);
-  header.appendChild(title);
 
   const addBtn = document.createElement('button');
   addBtn.className = 'btn-primary';
   addBtn.innerHTML = `${renderIcon('plus')} Add Trip`;
   addBtn.onclick = () => showLogForm();
 
+  const attachmentsCard = document.createElement('div');
+  attachmentsCard.className = 'card';
+  attachmentsCard.innerHTML = `
+    <h3>Attachments</h3>
+    <p class="text-muted">Upload photos, logs, or documents for this boat's trips.</p>
+    <div class="attachment-list" id="log-attachments-list"></div>
+    <input type="file" id="log-file-input" multiple accept=".pdf,.jpg,.jpeg,.png" style="display: none;">
+    <button type="button" class="btn-secondary" id="log-add-attachment-btn">
+      ${renderIcon('plus')} Add Attachment
+    </button>
+  `;
+
   const listContainer = document.createElement('div');
   listContainer.id = 'log-list';
 
-  container.appendChild(header);
+  container.appendChild(attachmentsCard);
   container.appendChild(addBtn);
   container.appendChild(listContainer);
 
-  return container;
+  pageContent.appendChild(container);
+  wrapper.appendChild(pageContent);
+
+  return wrapper;
 }
 
-function onMount() {
+function onMount(params = {}) {
+  const boatId = params?.id || window.routeParams?.id;
+  if (boatId) {
+    currentBoatId = boatId;
+  }
+
   window.navigate = navigate;
+
+  logFileInput = document.getElementById('log-file-input');
+
+  loadLogAttachments();
+
+  if (logFileInput) {
+    logFileInput.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files);
+      if (!files.length || !currentBoatId) return;
+
+      const existing = getUploads('log', currentBoatId, currentBoatId);
+      const remainingSlots = MAX_UPLOADS_PER_ENTITY - existing.length;
+
+      if (remainingSlots <= 0) {
+        alert(`You can only upload up to ${MAX_UPLOADS_PER_ENTITY} files for Ship's Log.`);
+        logFileInput.value = '';
+        return;
+      }
+
+      const validFiles = [];
+      let oversizedCount = 0;
+
+      files.forEach(file => {
+        if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+          oversizedCount++;
+        } else {
+          validFiles.push(file);
+        }
+      });
+
+      if (oversizedCount > 0) {
+        alert('Some files were larger than 5 MB and were skipped.');
+      }
+
+      if (!validFiles.length) {
+        logFileInput.value = '';
+        return;
+      }
+
+      const filesToUpload = validFiles.slice(0, remainingSlots);
+      if (validFiles.length > remainingSlots) {
+        alert(`Only ${remainingSlots} more file(s) can be uploaded for Ship's Log (max ${MAX_UPLOADS_PER_ENTITY}).`);
+      }
+
+      for (const file of filesToUpload) {
+        await saveUpload(file, 'log', currentBoatId, currentBoatId);
+      }
+
+      logFileInput.value = '';
+      loadLogAttachments();
+      attachLogAttachmentHandlers();
+    });
+
+    const addAttachmentBtn = document.getElementById('log-add-attachment-btn');
+    if (addAttachmentBtn) {
+      addAttachmentBtn.addEventListener('click', () => {
+        logFileInput.click();
+      });
+    }
+  }
+
   loadLogs();
+}
+
+function loadLogAttachments() {
+  const attachmentsList = document.getElementById('log-attachments-list');
+  if (!attachmentsList || !currentBoatId) return;
+
+  const attachments = getUploads('log', currentBoatId, currentBoatId);
+  attachmentsList.innerHTML = '';
+
+  if (attachments.length === 0) {
+    attachmentsList.innerHTML = `<p class="text-muted">No attachments (max ${MAX_UPLOADS_PER_ENTITY} files, 5 MB each).</p>`;
+    return;
+  }
+
+  attachments.forEach(upload => {
+    const item = document.createElement('div');
+    item.className = 'attachment-item';
+    item.innerHTML = `
+      <div class="attachment-info">
+        <div class="attachment-icon">${renderIcon('file')}</div>
+        <div class="attachment-details">
+          <div class="attachment-name">${upload.filename}</div>
+          <div class="attachment-meta">${formatFileSize(upload.size)} • ${upload.mime_type}</div>
+        </div>
+      </div>
+      <div>
+        <button type="button" class="btn-link log-open-attachment-btn" data-upload-id="${upload.id}">
+          Open
+        </button>
+        <button type="button" class="btn-link btn-danger log-delete-attachment-btn" data-upload-id="${upload.id}">
+          ${renderIcon('trash')}
+        </button>
+      </div>
+    `;
+    attachmentsList.appendChild(item);
+  });
+
+  attachLogAttachmentHandlers();
+}
+
+function attachLogAttachmentHandlers() {
+  document.querySelectorAll('.log-open-attachment-btn').forEach(btn => {
+    const clone = btn.cloneNode(true);
+    btn.replaceWith(clone);
+  });
+  document.querySelectorAll('.log-delete-attachment-btn').forEach(btn => {
+    const clone = btn.cloneNode(true);
+    btn.replaceWith(clone);
+  });
+
+  document.querySelectorAll('.log-open-attachment-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const uploadId = btn.dataset.uploadId;
+      const upload = getUpload(uploadId);
+      if (upload) {
+        openUpload(upload);
+      }
+    });
+  });
+
+  document.querySelectorAll('.log-delete-attachment-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const uploadId = btn.dataset.uploadId;
+      if (confirm('Delete this attachment?')) {
+        deleteUpload(uploadId);
+        loadLogAttachments();
+        attachLogAttachmentHandlers();
+      }
+    });
+  });
 }
 
 function loadLogs() {

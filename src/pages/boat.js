@@ -6,7 +6,8 @@ import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader } from '../components/header.js';
 import { boatsStorage } from '../lib/storage.js';
-import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload } from '../lib/uploads.js';
+import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOADS_PER_ENTITY } from '../lib/uploads.js';
+import { getBoat as getBoatFromApi, updateBoat as updateBoatApi } from '../lib/dataService.js';
 
 let currentBoat = null;
 let currentBoatId = null;
@@ -131,11 +132,23 @@ function render(params = {}) {
   return wrapper;
 }
 
-function onMount(params = {}) {
+async function onMount(params = {}) {
   const boatId = params?.id || window.routeParams?.id;
   if (boatId) {
     currentBoatId = boatId;
-    currentBoat = boatsStorage.get(boatId);
+    // Prefer Supabase, fall back to local
+    try {
+      const remoteBoat = await getBoatFromApi(boatId);
+      if (remoteBoat) {
+        currentBoat = { ...(boatsStorage.get(boatId) || {}), ...remoteBoat };
+        boatsStorage.save({ id: boatId, ...currentBoat });
+      } else {
+        currentBoat = boatsStorage.get(boatId);
+      }
+    } catch (e) {
+      console.error('Error loading boat from Supabase, falling back to local:', e);
+      currentBoat = boatsStorage.get(boatId);
+    }
   }
   fileInput = document.getElementById('file-input');
   const addBtn = document.getElementById('add-attachment-btn');
@@ -144,12 +157,49 @@ function onMount(params = {}) {
   // Load attachments
   loadAttachments();
 
-  // File input handler
+  // File input handler with size/count limits
   fileInput.addEventListener('change', async (e) => {
     const files = Array.from(e.target.files);
-    for (const file of files) {
+    if (!files.length) return;
+
+    const existing = getUploads('boat', currentBoatId, currentBoatId);
+    const remainingSlots = MAX_UPLOADS_PER_ENTITY - existing.length;
+
+    if (remainingSlots <= 0) {
+      alert(`You can only upload up to ${MAX_UPLOADS_PER_ENTITY} files for Boat Details.`);
+      fileInput.value = '';
+      return;
+    }
+
+    const validFiles = [];
+    let oversizedCount = 0;
+
+    files.forEach(file => {
+      if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+        oversizedCount++;
+      } else {
+        validFiles.push(file);
+      }
+    });
+
+    if (oversizedCount > 0) {
+      alert(`Some files were larger than 5 MB and were skipped.`);
+    }
+
+    if (!validFiles.length) {
+      fileInput.value = '';
+      return;
+    }
+
+    const filesToUpload = validFiles.slice(0, remainingSlots);
+    if (validFiles.length > remainingSlots) {
+      alert(`Only ${remainingSlots} more file(s) can be uploaded for Boat Details (max ${MAX_UPLOADS_PER_ENTITY}).`);
+    }
+
+    for (const file of filesToUpload) {
       await saveUpload(file, 'boat', currentBoatId, currentBoatId);
     }
+
     fileInput.value = '';
     loadAttachments();
     attachEventHandlers();
@@ -272,9 +322,13 @@ function saveBoat() {
     boat.created_at = new Date().toISOString();
   }
 
-  boatsStorage.save(boat);
-  alert('Boat details saved!');
-  navigate(`/boat/${currentBoatId}`);
+  boatsStorage.save({ id: currentBoatId, ...boat });
+
+  // Persist to Supabase in the background when available
+  updateBoatApi(currentBoatId, boat).finally(() => {
+    alert('Boat details saved!');
+    navigate(`/boat/${currentBoatId}`);
+  });
 }
 
 

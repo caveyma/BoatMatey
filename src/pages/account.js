@@ -4,80 +4,63 @@
 
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
-import { getSubscriptionStatus, simulateSubscription, hasActiveSubscription } from '../lib/subscription.js';
-import { checkLimit, FREE_LIMITS } from '../lib/subscription.js';
+import { createYachtHeader } from '../components/header.js';
+import { getSubscriptionStatus, hasActiveSubscription } from '../lib/subscription.js';
 import { boatStorage, enginesStorage, serviceHistoryStorage, uploadsStorage } from '../lib/storage.js';
+import { supabase } from '../lib/supabaseClient.js';
 
 function render() {
+  const wrapper = document.createElement('div');
+
+  // Yacht header with back arrow using browser history
+  const yachtHeader = createYachtHeader('Account', true, () => window.history.back());
+  wrapper.appendChild(yachtHeader);
+
+  const pageContent = document.createElement('div');
+  pageContent.className = 'page-content card-color-account';
+
   const container = document.createElement('div');
   container.className = 'container';
 
-  const header = document.createElement('div');
-  header.className = 'page-header';
-  
-  const backLink = document.createElement('a');
-  backLink.href = '#';
-  backLink.className = 'back-button';
-  backLink.innerHTML = `${renderIcon('arrowLeft')} Back`;
-  backLink.addEventListener('click', (e) => {
-    e.preventDefault();
-    navigate('/');
-  });
-  
-  const title = document.createElement('h1');
-  title.textContent = 'Account';
-  
-  header.appendChild(backLink);
-  header.appendChild(title);
-
   const status = getSubscriptionStatus();
   const isActive = hasActiveSubscription();
-  const isDev = import.meta.env.DEV;
 
   const content = document.createElement('div');
   content.innerHTML = `
+    <div class="card">
+      <h3>BoatMatey Account</h3>
+      <p>Sign in to sync your boats and logs to the cloud, or continue using BoatMatey locally on this device.</p>
+      <div style="display:flex; flex-wrap:wrap; gap: 0.5rem; margin-top: 0.75rem;">
+        <button class="btn-primary" id="account-auth-btn">
+          ${renderIcon('user')} Sign in or create account
+        </button>
+        <button class="btn-secondary" id="account-local-btn">
+          Continue without account
+        </button>
+      </div>
+    </div>
+
     <div class="card">
       <h3>Subscription</h3>
       <div style="margin-bottom: 1rem;">
         <p><strong>Status:</strong> 
           <span class="badge ${isActive ? 'badge-success' : 'badge-warning'}">
-            ${isActive ? 'Active' : 'Free Plan'}
+            Active
           </span>
         </p>
-        ${isActive ? `<p><strong>Plan:</strong> ${status.plan}</p>` : ''}
+        <p><strong>Plan:</strong> ${status.plan}</p>
         ${status.price ? `<p><strong>Price:</strong> ${status.price}</p>` : ''}
       </div>
-      ${!isActive ? `
-        <div style="padding: 1rem; background: var(--color-light-bg); border-radius: var(--radius); margin-bottom: 1rem;">
-          <p><strong>Upgrade to unlock:</strong></p>
-          <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
-            <li>Unlimited boats</li>
-            <li>Unlimited engines</li>
-            <li>Unlimited service entries</li>
-            <li>Unlimited file uploads</li>
-          </ul>
-          <p style="margin-top: 0.5rem; font-size: 0.875rem; color: var(--color-text-light);">
-            Subscribe via Google Play or Apple App Store (coming soon)
-          </p>
-        </div>
-      ` : ''}
-      ${isDev ? `
-        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--color-gray-light);">
-          <p style="font-size: 0.875rem; color: var(--color-text-light); margin-bottom: 0.5rem;">Development Mode:</p>
-          <button class="btn-secondary" id="simulate-sub-btn" style="width: 100%;">
-            ${isActive ? 'Disable' : 'Enable'} Simulated Subscription
-          </button>
-        </div>
-      ` : ''}
+      <p class="text-muted">BoatMatey subscription includes unlimited boats, engines, service entries, and uploads.</p>
     </div>
 
     <div class="card">
       <h3>Usage</h3>
       <div>
-        <p><strong>Boats:</strong> ${boatStorage.get() ? 1 : 0} / ${isActive ? '∞' : FREE_LIMITS.BOATS}</p>
-        <p><strong>Engines:</strong> ${enginesStorage.getAll().length} / ${isActive ? '∞' : FREE_LIMITS.ENGINES}</p>
-        <p><strong>Service Entries:</strong> ${serviceHistoryStorage.getAll().length} / ${isActive ? '∞' : FREE_LIMITS.SERVICE_ENTRIES}</p>
-        <p><strong>Uploads:</strong> ${uploadsStorage.count()} / ${isActive ? '∞' : FREE_LIMITS.UPLOADS}</p>
+        <p><strong>Boats:</strong> ${boatStorage.get() ? 1 : 0}</p>
+        <p><strong>Engines:</strong> ${enginesStorage.getAll().length}</p>
+        <p><strong>Service Entries:</strong> ${serviceHistoryStorage.getAll().length}</p>
+        <p><strong>Uploads:</strong> ${uploadsStorage.count()}</p>
       </div>
     </div>
 
@@ -96,29 +79,35 @@ function render() {
           Restore Purchases
         </button>
         <button class="btn-link btn-danger" id="sign-out-btn" style="width: 100%; text-align: left;">
-          Sign Out (Placeholder)
+          Sign Out
         </button>
       </div>
     </div>
   `;
 
-  container.appendChild(header);
   container.appendChild(content);
 
-  return container;
+  pageContent.appendChild(container);
+  wrapper.appendChild(pageContent);
+
+  return wrapper;
 }
 
 function onMount() {
   window.navigate = navigate;
 
-  // Simulate subscription button (dev only)
-  const simBtn = document.getElementById('simulate-sub-btn');
-  if (simBtn) {
-    simBtn.addEventListener('click', () => {
-      const isActive = hasActiveSubscription();
-      simulateSubscription(!isActive);
-      // Reload page to update status
-      window.location.reload();
+  // Auth buttons
+  const authBtn = document.getElementById('account-auth-btn');
+  if (authBtn) {
+    authBtn.addEventListener('click', () => {
+      navigate('/auth');
+    });
+  }
+
+  const localBtn = document.getElementById('account-local-btn');
+  if (localBtn) {
+    localBtn.addEventListener('click', () => {
+      alert('You are using BoatMatey in local-only mode. Data is stored on this device only.');
     });
   }
 
@@ -133,9 +122,19 @@ function onMount() {
   // Sign out
   const signOutBtn = document.getElementById('sign-out-btn');
   if (signOutBtn) {
-    signOutBtn.addEventListener('click', () => {
-      if (confirm('Sign out? (This is a placeholder - no action will be taken)')) {
-        alert('Sign out functionality will be available when authentication is added.');
+    signOutBtn.addEventListener('click', async () => {
+      if (!confirm('Sign out of your BoatMatey cloud account?')) {
+        return;
+      }
+
+      try {
+        if (supabase) {
+          await supabase.auth.signOut();
+        }
+      } catch (error) {
+        console.error('Error signing out of Supabase:', error);
+      } finally {
+        navigate('/auth');
       }
     });
   }

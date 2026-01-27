@@ -16,6 +16,7 @@
     "@capacitor/android": "^8.0.1",
     "@capacitor/cli": "^8.0.1",
     "@capacitor/core": "^8.0.1",
+    "@supabase/supabase-js": "^2.93.1",
     "canvas": "^3.2.1"
   }
 }

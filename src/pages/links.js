@@ -4,32 +4,24 @@
 
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
+import { createYachtHeader } from '../components/header.js';
 import { linksStorage } from '../lib/storage.js';
 import { Capacitor } from '@capacitor/core';
 
 let editingId = null;
 
 function render() {
+  const wrapper = document.createElement('div');
+
+  // Yacht header with back arrow using browser history
+  const yachtHeader = createYachtHeader('Links', true, () => window.history.back());
+  wrapper.appendChild(yachtHeader);
+
+  const pageContent = document.createElement('div');
+  pageContent.className = 'page-content card-color-links';
+
   const container = document.createElement('div');
   container.className = 'container';
-
-  const header = document.createElement('div');
-  header.className = 'page-header';
-  
-  const backLink = document.createElement('a');
-  backLink.href = '#';
-  backLink.className = 'back-button';
-  backLink.innerHTML = `${renderIcon('arrowLeft')} Back`;
-  backLink.addEventListener('click', (e) => {
-    e.preventDefault();
-    navigate('/');
-  });
-  
-  const title = document.createElement('h1');
-  title.textContent = 'Links';
-  
-  header.appendChild(backLink);
-  header.appendChild(title);
 
   const addBtn = document.createElement('button');
   addBtn.className = 'btn-primary';
@@ -39,11 +31,13 @@ function render() {
   const listContainer = document.createElement('div');
   listContainer.id = 'links-list';
 
-  container.appendChild(header);
   container.appendChild(addBtn);
   container.appendChild(listContainer);
 
-  return container;
+  pageContent.appendChild(container);
+  wrapper.appendChild(pageContent);
+
+  return wrapper;
 }
 
 function onMount() {

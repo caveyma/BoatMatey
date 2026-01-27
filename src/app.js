@@ -17,6 +17,7 @@ import safetyPage from './pages/safety.js';
 import logPage from './pages/log.js';
 import linksPage from './pages/links.js';
 import accountPage from './pages/account.js';
+import authPage from './pages/auth.js';
 
 /**
  * Initialize the app
@@ -36,6 +37,7 @@ export function init() {
     route('/boat/:id/log', logPage);
     route('/boat/:id/links', linksPage);
     route('/account', accountPage);
+    route('/auth', authPage);
 
     console.log('BoatMatey: Routes registered, initializing router...');
     

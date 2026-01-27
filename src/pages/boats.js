@@ -7,7 +7,7 @@ import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { renderLogo } from '../components/logo.js';
 import { boatsStorage } from '../lib/storage.js';
-import { checkLimit } from '../lib/subscription.js';
+import { getBoats as getBoatsFromApi, createBoat as createBoatApi, updateBoat as updateBoatApi, deleteBoat as deleteBoatApi } from '../lib/dataService.js';
 
 let editingBoatId = null;
 
@@ -51,13 +51,20 @@ function render() {
   return wrapper;
 }
 
-function onMount() {
-  loadBoats();
+async function onMount() {
+  await loadBoats();
 }
 
-function loadBoats() {
+async function loadBoats() {
   const grid = document.getElementById('boats-grid');
-  const boats = boatsStorage.getAll();
+  let boats = [];
+
+  try {
+    boats = await getBoatsFromApi();
+  } catch (e) {
+    console.error('Error loading boats from Supabase, falling back to local storage:', e);
+    boats = boatsStorage.getAll();
+  }
 
   grid.innerHTML = '';
 
@@ -112,20 +119,16 @@ function attachHandlers() {
 
   window.boatsPageDelete = (id) => {
     if (confirm('Delete this boat? All associated data will be deleted.')) {
-      boatsStorage.delete(id);
-      loadBoats();
+      deleteBoatApi(id).finally(() => {
+        boatsStorage.delete(id); // keep local copy roughly in sync
+        loadBoats();
+      });
     }
   };
 }
 
 function showBoatForm() {
   const boat = editingBoatId ? boatsStorage.get(editingBoatId) : null;
-  const limit = checkLimit('BOATS', boatsStorage.getAll().length);
-  
-  if (!limit.allowed && !editingBoatId) {
-    alert(`Free plan limit: ${limit.limit} boat(s). Upgrade to add more.`);
-    return;
-  }
 
   const formHtml = `
     <div class="card" id="boat-form-card" style="max-width: 600px; margin: 0 auto;">
@@ -199,9 +202,28 @@ function saveBoat() {
       boat.photo_data = event.target.result;
       boat.photo_url = null; // Will be set if using external storage later
       boatsStorage.save(boat);
-      document.getElementById('boat-form-card').remove();
-      editingBoatId = null;
-      loadBoats();
+
+      const action = editingBoatId
+        ? updateBoatApi(editingBoatId, {
+            boat_name: boat.boat_name,
+            make_model: boat.make_model
+          })
+        : createBoatApi({
+            boat_name: boat.boat_name,
+            make_model: boat.make_model
+          }).then((dbBoat) => {
+            if (dbBoat && dbBoat.id) {
+              // Re-save with Supabase UUID so other pages can find it
+              boatsStorage.delete(boat.id);
+              boatsStorage.save({ ...boat, id: dbBoat.id });
+            }
+          });
+
+      Promise.resolve(action).finally(() => {
+        document.getElementById('boat-form-card').remove();
+        editingBoatId = null;
+        loadBoats();
+      });
     };
     reader.readAsDataURL(photoInput.files[0]);
   } else {
@@ -213,9 +235,27 @@ function saveBoat() {
       }
     }
     boatsStorage.save(boat);
-    document.getElementById('boat-form-card').remove();
-    editingBoatId = null;
-    loadBoats();
+
+    const action = editingBoatId
+      ? updateBoatApi(editingBoatId, {
+          boat_name: boat.boat_name,
+          make_model: boat.make_model
+        })
+      : createBoatApi({
+          boat_name: boat.boat_name,
+          make_model: boat.make_model
+        }).then((dbBoat) => {
+          if (dbBoat && dbBoat.id) {
+            boatsStorage.delete(boat.id);
+            boatsStorage.save({ ...boat, id: dbBoat.id });
+          }
+        });
+
+    Promise.resolve(action).finally(() => {
+      document.getElementById('boat-form-card').remove();
+      editingBoatId = null;
+      loadBoats();
+    });
   }
 }
 
