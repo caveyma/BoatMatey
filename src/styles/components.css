@@ -1,0 +1,391 @@
+/**
+ * Component-specific styles
+ */
+
+/* Dashboard Grid - Boat Dashboard Tiles */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--spacing-lg);
+  padding: var(--spacing-md);
+}
+
+.dashboard-card {
+  background: var(--bm-card);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-xl);
+  box-shadow: var(--shadow);
+  text-decoration: none;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  transition: var(--transition);
+  cursor: pointer;
+  min-height: 180px;
+  justify-content: center;
+  border: 1px solid var(--bm-border);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Multi-colour gradient wash using --card-color */
+.dashboard-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, 
+    var(--card-color, var(--bm-teal)) 0%, 
+    var(--card-color, var(--bm-teal)) 30%,
+    transparent 100%);
+  opacity: 0.08;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Left accent rail */
+.dashboard-card::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--card-color, var(--bm-teal));
+  z-index: 1;
+}
+
+/* Ensure content is above the gradient */
+.dashboard-card > * {
+  position: relative;
+  z-index: 2;
+}
+
+.dashboard-card:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-4px);
+  border-color: rgba(10, 166, 166, 0.3);
+}
+
+.dashboard-card:active {
+  transform: translateY(-2px);
+}
+
+.dashboard-card-icon-badge {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-lg);
+  background: var(--card-color, var(--bm-teal));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--spacing-md);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-card-icon-badge::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, transparent 0%, rgba(0, 0, 0, 0.15) 100%);
+}
+
+.dashboard-card-icon-badge svg {
+  width: 28px;
+  height: 28px;
+  color: white;
+  stroke-width: 2.5;
+}
+
+.dashboard-card-title {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  margin-bottom: var(--spacing-xs);
+  color: var(--bm-navy);
+  letter-spacing: -0.01em;
+}
+
+.dashboard-card-status {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-light);
+  font-weight: 500;
+}
+
+/* Boat Cards - Home Page (Premium Yacht Style) */
+.boat-card {
+  background: var(--bm-card);
+  border-radius: var(--radius-xl);
+  padding: 0;
+  box-shadow: var(--shadow);
+  text-decoration: none;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  transition: var(--transition);
+  cursor: pointer;
+  overflow: hidden;
+  border: 1px solid var(--bm-border);
+  position: relative;
+}
+
+.boat-card:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-4px);
+  border-color: rgba(10, 166, 166, 0.3);
+}
+
+.boat-card-photo {
+  width: 100%;
+  height: 200px;
+  object-fit: cover;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+}
+
+.boat-card-photo-placeholder {
+  width: 100%;
+  height: 200px;
+  background: linear-gradient(135deg, var(--bm-foam) 0%, rgba(10, 166, 166, 0.1) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--bm-teal);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+}
+
+.boat-card-photo-placeholder svg {
+  width: 4rem;
+  height: 4rem;
+  opacity: 0.3;
+}
+
+.boat-card-content {
+  padding: var(--spacing-lg);
+}
+
+.boat-card-title {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  margin-bottom: var(--spacing-xs);
+  color: var(--bm-navy);
+  letter-spacing: -0.01em;
+}
+
+.boat-card-subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-light);
+  font-weight: 500;
+}
+
+.boat-card-actions {
+  position: absolute;
+  top: var(--spacing-md);
+  right: var(--spacing-md);
+  display: flex;
+  gap: var(--spacing-xs);
+  z-index: 10;
+}
+
+.boat-card-action-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: rgba(11, 31, 59, 0.75);
+  backdrop-filter: blur(8px);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--transition);
+  box-shadow: var(--shadow-sm);
+}
+
+.boat-card-action-btn:hover {
+  background: rgba(11, 31, 59, 0.9);
+  transform: scale(1.1);
+  box-shadow: var(--shadow-md);
+}
+
+.boat-card-action-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.5;
+  color: white;
+}
+
+.boat-card-action-btn.danger svg {
+  color: #ff6b6b;
+}
+
+/* Form styles */
+.form-container {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.form-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  justify-content: flex-end;
+  margin-top: var(--spacing-xl);
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-gray-light);
+}
+
+/* Attachment list */
+.attachment-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-md);
+}
+
+.attachment-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-light-bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--color-gray-light);
+}
+
+.attachment-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.attachment-icon {
+  font-size: 1.5rem;
+}
+
+.attachment-details {
+  flex: 1;
+}
+
+.attachment-name {
+  font-weight: 500;
+  font-size: var(--font-size-sm);
+}
+
+.attachment-meta {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-light);
+}
+
+/* Back button - now in header */
+.back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  color: white;
+  font-size: var(--font-size-sm);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--spacing-xs);
+}
+
+.back-button:hover {
+  opacity: 0.8;
+}
+
+/* Status indicators */
+.status-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: var(--spacing-xs);
+}
+
+.status-indicator.active {
+  background-color: var(--color-success);
+}
+
+.status-indicator.warning {
+  background-color: var(--color-warning);
+}
+
+.status-indicator.expired {
+  background-color: var(--color-error);
+}
+
+/* Icon improvements */
+.icon {
+  stroke-width: 2;
+  transition: var(--transition);
+}
+
+/* Header with logo */
+.header-with-logo {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+}
+
+.header-with-logo svg {
+  flex-shrink: 0;
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+  .yacht-header {
+    padding: var(--spacing-sm) var(--spacing-md);
+    min-height: 56px;
+  }
+
+  .yacht-header-title {
+    font-size: var(--font-size-lg);
+  }
+
+  .dashboard-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-md);
+    padding: var(--spacing-sm);
+  }
+
+  .dashboard-card {
+    padding: var(--spacing-lg);
+    min-height: 150px;
+  }
+
+  .dashboard-card-icon-badge {
+    width: 48px;
+    height: 48px;
+  }
+
+  .dashboard-card-icon-badge svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .boat-card-photo,
+  .boat-card-photo-placeholder {
+    height: 160px;
+  }
+
+  .boat-card-content {
+    padding: var(--spacing-md);
+  }
+
+  .form-actions {
+    flex-direction: column;
+  }
+
+  .form-actions button {
+    width: 100%;
+  }
+}

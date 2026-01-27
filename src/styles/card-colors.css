@@ -1,0 +1,26 @@
+/**
+ * Individual Card Colors
+ * Subtle colors for each dashboard card
+ */
+
+:root {
+  /* Card Colors - Subtle and Premium */
+  --card-boat: #6B9BD1;        /* Soft blue */
+  --card-engines: #5FB3B3;     /* Soft teal */
+  --card-service: #D4A574;     /* Soft amber */
+  --card-navigation: #9B8FB8;  /* Soft lavender */
+  --card-safety: #E89A9A;      /* Soft coral */
+  --card-log: #F5C97F;         /* Soft gold */
+  --card-links: #7BC4C4;       /* Soft cyan */
+  --card-account: #A8B5C0;     /* Soft slate */
+}
+
+/* Card color classes */
+.card-color-boat { --card-color: var(--card-boat); }
+.card-color-engines { --card-color: var(--card-engines); }
+.card-color-service { --card-color: var(--card-service); }
+.card-color-navigation { --card-color: var(--card-navigation); }
+.card-color-safety { --card-color: var(--card-safety); }
+.card-color-log { --card-color: var(--card-log); }
+.card-color-links { --card-color: var(--card-links); }
+.card-color-account { --card-color: var(--card-account); }

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">BoatMatey</string>
+    <string name="title_activity_main">BoatMatey</string>
+    <string name="package_name">com.boatmatey.app</string>
+    <string name="custom_url_scheme">com.boatmatey.app</string>
+</resources>
