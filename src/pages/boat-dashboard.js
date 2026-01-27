@@ -117,7 +117,7 @@ function render() {
     { id: 'boat', title: 'Boat Details', icon: 'boat', route: `/boat/${currentBoatId}/details` },
     { id: 'engines', title: 'Engines', icon: 'engine', route: `/boat/${currentBoatId}/engines` },
     { id: 'service', title: 'Service History', icon: 'wrench', route: `/boat/${currentBoatId}/service` },
-    { id: 'navigation', title: 'Navigation Equipment', icon: 'compass', route: `/boat/${currentBoatId}/navigation` },
+    { id: 'navigation', title: 'Navigation Equipment', icon: 'chart', route: `/boat/${currentBoatId}/navigation` },
     { id: 'safety', title: 'Safety Equipment', icon: 'shield', route: `/boat/${currentBoatId}/safety` },
     { id: 'log', title: "Ship's Log", icon: 'book', route: `/boat/${currentBoatId}/log` },
     { id: 'links', title: 'Links', icon: 'link', route: `/boat/${currentBoatId}/links` },

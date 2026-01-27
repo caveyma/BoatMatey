@@ -6,6 +6,34 @@ let routes = {};
 let currentRoute = null;
 let currentPage = null;
 
+const PAGE_COLOR_CLASSES = [
+  'page-color-boat',
+  'page-color-engines',
+  'page-color-service',
+  'page-color-navigation',
+  'page-color-safety',
+  'page-color-log',
+  'page-color-links',
+  'page-color-account'
+];
+
+function applyPageColor(path) {
+  document.body.classList.remove(...PAGE_COLOR_CLASSES);
+
+  let key = null;
+  if (path.includes('/details')) key = 'boat';
+  else if (path.includes('/engines')) key = 'engines';
+  else if (path.includes('/service')) key = 'service';
+  else if (path.includes('/navigation')) key = 'navigation';
+  else if (path.includes('/safety')) key = 'safety';
+  else if (path.includes('/log')) key = 'log';
+  else if (path.includes('/links')) key = 'links';
+  else if (path.includes('/account')) key = 'account';
+
+  if (key) document.body.classList.add(`page-color-${key}`);
+}
+
+
 /**
  * Register a route
  */
@@ -80,6 +108,7 @@ async function loadRoute(path) {
   const params = match.params;
 
   currentRoute = path;
+  applyPageColor(path);
 
   // Clean up previous page
   if (currentPage && typeof currentPage.cleanup === 'function') {

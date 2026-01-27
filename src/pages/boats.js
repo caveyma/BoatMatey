@@ -17,7 +17,7 @@ function render() {
   const wrapper = document.createElement('div');
   
   // Yacht header
-  const header = createYachtHeader('BoatMatey');
+  const header = createYachtHeader('');
   wrapper.appendChild(header);
   
   // Page content

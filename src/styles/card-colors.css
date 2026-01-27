@@ -5,14 +5,14 @@
 
 :root {
   /* Card Colors - Subtle and Premium */
-  --card-boat: #6B9BD1;        /* Soft blue */
-  --card-engines: #5FB3B3;     /* Soft teal */
-  --card-service: #D4A574;     /* Soft amber */
-  --card-navigation: #9B8FB8;  /* Soft lavender */
-  --card-safety: #E89A9A;      /* Soft coral */
-  --card-log: #F5C97F;         /* Soft gold */
-  --card-links: #7BC4C4;       /* Soft cyan */
-  --card-account: #A8B5C0;     /* Soft slate */
+  --card-boat: #4F8FD6;        /* Blue */
+  --card-engines: #2FA8A8;     /* Teal */
+  --card-service: #E0A25A;     /* Amber */
+  --card-navigation: #8D80C8;  /* Lavender */
+  --card-safety: #EA7D7D;      /* Coral */
+  --card-log: #F2B24A;         /* Gold */
+  --card-links: #46BFBF;       /* Cyan */
+  --card-account: #93A6B7;     /* Slate */
 }
 
 /* Card color classes */
@@ -24,3 +24,14 @@
 .card-color-log { --card-color: var(--card-log); }
 .card-color-links { --card-color: var(--card-links); }
 .card-color-account { --card-color: var(--card-account); }
+
+
+/* Inner page background colours (solid soft pastel) */
+body.page-color-boat { --page-bg: color-mix(in srgb, var(--card-boat) 30%, white); }
+body.page-color-engines { --page-bg: color-mix(in srgb, var(--card-engines) 30%, white); }
+body.page-color-service { --page-bg: color-mix(in srgb, var(--card-service) 30%, white); }
+body.page-color-navigation { --page-bg: color-mix(in srgb, var(--card-navigation) 30%, white); }
+body.page-color-safety { --page-bg: color-mix(in srgb, var(--card-safety) 30%, white); }
+body.page-color-log { --page-bg: color-mix(in srgb, var(--card-log) 30%, white); }
+body.page-color-links { --page-bg: color-mix(in srgb, var(--card-links) 30%, white); }
+body.page-color-account { --page-bg: color-mix(in srgb, var(--card-account) 30%, white); }
