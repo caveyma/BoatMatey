@@ -1,0 +1,23 @@
+{
+  "name": "boatmatey",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "vite": "^7.2.4"
+  },
+  "dependencies": {
+    "@revenuecat/purchases-capacitor": "^12.0.5",
+    "@capacitor/android": "^8.0.1",
+    "@capacitor/cli": "^8.0.1",
+    "@capacitor/core": "^8.0.1",
+    "@supabase/supabase-js": "^2.93.1",
+    "canvas": "^3.2.1"
+  }
+}

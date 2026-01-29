@@ -20,21 +20,29 @@ A mobile-first web app for boat maintenance and logbook management. Built with V
 - **Vanilla JavaScript**: No heavy frameworks, simple modular code
 - **Local Storage**: Data persistence (v1) - designed to be easily swapped with Supabase later
 
-## Project Structure
+## Project Structure (same as PetHub+)
 
 ```
-src/
-├── pages/          # Page modules (home, boat, engines, etc.)
-├── components/     # Reusable UI components
-├── styles/         # Global and component styles
-├── lib/            # Core libraries
-│   ├── storage.js      # Data persistence layer
-│   ├── uploads.js      # File attachment handling
-│   └── subscription.js # Subscription gating
-├── router.js       # Hash-based router
-├── app.js          # App bootstrap
-└── main.js         # Entry point
+BoatMatey/
+├── web/            # ← Develop here (all web app source)
+│   ├── src/
+│   │   ├── pages/       # Page modules (home, boat, engines, etc.)
+│   │   ├── components/  # Reusable UI components
+│   │   ├── styles/     # Global and component styles
+│   │   ├── lib/        # Core libraries (storage, uploads, subscription, etc.)
+│   │   ├── router.js
+│   │   ├── app.js
+│   │   └── main.js
+│   ├── public/
+│   ├── index.html
+│   └── package.json
+├── android/        # Android native project (updated via cap copy)
+├── ios/            # iOS native project when added (updated via cap copy)
+├── capacitor.config.json
+└── package.json    # Root scripts: build, cap:android, cap:ios
 ```
+
+- **Develop in** `web/`. Sync to **android/** and **ios/** when you want a new native build (see below).
 
 ## Getting Started
 
@@ -45,13 +53,15 @@ src/
 
 ### Installation
 
-1. Install dependencies:
+1. From repo root, install root and web dependencies:
 ```bash
 npm install
+cd web && npm install && cd ..
 ```
 
-2. Run development server:
+2. Run development server (from `web/`):
 ```bash
+cd web
 npm run dev
 ```
 
@@ -59,36 +69,41 @@ The app will be available at `http://localhost:5173` (or the port Vite assigns).
 
 ### Building for Production
 
-Build the app for production:
+From repo root (builds the web app into `web/dist`):
 ```bash
 npm run build
 ```
 
-This creates a `dist` folder with the production build.
+Or from `web/`: `npm run build` — creates `web/dist`.
+
+### Syncing to Android or iOS
+
+From **repo root** (builds web then copies into native project):
+
+```bash
+npm run cap:android
+# or
+npm run cap:ios
+```
+
+Or build once, then copy only: `npm run sync:android` / `npm run sync:ios`.
 
 ### Android Development
 
-1. Sync Capacitor with your build:
+1. Sync and open Android Studio:
 ```bash
-npx cap sync android
-```
-
-2. Open Android Studio:
-```bash
+npx cap copy android
 npx cap open android
 ```
 
-3. Build and run from Android Studio
+2. Build and run from Android Studio.
 
 ### iOS Development (when configured)
 
-1. Sync Capacitor:
+1. Add iOS if not yet added: `npx cap add ios`
+2. Sync and open Xcode:
 ```bash
-npx cap sync ios
-```
-
-2. Open Xcode:
-```bash
+npx cap copy ios
 npx cap open ios
 ```
 
