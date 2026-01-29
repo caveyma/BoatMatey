@@ -5,13 +5,16 @@
 /* ---------- CSS Variables ---------- */
 
 :root {
+  --bm-header-height: 64px;
+  --bm-wave-height: 22px;
+  --bm-header-total: calc(var(--bm-header-height) + var(--bm-wave-height));
   /* Core palette */
   --bm-navy: #0B2A3F;
   --bm-navy-2: #0A2436;
   --bm-teal: #0AA6A6;
   --bm-teal-2: #0B7C8C;
   --bm-foam: #E9F7F6;
-  --bm-bg: #EFF6FB;
+  --bm-bg: #C0E4EC;
   --bm-card: #FFFFFF;
   --bm-border: rgba(11, 31, 59, 0.10);
   --bm-shadow: 0 10px 30px rgba(11, 31, 59, 0.12);
@@ -87,8 +90,10 @@ html, body {
 }
 
 #app {
-  min-height: 100vh;
+  height: 100vh;
   position: relative;
+  overflow: hidden;                    /* lock scrolling to content area */
+  padding-top: var(--bm-header-total); /* space for fixed header + waves */
 }
 
 /* =========================================================
@@ -96,18 +101,15 @@ html, body {
    ========================================================= */
 
 .yacht-header {
-  height: 64px;                 /* FIXED HEIGHT */
-  padding: 0 var(--spacing-lg); /* NO vertical padding */
-  background: linear-gradient(
-    180deg,
-    #0B3C5D 0%,
-    #1C6FB8 55%,
-    #0B3C5D 100%
-  );
-  color: white;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  position: sticky;
+  height: var(--bm-header-height);
+  padding: 0 var(--spacing-lg);
+  background: #ffffff;                 /* WHITE HEADER */
+  color: var(--bm-navy);
+  border-bottom: 1px solid rgba(11, 31, 59, 0.08);
+  position: fixed;                     /* FIXED so page never scrolls into it */
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 100;
 
   display: flex;
@@ -115,12 +117,34 @@ html, body {
   justify-content: space-between;
 }
 
+/* Double-wave divider between header and page */
+.yacht-header::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(-1 * var(--bm-wave-height));
+  height: var(--bm-wave-height);
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 48' preserveAspectRatio='none'%3E%3Cpath d='M0 18 C 120 10 240 26 360 18 C 480 10 600 26 720 18 C 840 10 960 26 1080 18 C 1200 10 1320 26 1440 18' fill='none' stroke='%230AA6A6' stroke-width='3' stroke-linecap='round'/%3E%3Cpath d='M0 32 C 120 24 240 40 360 32 C 480 24 600 40 720 32 C 840 24 960 40 1080 32 C 1200 24 1320 40 1440 32' fill='none' stroke='%231C6FB8' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E");
+}
 /* Container holding back button + logo */
 .yacht-header-logo {
   display: flex;
   align-items: center;
   gap: 12px;
   height: 100%;
+}
+
+/* Centre section that holds the page / boat name */
+.yacht-header-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none; /* keep clicks going to logo/actions */
 }
 
 /* Wrapper so logo can never escape header */
@@ -144,6 +168,7 @@ html, body {
   margin: 0;
   line-height: 1;
   white-space: nowrap;
+  text-align: center;
 }
 
 /* Back button */
@@ -177,13 +202,29 @@ html, body {
 
 
 
+
+/* Header action links (Home / Sign out) */
+.yacht-header a,
+.yacht-header button,
+.yacht-header .header-action,
+.yacht-header .nav-link {
+  color: #1C6FB8;
+  font-weight: 700;
+}
+.yacht-header a:hover,
+.yacht-header button:hover {
+  opacity: 0.9;
+}
 /* =========================================================
    PAGE CONTENT
    ========================================================= */
 
 .page-content {
   padding: var(--spacing-lg);
-  min-height: calc(100vh - 64px); /* account for fixed header */
+  height: calc(100vh - var(--bm-header-total));
+  overflow-y: auto;                    /* only this area scrolls */
+  -webkit-overflow-scrolling: touch;
+  background: transparent;
 }
 
 /* =========================================================

@@ -7,11 +7,13 @@ const STORAGE_KEYS = {
   BOATS: 'boatmatey_boats', // List of all boats
   ENGINES: 'boatmatey_engines', // Scoped by boat_id
   SERVICE_HISTORY: 'boatmatey_service_history', // Scoped by boat_id
+  HAULOUTS: 'boatmatey_haulouts', // Scoped by boat_id
   NAV_EQUIPMENT: 'boatmatey_nav_equipment', // Scoped by boat_id
   SAFETY_EQUIPMENT: 'boatmatey_safety_equipment', // Scoped by boat_id
   SHIPS_LOG: 'boatmatey_ships_log', // Scoped by boat_id
   LINKS: 'boatmatey_links', // Scoped by boat_id
   UPLOADS: 'boatmatey_uploads', // Scoped by boat_id
+  CALENDAR_EVENTS: 'boatmatey_calendar_events', // Scoped by boat_id
   SETTINGS: 'boatmatey_settings'
 };
 
@@ -105,6 +107,9 @@ export const boatsStorage = {
     
     const services = serviceHistoryStorage.getAll().filter(s => s.boat_id !== boatId);
     storage.set(STORAGE_KEYS.SERVICE_HISTORY, services);
+
+    const haulouts = hauloutStorage.getAll().filter(h => h.boat_id !== boatId);
+    storage.set(STORAGE_KEYS.HAULOUTS, haulouts);
     
     const nav = navEquipmentStorage.getAll().filter(n => n.boat_id !== boatId);
     storage.set(STORAGE_KEYS.NAV_EQUIPMENT, nav);
@@ -231,6 +236,51 @@ export const serviceHistoryStorage = {
 
   getByEngine(engineId) {
     return this.getAll().filter(e => e.engine_id === engineId);
+  }
+};
+
+/**
+ * Haul-out Maintenance operations (scoped by boat_id)
+ * Mirrors service history patterns but for lift-out events.
+ */
+export const hauloutStorage = {
+  getAll(boatId = null) {
+    const all = storage.get(STORAGE_KEYS.HAULOUTS, []);
+    if (boatId) {
+      return all.filter(e => e.boat_id === boatId);
+    }
+    return all;
+  },
+
+  get(id) {
+    const entries = this.getAll();
+    return entries.find(e => e.id === id) || null;
+  },
+
+  save(entry, boatId = null) {
+    const entries = this.getAll();
+    if (entry.id) {
+      const index = entries.findIndex(e => e.id === entry.id);
+      if (index >= 0) {
+        entries[index] = { ...entry, updated_at: new Date().toISOString() };
+      } else {
+        entries.push({ ...entry, boat_id: boatId || entry.boat_id, created_at: new Date().toISOString() });
+      }
+    } else {
+      entry.id = `haulout_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      entry.boat_id = boatId || entry.boat_id;
+      entry.created_at = new Date().toISOString();
+      entries.push(entry);
+    }
+    // Sort by haul-out date descending (newest first)
+    entries.sort((a, b) => new Date(b.haulout_date) - new Date(a.haulout_date));
+    return storage.set(STORAGE_KEYS.HAULOUTS, entries);
+  },
+
+  delete(id) {
+    const entries = this.getAll();
+    const filtered = entries.filter(e => e.id !== id);
+    return storage.set(STORAGE_KEYS.HAULOUTS, filtered);
   }
 };
 
@@ -460,5 +510,61 @@ export const uploadsStorage = {
 
   count(boatId = null) {
     return this.getAll(boatId).length;
+  }
+};
+
+/**
+ * Calendar events operations (scoped by boat_id)
+ * Used by the Calendar & Alerts page for user-created appointments.
+ */
+export const calendarEventsStorage = {
+  getAll(boatId = null) {
+    const all = storage.get(STORAGE_KEYS.CALENDAR_EVENTS, []);
+    if (boatId) {
+      return all.filter(e => e.boat_id === boatId);
+    }
+    return all;
+  },
+
+  get(id) {
+    const events = this.getAll();
+    return events.find(e => e.id === id) || null;
+  },
+
+  save(event, boatId = null) {
+    const events = this.getAll();
+    if (event.id) {
+      const index = events.findIndex(e => e.id === event.id);
+      if (index >= 0) {
+        events[index] = { ...event, boat_id: boatId || event.boat_id, updated_at: new Date().toISOString() };
+      } else {
+        events.push({ ...event, boat_id: boatId || event.boat_id, created_at: new Date().toISOString() });
+      }
+    } else {
+      event.id = `cal_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      event.boat_id = boatId || event.boat_id;
+      event.created_at = new Date().toISOString();
+      events.push(event);
+    }
+
+    // Sort by date (ascending), then time if present
+    events.sort((a, b) => {
+      const da = new Date(a.date || a.created_at);
+      const db = new Date(b.date || b.created_at);
+      if (da.getTime() !== db.getTime()) {
+        return da - db;
+      }
+      const ta = a.time || '';
+      const tb = b.time || '';
+      return ta.localeCompare(tb);
+    });
+
+    return storage.set(STORAGE_KEYS.CALENDAR_EVENTS, events);
+  },
+
+  delete(id) {
+    const events = this.getAll();
+    const filtered = events.filter(e => e.id !== id);
+    return storage.set(STORAGE_KEYS.CALENDAR_EVENTS, filtered);
   }
 };

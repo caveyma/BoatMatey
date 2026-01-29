@@ -89,6 +89,13 @@
   overflow: hidden;
 }
 
+/* Variant for bitmap icons (e.g. real wrench image) */
+.dashboard-card-icon-bitmap {
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: var(--shadow-md);
+}
+
 .dashboard-card-icon-badge::before {
   content: '';
   position: absolute;
@@ -99,11 +106,25 @@
   background: linear-gradient(135deg, transparent 0%, rgba(0, 0, 0, 0.15) 100%);
 }
 
+.dashboard-card-icon-bitmap::before {
+  display: none; /* remove dark overlay for photo-style icons */
+}
+
 .dashboard-card-icon-badge svg {
   width: 28px;
   height: 28px;
   color: white;
   stroke-width: 2.5;
+}
+
+/* Bitmap-style icons inside dashboard badge */
+.dashboard-card-icon-badge .dashboard-card-icon-img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: 50%;
+  position: relative;
+  z-index: 1;
 }
 
 .dashboard-card-title {
@@ -135,6 +156,42 @@
   overflow: hidden;
   border: 1px solid var(--bm-border);
   position: relative;
+}
+
+/* Record/detail cards: background matches the active section/card colour
+   (similar strength to dashboard tiles) so edit/view forms feel part of
+   the same card. Scoped to inner pages only so dashboard tiles keep their
+   existing styling. */
+.page-content.card-color-service .card {
+  background: color-mix(in srgb, var(--card-service) 26%, #ffffff);
+}
+
+.page-content.card-color-haulout .card {
+  background: color-mix(in srgb, var(--card-haulout) 26%, #ffffff);
+}
+
+.page-content.card-color-engines .card {
+  background: color-mix(in srgb, var(--card-engines) 26%, #ffffff);
+}
+
+.page-content.card-color-navigation .card {
+  background: color-mix(in srgb, var(--card-navigation) 26%, #ffffff);
+}
+
+.page-content.card-color-safety .card {
+  background: color-mix(in srgb, var(--card-safety) 26%, #ffffff);
+}
+
+.page-content.card-color-log .card {
+  background: color-mix(in srgb, var(--card-log) 26%, #ffffff);
+}
+
+.page-content.card-color-links .card {
+  background: color-mix(in srgb, var(--card-links) 26%, #ffffff);
+}
+
+.page-content.card-color-boat .card {
+  background: color-mix(in srgb, var(--card-boat) 26%, #ffffff);
 }
 
 .boat-card:hover {
@@ -240,6 +297,49 @@
   margin-top: var(--spacing-xl);
   padding-top: var(--spacing-md);
   border-top: 1px solid var(--color-gray-light);
+}
+
+/* Inline radio/checkbox label used for mode + seacocks */
+.inline-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-bottom: 0;
+}
+
+/* DIY service checklist */
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: 4px;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.checkbox-row span {
+  flex: 1;
+}
+
+#service-diy-checklist .form-group {
+  margin-bottom: var(--spacing-lg); /* extra gap between sections */
+}
+
+#service-diy-checklist h5 {
+  font-size: var(--font-size-base); /* match task text size */
+  font-weight: 600;
+  text-decoration: underline;
+  margin-bottom: var(--spacing-sm);
+}
+
+.diy-checklist-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 /* Attachment list */
@@ -370,6 +470,11 @@
   .dashboard-card-icon-badge svg {
     width: 24px;
     height: 24px;
+  }
+
+  .dashboard-card-icon-badge .dashboard-card-icon-img {
+    width: 26px;
+    height: 26px;
   }
 
   .boat-card-photo,

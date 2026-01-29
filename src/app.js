@@ -7,6 +7,7 @@ import './styles/card-colors.css';
 import './styles/global.css';
 import './styles/components.css';
 import { init as initRouter, route, navigate } from './router.js';
+import { initSubscription } from './lib/subscription.js';
 import boatsPage from './pages/boats.js';
 import boatDashboardPage from './pages/boat-dashboard.js';
 import boatDetailsPage from './pages/boat.js';
@@ -18,6 +19,9 @@ import logPage from './pages/log.js';
 import linksPage from './pages/links.js';
 import accountPage from './pages/account.js';
 import authPage from './pages/auth.js';
+import hauloutPage from './pages/haulout.js';
+import calendarPage from './pages/calendar.js';
+import guidePage from './pages/guide.js';
 
 /**
  * Initialize the app
@@ -32,6 +36,9 @@ export function init() {
     route('/boat/:id/details', boatDetailsPage); // Boat details
     route('/boat/:id/engines', enginesPage);
     route('/boat/:id/service', servicePage);
+    route('/boat/:id/haulout', hauloutPage);
+    route('/boat/:id/calendar', calendarPage);
+    route('/boat/:id/guide', guidePage);
     route('/boat/:id/navigation', navigationPage);
     route('/boat/:id/safety', safetyPage);
     route('/boat/:id/log', logPage);
@@ -43,6 +50,9 @@ export function init() {
     
     // Initialize router
     initRouter();
+
+    // Initialize native subscription SDK (no-op on web)
+    initSubscription();
     
     console.log('BoatMatey: App initialized successfully');
   } catch (error) {

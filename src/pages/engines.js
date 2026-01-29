@@ -240,6 +240,15 @@ function loadEngines() {
         <p><strong>Fuel Type:</strong> ${engine.fuel_type || 'N/A'}</p>
         ${engine.install_date ? `<p><strong>Install Date:</strong> ${new Date(engine.install_date).toLocaleDateString()}</p>` : ''}
         ${engine.warranty_expiry_date ? `<p><strong>Warranty Expiry:</strong> ${new Date(engine.warranty_expiry_date).toLocaleDateString()}</p>` : ''}
+        <div class="card-subsection">
+          <h4>Gearbox</h4>
+          <p><strong>Manufacturer:</strong> ${engine.gearbox_manufacturer || 'N/A'}</p>
+          <p><strong>Model:</strong> ${engine.gearbox_model || 'N/A'}</p>
+          <p><strong>Serial Number:</strong> ${engine.gearbox_serial_number || 'N/A'}</p>
+          ${engine.gearbox_ratio ? `<p><strong>Ratio:</strong> ${engine.gearbox_ratio}</p>` : ''}
+          ${engine.gearbox_type ? `<p><strong>Type:</strong> ${engine.gearbox_type}</p>` : ''}
+          ${engine.gearbox_notes ? `<p><strong>Notes:</strong> ${engine.gearbox_notes}</p>` : ''}
+        </div>
       </div>
     </div>
   `).join('');
@@ -307,6 +316,33 @@ function showEngineForm() {
           <label for="engine_warranty_expiry">Warranty Expiry Date</label>
           <input type="date" id="engine_warranty_expiry" value="${engine?.warranty_expiry_date || ''}">
         </div>
+        <hr />
+        <h4>Gearbox</h4>
+        <p class="text-muted">Capture gearbox details linked to this engine.</p>
+        <div class="form-group">
+          <label for="gearbox_manufacturer">Gearbox Manufacturer</label>
+          <input type="text" id="gearbox_manufacturer" value="${engine?.gearbox_manufacturer || ''}">
+        </div>
+        <div class="form-group">
+          <label for="gearbox_model">Gearbox Model</label>
+          <input type="text" id="gearbox_model" value="${engine?.gearbox_model || ''}">
+        </div>
+        <div class="form-group">
+          <label for="gearbox_serial_number">Gearbox Serial Number</label>
+          <input type="text" id="gearbox_serial_number" value="${engine?.gearbox_serial_number || ''}">
+        </div>
+        <div class="form-group">
+          <label for="gearbox_ratio">Gearbox Ratio</label>
+          <input type="text" id="gearbox_ratio" value="${engine?.gearbox_ratio || ''}">
+        </div>
+        <div class="form-group">
+          <label for="gearbox_type">Gearbox Type</label>
+          <input type="text" id="gearbox_type" value="${engine?.gearbox_type || ''}">
+        </div>
+        <div class="form-group">
+          <label for="gearbox_notes">Gearbox Notes</label>
+          <textarea id="gearbox_notes" rows="3">${engine?.gearbox_notes || ''}</textarea>
+        </div>
         <div class="form-actions">
           <button type="button" class="btn-secondary" onclick="enginesPageCancelForm()">Cancel</button>
           <button type="submit" class="btn-primary">Save</button>
@@ -340,7 +376,13 @@ function saveEngine() {
     horsepower: document.getElementById('engine_hp').value ? parseInt(document.getElementById('engine_hp').value) : null,
     fuel_type: document.getElementById('engine_fuel_type').value,
     install_date: document.getElementById('engine_install_date').value || null,
-    warranty_expiry_date: document.getElementById('engine_warranty_expiry').value || null
+    warranty_expiry_date: document.getElementById('engine_warranty_expiry').value || null,
+    gearbox_manufacturer: document.getElementById('gearbox_manufacturer').value,
+    gearbox_model: document.getElementById('gearbox_model').value,
+    gearbox_serial_number: document.getElementById('gearbox_serial_number').value,
+    gearbox_ratio: document.getElementById('gearbox_ratio').value,
+    gearbox_type: document.getElementById('gearbox_type').value,
+    gearbox_notes: document.getElementById('gearbox_notes').value
   };
 
   enginesStorage.save(engine, currentBoatId);

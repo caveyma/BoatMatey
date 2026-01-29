@@ -14,7 +14,7 @@ function render() {
   const wrapper = document.createElement('div');
 
   // Yacht header with back arrow using browser history
-  const yachtHeader = createYachtHeader('Links', true, () => window.history.back());
+  const yachtHeader = createYachtHeader('Web Links', true, () => window.history.back());
   wrapper.appendChild(yachtHeader);
 
   const pageContent = document.createElement('div');
@@ -53,7 +53,7 @@ function loadLinks() {
     listContainer.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">${renderIcon('link')}</div>
-        <p>No links added yet</p>
+        <p>No web links added yet</p>
       </div>
     `;
     return;

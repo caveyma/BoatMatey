@@ -10,11 +10,14 @@ const PAGE_COLOR_CLASSES = [
   'page-color-boat',
   'page-color-engines',
   'page-color-service',
+  'page-color-haulout',
+  'page-color-calendar',
   'page-color-navigation',
   'page-color-safety',
   'page-color-log',
   'page-color-links',
-  'page-color-account'
+  'page-color-account',
+  'page-color-guide'
 ];
 
 function applyPageColor(path) {
@@ -24,11 +27,14 @@ function applyPageColor(path) {
   if (path.includes('/details')) key = 'boat';
   else if (path.includes('/engines')) key = 'engines';
   else if (path.includes('/service')) key = 'service';
+  else if (path.includes('/haulout')) key = 'haulout';
+  else if (path.includes('/calendar')) key = 'calendar';
   else if (path.includes('/navigation')) key = 'navigation';
   else if (path.includes('/safety')) key = 'safety';
   else if (path.includes('/log')) key = 'log';
   else if (path.includes('/links')) key = 'links';
   else if (path.includes('/account')) key = 'account';
+  else if (path.includes('/guide')) key = 'guide';
 
   if (key) document.body.classList.add(`page-color-${key}`);
 }

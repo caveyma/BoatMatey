@@ -17,7 +17,7 @@ export function createYachtHeader(title, showBack = false, backAction = null) {
   if (showBack && backAction) {
     const backBtn = document.createElement('button');
     backBtn.className = 'btn-link';
-    backBtn.style.color = 'white';
+    backBtn.style.color = '#0B3C5D';
     backBtn.style.padding = 'var(--spacing-xs)';
     backBtn.innerHTML = `←`;
     backBtn.onclick = (e) => { e.preventDefault(); backAction(); };
@@ -37,15 +37,19 @@ export function createYachtHeader(title, showBack = false, backAction = null) {
     logoSection.appendChild(logoWrap);
 
 
-  // only show title when a page needs it
+  // Centre title section (boat name / page name)
+  const centerSection = document.createElement('div');
+  centerSection.className = 'yacht-header-center';
+
   if (title) {
     const titleEl = document.createElement('h1');
     titleEl.className = 'yacht-header-title';
     titleEl.textContent = title;
-    logoSection.appendChild(titleEl);
+    centerSection.appendChild(titleEl);
   }
 
   header.appendChild(logoSection);
+  header.appendChild(centerSection);
 
   // Right-hand side actions: Sign out + Home
   const actionsSection = document.createElement('div');
@@ -60,7 +64,7 @@ export function createYachtHeader(title, showBack = false, backAction = null) {
     btn.className = 'btn-link';
     btn.style.background = 'transparent';
     btn.style.border = 'none';
-    btn.style.color = 'white';
+    btn.style.color = '#0B3C5D';
     btn.style.fontSize = '0.8rem';
     btn.style.padding = '0';
   };

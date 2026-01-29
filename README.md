@@ -94,19 +94,29 @@ npx cap open ios
 
 ## Subscription Model
 
-- **Free Plan**: Limited features
-  - 1 boat
-  - 1 engine
-  - 10 service history entries
-  - 10 file uploads total
-
-- **Paid Plan**: £24.99/year
+- **Paid Plan**: £24.99/year (including VAT)
   - Unlimited boats
   - Unlimited engines
   - Unlimited service entries
   - Unlimited uploads
 
-*Note: Store integration (Google Play / Apple App Store) is placeholder for v1. In development mode, you can simulate an active subscription from the Account page.*
+### Mobile subscriptions (Android / iOS)
+
+BoatMatey uses **RevenueCat** with the official Capacitor SDK (`@revenuecat/purchases-capacitor`) to manage
+subscriptions across Android and iOS.
+
+- **Entitlement ID** in RevenueCat: `boatmatey_premium`
+- **Product ID** in both app stores: e.g. `boatmatey_yearly` (auto-renewing yearly subscription at £24.99/year)
+
+Environment variables (configured in your Vite env file, e.g. `.env`):
+
+```bash
+VITE_REVENUECAT_API_KEY_ANDROID=rc_XXXXXXXXXXXXXXXXXXXXXXXXXXXX_android
+VITE_REVENUECAT_API_KEY_IOS=rc_XXXXXXXXXXXXXXXXXXXXXXXXXXXX_ios
+```
+
+On web / dev server, the app keeps the previous behaviour and treats the subscription as **always active**
+so you can develop without needing store sandboxes.
 
 ## Development Notes
 

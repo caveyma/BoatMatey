@@ -6,6 +6,15 @@ import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { boatStorage, enginesStorage, serviceHistoryStorage, navEquipmentStorage, safetyEquipmentStorage, shipsLogStorage, linksStorage } from '../lib/storage.js';
 
+const serviceIconUrl = new URL('../assets/service-wrench.png', import.meta.url).href;
+const boatIconUrl = new URL('../assets/boat-generic.png', import.meta.url).href;
+const engineIconUrl = new URL('../assets/engine.png', import.meta.url).href;
+const safetyIconUrl = new URL('../assets/safety-ring.png', import.meta.url).href;
+const logIconUrl = new URL('../assets/log-book.png', import.meta.url).href;
+const linksIconUrl = new URL('../assets/links-globe.png', import.meta.url).href;
+const navigationIconUrl = new URL('../assets/navigation-compass.png', import.meta.url).href;
+const adminIconUrl = new URL('../assets/account-admin.png', import.meta.url).href;
+
 function getStatusText(cardId) {
   switch (cardId) {
     case 'boat':
@@ -53,8 +62,34 @@ function createCard(id, title, iconName, route) {
     navigate(route);
   };
 
+  const useBitmapImage = id === 'boat' || id === 'service' || id === 'engines' || id === 'navigation' || id === 'safety' || id === 'log' || id === 'links' || id === 'account';
+  const badgeClass = useBitmapImage
+    ? 'dashboard-card-icon-badge dashboard-card-icon-bitmap'
+    : 'dashboard-card-icon-badge';
+
+  let iconHtml;
+  if (id === 'boat') {
+    iconHtml = `<img src="${boatIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
+  } else if (id === 'service') {
+    iconHtml = `<img src="${serviceIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
+  } else if (id === 'engines') {
+    iconHtml = `<img src="${engineIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
+  } else if (id === 'navigation') {
+    iconHtml = `<img src="${navigationIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
+  } else if (id === 'safety') {
+    iconHtml = `<img src="${safetyIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
+  } else if (id === 'log') {
+    iconHtml = `<img src="${logIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
+  } else if (id === 'links') {
+    iconHtml = `<img src="${linksIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
+  } else if (id === 'account') {
+    iconHtml = `<img src="${adminIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
+  } else {
+    iconHtml = renderIcon(iconName);
+  }
+
   card.innerHTML = `
-    <div class="dashboard-card-icon-badge">${renderIcon(iconName)}</div>
+    <div class="${badgeClass}">${iconHtml}</div>
     <div class="dashboard-card-title">${title}</div>
     <div class="dashboard-card-status">${getStatusText(id)}</div>
   `;
@@ -83,8 +118,8 @@ function render() {
     { id: 'navigation', title: 'Navigation Equipment', icon: 'compass', route: '/navigation' },
     { id: 'safety', title: 'Safety Equipment', icon: 'shield', route: '/safety' },
     { id: 'log', title: "Ship's Log", icon: 'book', route: '/log' },
-    { id: 'links', title: 'Links', icon: 'link', route: '/links' },
-    { id: 'account', title: 'Account', icon: 'user', route: '/account' }
+    { id: 'links', title: 'Web Links', icon: 'link', route: '/links' },
+    { id: 'account', title: 'Admin', icon: 'user', route: '/account' }
   ];
 
   cards.forEach(card => {

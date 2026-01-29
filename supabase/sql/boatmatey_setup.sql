@@ -121,6 +121,62 @@ before update on public.service_entries
 for each row
 execute procedure public.handle_updated_at();
 
+-- 3b) haulout_entries ---------------------------------------------------------
+
+create table if not exists public.haulout_entries (
+  id                          uuid primary key default gen_random_uuid(),
+  boat_id                     uuid not null references public.boats(id) on delete cascade,
+  owner_id                    uuid not null,
+  haulout_date                date not null,
+  launch_date                 date null,
+  yard_marina                 text null,
+  reason_for_liftout          text null,
+  antifoul_brand              text null,
+  antifoul_product_name       text null,
+  antifoul_type               text null,
+  antifoul_colour             text null,
+  antifoul_coats              int  null,
+  antifoul_last_stripped_blasted boolean null,
+  antifoul_applied_by         text null,
+  anode_material              text null,
+  anodes_replaced             boolean null,
+  anode_locations             text null,
+  old_anode_condition         text null,
+  props_condition             text null,
+  props_serviced              text[] null,
+  shaft_condition             text null,
+  shaft_issues                text null,
+  cutless_bearings_checked    text null,
+  rudder_steering_checked     text null,
+  rudder_steering_issues      text null,
+  seacocks_inspected          text null,
+  seacocks_replaced           boolean null,
+  seacock_material            text null,
+  seacocks_issues             text null,
+  hull_condition              text null,
+  osmosis_check               text null,
+  keel_skeg_trim_tabs_checked text null,
+  hull_issues                 text null,
+  osmosis_notes               text null,
+  keel_skeg_trim_tabs_notes   text null,
+  yard_contractor_name        text null,
+  total_cost                  numeric null,
+  general_notes               text null,
+  recommendations_next_haulout text null,
+  created_at                  timestamptz default timezone('utc', now()),
+  updated_at                  timestamptz default timezone('utc', now())
+);
+
+create index if not exists idx_haulout_entries_owner_id on public.haulout_entries(owner_id);
+create index if not exists idx_haulout_entries_boat_id on public.haulout_entries(boat_id);
+create index if not exists idx_haulout_entries_boat_date on public.haulout_entries(boat_id, haulout_date);
+
+drop trigger if exists trg_haulout_entries_updated_at on public.haulout_entries;
+create trigger trg_haulout_entries_updated_at
+before update on public.haulout_entries
+for each row
+execute procedure public.handle_updated_at();
+
 -- 4) equipment_items ----------------------------------------------------------
 
 create table if not exists public.equipment_items (
@@ -178,7 +234,7 @@ create table if not exists public.attachments (
   id           uuid primary key default gen_random_uuid(),
   boat_id      uuid not null references public.boats(id) on delete cascade,
   owner_id     uuid not null,
-  entity_type  text not null check (entity_type in ('boat','engine','service','equipment','logbook')),
+  entity_type  text not null check (entity_type in ('boat','engine','service','equipment','logbook','haulout')),
   entity_id    uuid null,
   bucket       text not null default 'boatmatey-attachments',
   path         text not null, -- storage object path
@@ -201,6 +257,7 @@ alter table public.profiles         enable row level security;
 alter table public.boats            enable row level security;
 alter table public.engines          enable row level security;
 alter table public.service_entries  enable row level security;
+alter table public.haulout_entries  enable row level security;
 alter table public.equipment_items  enable row level security;
 alter table public.logbook_entries  enable row level security;
 alter table public.attachments      enable row level security;
@@ -444,6 +501,81 @@ begin
   ) then
     create policy service_entries_delete_own
       on public.service_entries
+      for delete
+      using (
+        owner_id = auth.uid()
+        and exists (
+          select 1 from public.boats b
+          where b.id = boat_id and b.owner_id = auth.uid()
+        )
+      );
+  end if;
+end $$;
+
+-- haulout_entries
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'haulout_entries' and policyname = 'haulout_entries_select_own'
+  ) then
+    create policy haulout_entries_select_own
+      on public.haulout_entries
+      for select
+      using (
+        owner_id = auth.uid()
+        and exists (
+          select 1 from public.boats b
+          where b.id = boat_id and b.owner_id = auth.uid()
+        )
+      );
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'haulout_entries' and policyname = 'haulout_entries_insert_own'
+  ) then
+    create policy haulout_entries_insert_own
+      on public.haulout_entries
+      for insert
+      with check (
+        owner_id = auth.uid()
+        and exists (
+          select 1 from public.boats b
+          where b.id = boat_id and b.owner_id = auth.uid()
+        )
+      );
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'haulout_entries' and policyname = 'haulout_entries_update_own'
+  ) then
+    create policy haulout_entries_update_own
+      on public.haulout_entries
+      for update
+      using (
+        owner_id = auth.uid()
+        and exists (
+          select 1 from public.boats b
+          where b.id = boat_id and b.owner_id = auth.uid()
+        )
+      )
+      with check (
+        owner_id = auth.uid()
+        and exists (
+          select 1 from public.boats b
+          where b.id = boat_id and b.owner_id = auth.uid()
+        )
+      );
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'haulout_entries' and policyname = 'haulout_entries_delete_own'
+  ) then
+    create policy haulout_entries_delete_own
+      on public.haulout_entries
       for delete
       using (
         owner_id = auth.uid()

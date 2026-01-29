@@ -27,21 +27,23 @@ body {
   padding: 0;
   min-height: 100vh;
   position: relative;
+  overflow: hidden;
 }
 
 /* Global watermark on all pages */
 body::before {
   content: '';
   position: fixed;
-  top: 14%;
-  right: -3%;
+  top: 50%;
+  left: 50%;
   width: 560px;
   height: 560px;
+  transform: translate(-50%, -50%);
   background-image: url('../components/BoatMatey_icon.png');
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
-  opacity: 0.14;
+  opacity: 0.18;              /* bolder, but still subtle */
   pointer-events: none;
   z-index: 0;
 }

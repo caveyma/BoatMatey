@@ -8,30 +8,39 @@
   --card-boat: #4F8FD6;        /* Blue */
   --card-engines: #2FA8A8;     /* Teal */
   --card-service: #E0A25A;     /* Amber */
+  --card-haulout: #C36BD6;     /* Violet - distinct from service */
   --card-navigation: #8D80C8;  /* Lavender */
   --card-safety: #EA7D7D;      /* Coral */
   --card-log: #F2B24A;         /* Gold */
   --card-links: #46BFBF;       /* Cyan */
+  --card-calendar: #5BB95B;    /* Fresh green – distinct from engines/links */
   --card-account: #93A6B7;     /* Slate */
+  --card-guide: #7F8C99;       /* Soft slate for help/guide */
 }
 
 /* Card color classes */
 .card-color-boat { --card-color: var(--card-boat); }
 .card-color-engines { --card-color: var(--card-engines); }
 .card-color-service { --card-color: var(--card-service); }
+.card-color-haulout { --card-color: var(--card-haulout); }
 .card-color-navigation { --card-color: var(--card-navigation); }
 .card-color-safety { --card-color: var(--card-safety); }
 .card-color-log { --card-color: var(--card-log); }
 .card-color-links { --card-color: var(--card-links); }
+.card-color-calendar { --card-color: var(--card-calendar); }
 .card-color-account { --card-color: var(--card-account); }
+.card-color-guide { --card-color: var(--card-guide); }
 
 
 /* Inner page background colours (solid soft pastel) */
 body.page-color-boat { --page-bg: color-mix(in srgb, var(--card-boat) 30%, white); }
 body.page-color-engines { --page-bg: color-mix(in srgb, var(--card-engines) 30%, white); }
 body.page-color-service { --page-bg: color-mix(in srgb, var(--card-service) 30%, white); }
+body.page-color-haulout { --page-bg: color-mix(in srgb, var(--card-haulout) 30%, white); }
 body.page-color-navigation { --page-bg: color-mix(in srgb, var(--card-navigation) 30%, white); }
 body.page-color-safety { --page-bg: color-mix(in srgb, var(--card-safety) 30%, white); }
 body.page-color-log { --page-bg: color-mix(in srgb, var(--card-log) 30%, white); }
 body.page-color-links { --page-bg: color-mix(in srgb, var(--card-links) 30%, white); }
+body.page-color-calendar { --page-bg: color-mix(in srgb, var(--card-calendar) 30%, white); }
 body.page-color-account { --page-bg: color-mix(in srgb, var(--card-account) 30%, white); }
+body.page-color-guide { --page-bg: color-mix(in srgb, var(--card-guide) 30%, white); }
