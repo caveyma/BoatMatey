@@ -5,8 +5,7 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader } from '../components/header.js';
-import { isBoatArchived } from '../lib/dataService.js';
-import { enginesStorage } from '../lib/storage.js';
+import { isBoatArchived, getEngines, createEngine, updateEngine, deleteEngine } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOADS_PER_ENTITY } from '../lib/uploads.js';
 
 let editingId = null;
@@ -140,8 +139,54 @@ async function onMount(params = {}) {
   }
 
   loadEngines();
-  // Make navigate available globally for back button
   window.navigate = navigate;
+}
+
+async function loadEngines() {
+  const listContainer = document.getElementById('engines-list');
+  const engines = currentBoatId ? await getEngines(currentBoatId) : [];
+
+  if (engines.length === 0) {
+    listContainer.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">${renderIcon('engine')}</div>
+        <p>No engines added yet</p>
+      </div>
+    `;
+    return;
+  }
+
+  listContainer.innerHTML = engines.map(engine => `
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3 class="card-title">${engine.label || 'Unnamed Engine'}</h3>
+          <p class="text-muted">${engine.manufacturer || ''} ${engine.model || ''}</p>
+        </div>
+        <div>
+          ${!enginesArchived ? `<button class="btn-link" onclick="enginesPageEdit('${engine.id}')">${renderIcon('edit')}</button>
+          <button class="btn-link btn-danger" onclick="enginesPageDelete('${engine.id}')">${renderIcon('trash')}</button>` : ''}
+        </div>
+      </div>
+      <div>
+        <p><strong>Serial Number:</strong> ${engine.serial_number || 'N/A'}</p>
+        <p><strong>Horsepower:</strong> ${engine.horsepower || 'N/A'}</p>
+        <p><strong>Fuel Type:</strong> ${engine.fuel_type || 'N/A'}</p>
+        ${engine.install_date ? `<p><strong>Install Date:</strong> ${new Date(engine.install_date).toLocaleDateString()}</p>` : ''}
+        ${engine.warranty_expiry_date ? `<p><strong>Warranty Expiry:</strong> ${new Date(engine.warranty_expiry_date).toLocaleDateString()}</p>` : ''}
+        <div class="card-subsection">
+          <h4>Gearbox</h4>
+          <p><strong>Manufacturer:</strong> ${engine.gearbox_manufacturer || 'N/A'}</p>
+          <p><strong>Model:</strong> ${engine.gearbox_model || 'N/A'}</p>
+          <p><strong>Serial Number:</strong> ${engine.gearbox_serial_number || 'N/A'}</p>
+          ${engine.gearbox_ratio ? `<p><strong>Ratio:</strong> ${engine.gearbox_ratio}</p>` : ''}
+          ${engine.gearbox_type ? `<p><strong>Type:</strong> ${engine.gearbox_type}</p>` : ''}
+          ${engine.gearbox_notes ? `<p><strong>Notes:</strong> ${engine.gearbox_notes}</p>` : ''}
+        </div>
+      </div>
+    </div>
+  `).join('');
+  attachHandlers();
 }
 
 function loadEnginesAttachments() {
@@ -215,72 +260,23 @@ function attachEnginesAttachmentHandlers() {
   });
 }
 
-function loadEngines() {
-  const listContainer = document.getElementById('engines-list');
-  const engines = enginesStorage.getAll(currentBoatId);
-
-  if (engines.length === 0) {
-    listContainer.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">${renderIcon('engine')}</div>
-        <p>No engines added yet</p>
-      </div>
-    `;
-    return;
-  }
-
-  listContainer.innerHTML = engines.map(engine => `
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <h3 class="card-title">${engine.label || 'Unnamed Engine'}</h3>
-          <p class="text-muted">${engine.manufacturer || ''} ${engine.model || ''}</p>
-        </div>
-        <div>
-          ${!enginesArchived ? `<button class="btn-link" onclick="enginesPageEdit('${engine.id}')">${renderIcon('edit')}</button>
-          <button class="btn-link btn-danger" onclick="enginesPageDelete('${engine.id}')">${renderIcon('trash')}</button>` : ''}
-        </div>
-      </div>
-      <div>
-        <p><strong>Serial Number:</strong> ${engine.serial_number || 'N/A'}</p>
-        <p><strong>Horsepower:</strong> ${engine.horsepower || 'N/A'}</p>
-        <p><strong>Fuel Type:</strong> ${engine.fuel_type || 'N/A'}</p>
-        ${engine.install_date ? `<p><strong>Install Date:</strong> ${new Date(engine.install_date).toLocaleDateString()}</p>` : ''}
-        ${engine.warranty_expiry_date ? `<p><strong>Warranty Expiry:</strong> ${new Date(engine.warranty_expiry_date).toLocaleDateString()}</p>` : ''}
-        <div class="card-subsection">
-          <h4>Gearbox</h4>
-          <p><strong>Manufacturer:</strong> ${engine.gearbox_manufacturer || 'N/A'}</p>
-          <p><strong>Model:</strong> ${engine.gearbox_model || 'N/A'}</p>
-          <p><strong>Serial Number:</strong> ${engine.gearbox_serial_number || 'N/A'}</p>
-          ${engine.gearbox_ratio ? `<p><strong>Ratio:</strong> ${engine.gearbox_ratio}</p>` : ''}
-          ${engine.gearbox_type ? `<p><strong>Type:</strong> ${engine.gearbox_type}</p>` : ''}
-          ${engine.gearbox_notes ? `<p><strong>Notes:</strong> ${engine.gearbox_notes}</p>` : ''}
-        </div>
-      </div>
-    </div>
-  `).join('');
-
-  // Attach event handlers
-  attachHandlers();
-}
-
 function attachHandlers() {
-  // These will be set up via inline handlers for simplicity
   window.enginesPageEdit = (id) => {
     editingId = id;
     showEngineForm();
   };
 
-  window.enginesPageDelete = (id) => {
+  window.enginesPageDelete = async (id) => {
     if (confirm('Delete this engine?')) {
-      enginesStorage.delete(id);
+      await deleteEngine(id);
       loadEngines();
     }
   };
 }
 
-function showEngineForm() {
-  const engine = editingId ? enginesStorage.get(editingId) : null;
+async function showEngineForm() {
+  const engines = currentBoatId ? await getEngines(currentBoatId) : [];
+  const engine = editingId ? engines.find((e) => e.id === editingId) : null;
 
   const formHtml = `
     <div class="card" id="engine-form-card">
@@ -373,7 +369,7 @@ function showEngineForm() {
   };
 }
 
-function saveEngine() {
+async function saveEngine() {
   const engine = {
     id: editingId,
     label: document.getElementById('engine_label').value,
@@ -392,7 +388,32 @@ function saveEngine() {
     gearbox_notes: document.getElementById('gearbox_notes').value
   };
 
-  enginesStorage.save(engine, currentBoatId);
+  const payload = {
+    position: engine.label,
+    manufacturer: engine.manufacturer,
+    model: engine.model,
+    serial_number: engine.serial_number,
+    horsepower: engine.horsepower,
+    notes: JSON.stringify({
+      label: engine.label,
+      fuel_type: engine.fuel_type,
+      install_date: engine.install_date,
+      warranty_expiry_date: engine.warranty_expiry_date,
+      gearbox_manufacturer: engine.gearbox_manufacturer,
+      gearbox_model: engine.gearbox_model,
+      gearbox_serial_number: engine.gearbox_serial_number,
+      gearbox_ratio: engine.gearbox_ratio,
+      gearbox_type: engine.gearbox_type,
+      gearbox_notes: engine.gearbox_notes
+    })
+  };
+
+  if (editingId && String(editingId).includes('-')) {
+    await updateEngine(editingId, payload);
+  } else {
+    await createEngine(currentBoatId, payload);
+  }
+
   document.getElementById('engine-form-card').remove();
   editingId = null;
   loadEngines();

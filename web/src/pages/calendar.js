@@ -13,7 +13,8 @@
 
 import { navigate } from '../router.js';
 import { createYachtHeader } from '../components/header.js';
-import { boatsStorage, enginesStorage, serviceHistoryStorage, hauloutStorage, calendarEventsStorage } from '../lib/storage.js';
+import { boatsStorage, enginesStorage, serviceHistoryStorage, hauloutStorage } from '../lib/storage.js';
+import { getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '../lib/dataService.js';
 import { buildIcsEvent, downloadIcsFile } from '../lib/calendar.js';
 
 let currentBoatId = null;
@@ -447,13 +448,14 @@ function renderAppointmentsForSelectedDate(baseEvents) {
 
   listEl.querySelectorAll('.calendar-event-delete').forEach((btn) => {
     const id = btn.getAttribute('data-event-id');
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       if (!confirm('Delete this appointment?')) return;
-      calendarEventsStorage.delete(id);
-      const refreshedBase = calendarEventsStorage.getAll(currentBoatId);
+      await deleteCalendarEvent(id);
+      const refreshedBase = await getCalendarEvents(currentBoatId);
+      const mapped = refreshedBase.map((e) => ({ ...e, recurrence_type: e.repeat || 'none', recurrence_until: e.repeat_until }));
       const reminders = buildRemindersForBoat(currentBoatId);
-      renderMonthView(reminders, refreshedBase);
-      renderAppointmentsForSelectedDate(refreshedBase);
+      renderMonthView(reminders, mapped);
+      renderAppointmentsForSelectedDate(mapped);
     });
   });
 }
@@ -568,7 +570,7 @@ export function render(params = {}) {
   return wrapper;
 }
 
-export function onMount(params = {}) {
+export async function onMount(params = {}) {
   const boatId = params?.id || window.routeParams?.id;
   if (boatId) {
     currentBoatId = boatId;
@@ -576,35 +578,33 @@ export function onMount(params = {}) {
   if (!currentBoatId) return;
 
   const reminders = buildRemindersForBoat(currentBoatId);
-  const baseEvents = calendarEventsStorage.getAll(currentBoatId);
+  let baseEvents = await getCalendarEvents(currentBoatId);
+  baseEvents = baseEvents.map((e) => ({ ...e, recurrence_type: e.repeat || 'none', recurrence_until: e.repeat_until }));
 
-  // Initialise selected date as today
   selectedDateStr = toIsoDate(new Date());
 
-  // Month navigation
   const prevBtn = document.getElementById('calendar-prev-month');
   const nextBtn = document.getElementById('calendar-next-month');
   if (prevBtn) {
-    prevBtn.addEventListener('click', () => {
+    prevBtn.addEventListener('click', async () => {
       currentMonthDate = new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth() - 1, 1);
-      const refreshedBase = calendarEventsStorage.getAll(currentBoatId);
-      renderMonthView(reminders, refreshedBase);
+      const refreshedBase = await getCalendarEvents(currentBoatId);
+      renderMonthView(reminders, refreshedBase.map((e) => ({ ...e, recurrence_type: e.repeat || 'none', recurrence_until: e.repeat_until })));
       renderAppointmentsForSelectedDate(refreshedBase);
     });
   }
   if (nextBtn) {
-    nextBtn.addEventListener('click', () => {
+    nextBtn.addEventListener('click', async () => {
       currentMonthDate = new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth() + 1, 1);
-      const refreshedBase = calendarEventsStorage.getAll(currentBoatId);
-      renderMonthView(reminders, refreshedBase);
+      const refreshedBase = await getCalendarEvents(currentBoatId);
+      renderMonthView(reminders, refreshedBase.map((e) => ({ ...e, recurrence_type: e.repeat || 'none', recurrence_until: e.repeat_until })));
       renderAppointmentsForSelectedDate(refreshedBase);
     });
   }
 
-  // Appointment form
   const form = document.getElementById('calendar-appointment-form');
   if (form) {
-    form.addEventListener('submit', (e) => {
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const dateValue = document.getElementById('calendar-appointment-date').value || selectedDateStr;
       const titleEl = document.getElementById('calendar-appointment-title');
@@ -619,30 +619,27 @@ export function onMount(params = {}) {
         return;
       }
 
-      const event = {
+      const payload = {
         date: dateValue,
         title,
         time: timeEl.value || null,
         notes: notesEl.value || '',
-        recurrence_type: repeatEl.value || 'none',
-        recurrence_until: repeatUntilEl.value || null
+        repeat: repeatEl.value === 'none' ? null : repeatEl.value,
+        repeat_until: repeatUntilEl.value || null
       };
 
-      calendarEventsStorage.save(event, currentBoatId);
+      const created = await createCalendarEvent(currentBoatId, payload);
+      const newest = created || { id: '', ...payload };
 
-      // Clear form (but keep selected date and repeat settings)
       titleEl.value = '';
       timeEl.value = '';
       notesEl.value = '';
 
-      const updatedBase = calendarEventsStorage.getAll(currentBoatId);
-      renderMonthView(reminders, updatedBase);
+      const updatedBase = await getCalendarEvents(currentBoatId);
+      renderMonthView(reminders, updatedBase.map((e) => ({ ...e, recurrence_type: e.repeat || 'none', recurrence_until: e.repeat_until })));
       renderAppointmentsForSelectedDate(updatedBase);
 
-      // Optionally offer quick export
       if (confirm('Appointment saved. Do you also want to add it to your device calendar now?')) {
-        const savedList = updatedBase.filter((e2) => e2.date === event.date && e2.title === event.title);
-        const newest = savedList[savedList.length - 1] || event;
         const ics = buildIcsEvent({
           uid: newest.id,
           title: newest.title,

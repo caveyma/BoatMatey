@@ -326,6 +326,12 @@
   margin: 0;
 }
 
+.boats-limit-hint {
+  font-size: var(--font-size-sm);
+  margin-top: 0.25rem;
+  margin-bottom: 0;
+}
+
 /* Form styles */
 .form-container {
   max-width: 600px;

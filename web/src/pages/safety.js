@@ -5,8 +5,7 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader } from '../components/header.js';
-import { isBoatArchived } from '../lib/dataService.js';
-import { safetyEquipmentStorage } from '../lib/storage.js';
+import { isBoatArchived, getEquipment, createEquipment, updateEquipment, deleteEquipment } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
 
 let editingId = null;
@@ -126,9 +125,9 @@ async function onMount(params = {}) {
   loadSafetyEquipment();
 }
 
-function loadSafetyEquipment() {
+async function loadSafetyEquipment() {
   const listContainer = document.getElementById('safety-list');
-  const items = safetyEquipmentStorage.getAll(currentBoatId);
+  const items = currentBoatId ? await getEquipment(currentBoatId, 'safety') : [];
 
   if (items.length === 0) {
     listContainer.innerHTML = `
@@ -188,9 +187,9 @@ function attachHandlers() {
     showSafetyForm();
   };
 
-  window.safetyPageDelete = (id) => {
+  window.safetyPageDelete = async (id) => {
     if (confirm('Delete this equipment?')) {
-      safetyEquipmentStorage.delete(id);
+      await deleteEquipment(id, 'safety');
       loadSafetyEquipment();
     }
   };
@@ -276,9 +275,9 @@ function attachSafetyAttachmentHandlers() {
   });
 }
 
-function showSafetyForm() {
-  // Ensure we have an ID even for new items so uploads can attach immediately
-  const existingItem = editingId ? safetyEquipmentStorage.get(editingId) : null;
+async function showSafetyForm() {
+  const items = currentBoatId ? await getEquipment(currentBoatId, 'safety') : [];
+  const existingItem = editingId ? items.find((i) => i.id === editingId) : null;
   if (!editingId) {
     editingId = `safety_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
@@ -492,9 +491,9 @@ function loadSafetyFormAttachments(safetyId) {
   attachSafetyAttachmentHandlers();
 }
 
-function saveSafetyEquipment() {
+async function saveSafetyEquipment() {
   const safetyType = document.getElementById('safety_type').value || document.getElementById('safety_type_custom').value;
-  
+
   const item = {
     id: editingId,
     name: document.getElementById('safety_name').value,
@@ -505,7 +504,12 @@ function saveSafetyEquipment() {
     notes: document.getElementById('safety_notes').value
   };
 
-  safetyEquipmentStorage.save(item);
+  if (editingId && !editingId.startsWith('safety_')) {
+    await updateEquipment(editingId, 'safety', item);
+  } else {
+    await createEquipment(currentBoatId, 'safety', item);
+  }
+
   document.getElementById('safety-form-card').remove();
   editingId = null;
   loadSafetyEquipment();

@@ -8,8 +8,7 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader } from '../components/header.js';
-import { isBoatArchived } from '../lib/dataService.js';
-import { hauloutStorage } from '../lib/storage.js';
+import { isBoatArchived, getHaulouts, createHaulout, updateHaulout, deleteHaulout } from '../lib/dataService.js';
 import {
   getUploads,
   saveUpload,
@@ -144,9 +143,9 @@ async function onMount(params = {}) {
   loadHaulouts();
 }
 
-function loadHaulouts() {
+async function loadHaulouts() {
   const listContainer = document.getElementById('haulout-list');
-  const haulouts = hauloutStorage.getAll(currentBoatId);
+  const haulouts = currentBoatId ? await getHaulouts(currentBoatId) : [];
 
   if (!haulouts || haulouts.length === 0) {
     listContainer.innerHTML = `
@@ -220,9 +219,9 @@ function attachListHandlers() {
     showHauloutForm();
   };
 
-  window.hauloutPageDelete = (id) => {
+  window.hauloutPageDelete = async (id) => {
     if (confirm('Delete this haul-out record?')) {
-      hauloutStorage.delete(id);
+      await deleteHaulout(id);
       loadHaulouts();
     }
   };
@@ -308,9 +307,9 @@ function attachHauloutAttachmentHandlers() {
   });
 }
 
-function showHauloutForm() {
-  // Ensure we have an ID even for new entries so uploads can be attached immediately
-  const existingEntry = editingId ? hauloutStorage.get(editingId) : null;
+async function showHauloutForm() {
+  const haulouts = currentBoatId ? await getHaulouts(currentBoatId) : [];
+  const existingEntry = editingId ? haulouts.find((e) => e.id === editingId) : null;
   if (!editingId) {
     editingId = `haulout_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
@@ -891,7 +890,7 @@ function initHauloutIssueToggles() {
   }
 }
 
-function saveHaulout() {
+async function saveHaulout() {
   const hauloutDate = document.getElementById('haulout_date').value;
   if (!hauloutDate) {
     alert('Haul-out date is required.');
@@ -950,7 +949,12 @@ function saveHaulout() {
     next_haulout_due: document.getElementById('next_haulout_due').value || null
   };
 
-  hauloutStorage.save(entry, currentBoatId);
+  if (editingId && String(editingId).includes('-')) {
+    await updateHaulout(editingId, entry);
+  } else {
+    const created = await createHaulout(currentBoatId, entry);
+    if (created?.id) editingId = created.id;
+  }
   document.getElementById('haulout-form-card').remove();
   editingId = null;
   loadHaulouts();

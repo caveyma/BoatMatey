@@ -5,8 +5,7 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader } from '../components/header.js';
-import { isBoatArchived } from '../lib/dataService.js';
-import { navEquipmentStorage } from '../lib/storage.js';
+import { isBoatArchived, getEquipment, createEquipment, updateEquipment, deleteEquipment } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
 
 let editingId = null;
@@ -126,9 +125,9 @@ async function onMount(params = {}) {
   loadNavEquipment();
 }
 
-function loadNavEquipment() {
+async function loadNavEquipment() {
   const listContainer = document.getElementById('nav-list');
-  const items = navEquipmentStorage.getAll(currentBoatId);
+  const items = currentBoatId ? await getEquipment(currentBoatId, 'navigation') : [];
 
   if (items.length === 0) {
     listContainer.innerHTML = `
@@ -265,9 +264,9 @@ function attachNavAttachmentHandlers() {
   });
 }
 
-function showNavForm() {
-  // Ensure we have an ID even for new items so uploads can attach immediately
-  const existingItem = editingId ? navEquipmentStorage.get(editingId) : null;
+async function showNavForm() {
+  const items = currentBoatId ? await getEquipment(currentBoatId, 'navigation') : [];
+  const existingItem = editingId ? items.find((i) => i.id === editingId) : null;
   if (!editingId) {
     editingId = `nav_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
@@ -343,7 +342,7 @@ function showNavForm() {
   initNavFormAttachments(editingId);
 }
 
-function saveNavEquipment() {
+async function saveNavEquipment() {
   const item = {
     id: editingId,
     name: document.getElementById('nav_name').value,
@@ -354,7 +353,12 @@ function saveNavEquipment() {
     warranty_expiry_date: document.getElementById('nav_warranty_expiry').value || null
   };
 
-  navEquipmentStorage.save(item);
+  if (editingId && !editingId.startsWith('nav_')) {
+    await updateEquipment(editingId, 'navigation', item);
+  } else {
+    await createEquipment(currentBoatId, 'navigation', item);
+  }
+
   document.getElementById('nav-form-card').remove();
   editingId = null;
   loadNavEquipment();

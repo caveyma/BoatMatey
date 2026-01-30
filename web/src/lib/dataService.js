@@ -3,11 +3,13 @@ import {
   boatsStorage,
   enginesStorage,
   serviceHistoryStorage,
+  hauloutStorage,
   navEquipmentStorage,
   safetyEquipmentStorage,
   shipsLogStorage,
   linksStorage,
-  uploadsStorage
+  uploadsStorage,
+  calendarEventsStorage
 } from './storage.js';
 
 // Boat limits (design allows future tiers to override without schema change)
@@ -145,8 +147,12 @@ export async function createBoat(payload) {
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
     const all = boatsStorage.getAll();
+    const activeCount = all.filter((b) => (b.status || 'active') === 'active').length;
     if (all.length >= BOAT_LIMITS.MAX_TOTAL_BOATS) {
       return { error: 'total_limit' };
+    }
+    if (activeCount >= BOAT_LIMITS.MAX_ACTIVE_BOATS) {
+      return { error: 'active_limit' };
     }
     const boat = {
       boat_name: payload.boat_name,
@@ -161,6 +167,9 @@ export async function createBoat(payload) {
   const counts = await getBoatCounts();
   if (counts.total >= BOAT_LIMITS.MAX_TOTAL_BOATS) {
     return { error: 'total_limit' };
+  }
+  if (counts.active >= BOAT_LIMITS.MAX_ACTIVE_BOATS) {
+    return { error: 'active_limit' };
   }
 
   const ownerId = session.user.id;
@@ -421,7 +430,22 @@ export async function getEngines(boatId) {
     return enginesStorage.getAll(boatId);
   }
 
-  return data;
+  return (data || []).map((e) => {
+    const out = {
+      ...e,
+      manufacturer: e.make,
+      serial_number: e.serial,
+      horsepower: e.hours,
+      label: e.position || [e.make, e.model].filter(Boolean).join(' ') || 'Engine'
+    };
+    try {
+      if (e.notes && typeof e.notes === 'string') {
+        const d = JSON.parse(e.notes);
+        if (d && typeof d === 'object') Object.assign(out, d);
+      }
+    } catch (_) {}
+    return out;
+  });
 }
 
 export async function createEngine(boatId, payload) {
@@ -510,7 +534,16 @@ export async function getServiceEntries(boatId) {
     return serviceHistoryStorage.getAll(boatId);
   }
 
-  return data;
+  return (data || []).map((e) => {
+    const out = { ...e, date: e.service_date, service_type: e.title, notes: e.description };
+    try {
+      if (e.description && typeof e.description === 'string' && (e.description.startsWith('{') || e.description.startsWith('['))) {
+        const d = JSON.parse(e.description);
+        if (d && typeof d === 'object' && !Array.isArray(d)) Object.assign(out, d);
+      }
+    } catch (_) {}
+    return out;
+  });
 }
 
 export async function createServiceEntry(boatId, payload) {
@@ -607,7 +640,16 @@ export async function getEquipment(boatId, category) {
     return [];
   }
 
-  return data;
+  return (data || []).map((item) => {
+    const out = { ...item, notes: item.details };
+    try {
+      if (item.details && typeof item.details === 'string') {
+        const d = JSON.parse(item.details);
+        if (d && typeof d === 'object') Object.assign(out, d);
+      }
+    } catch (_) {}
+    return out;
+  });
 }
 
 export async function createEquipment(boatId, category, payload) {
@@ -619,6 +661,12 @@ export async function createEquipment(boatId, category, payload) {
     return null;
   }
 
+  const detailsObj = category === 'safety'
+    ? { type: payload.type, serial_number: payload.serial_number, service_interval: payload.service_interval, notes: payload.notes }
+    : { manufacturer: payload.manufacturer, model: payload.model, serial_number: payload.serial_number, install_date: payload.install_date, warranty_expiry_date: payload.warranty_expiry_date, notes: payload.notes };
+  const detailsStr = Object.keys(detailsObj).some((k) => detailsObj[k] != null) ? JSON.stringify(detailsObj) : (payload.notes || null);
+  const expiry = category === 'safety' ? (payload.expiry_date ?? null) : (payload.warranty_expiry_date ?? null);
+
   const { data, error } = await supabase
     .from('equipment_items')
     .insert({
@@ -627,8 +675,8 @@ export async function createEquipment(boatId, category, payload) {
       category,
       name: payload.name,
       quantity: payload.quantity ?? 1,
-      details: payload.notes ?? null,
-      expiry_date: payload.expiry_date ?? null
+      details: detailsStr,
+      expiry_date: expiry
     })
     .select('*')
     .single();
@@ -653,13 +701,19 @@ export async function updateEquipment(equipmentId, category, payload) {
     return;
   }
 
+  const detailsObj = category === 'safety'
+    ? { type: payload.type, serial_number: payload.serial_number, service_interval: payload.service_interval, notes: payload.notes }
+    : { manufacturer: payload.manufacturer, model: payload.model, serial_number: payload.serial_number, install_date: payload.install_date, warranty_expiry_date: payload.warranty_expiry_date, notes: payload.notes };
+  const detailsStr = Object.keys(detailsObj).some((k) => detailsObj[k] != null) ? JSON.stringify(detailsObj) : (payload.notes || null);
+  const expiry = category === 'safety' ? (payload.expiry_date ?? null) : (payload.warranty_expiry_date ?? null);
+
   const { error } = await supabase
     .from('equipment_items')
     .update({
       name: payload.name,
       quantity: payload.quantity ?? 1,
-      details: payload.notes ?? null,
-      expiry_date: payload.expiry_date ?? null
+      details: detailsStr,
+      expiry_date: expiry
     })
     .eq('id', equipmentId)
     .eq('category', category);
@@ -706,7 +760,21 @@ export async function getLogbook(boatId) {
     return shipsLogStorage.getAll(boatId);
   }
 
-  return data;
+  return (data || []).map((e) => {
+    const out = { ...e, date: e.trip_date, departure: e.from_location, arrival: e.to_location };
+    try {
+      if (e.notes && typeof e.notes === 'string') {
+        const d = JSON.parse(e.notes);
+        if (d && typeof d === 'object') {
+          if (d.raw != null) out.notes = d.raw;
+          if (d.engine_hours_start != null) out.engine_hours_start = d.engine_hours_start;
+          if (d.engine_hours_end != null) out.engine_hours_end = d.engine_hours_end;
+          if (d.distance_nm != null) out.distance_nm = d.distance_nm;
+        }
+      }
+    } catch (_) {}
+    return out;
+  });
 }
 
 export async function createLogEntry(boatId, payload) {
@@ -721,12 +789,12 @@ export async function createLogEntry(boatId, payload) {
     .insert({
       boat_id: boatId,
       owner_id: session.user.id,
-      trip_date: payload.date,
+      trip_date: payload.date || payload.trip_date,
       title: payload.title ?? 'Trip',
       notes: payload.notes ?? null,
       hours: payload.hours ?? null,
-      from_location: payload.from_location ?? null,
-      to_location: payload.to_location ?? null
+      from_location: payload.from_location ?? payload.departure ?? null,
+      to_location: payload.to_location ?? payload.arrival ?? null
     })
     .select('*')
     .single();
@@ -749,12 +817,12 @@ export async function updateLogEntry(logId, payload) {
   const { error } = await supabase
     .from('logbook_entries')
     .update({
-      trip_date: payload.date,
+      trip_date: payload.date ?? payload.trip_date,
       title: payload.title ?? 'Trip',
       notes: payload.notes ?? null,
       hours: payload.hours ?? null,
-      from_location: payload.from_location ?? null,
-      to_location: payload.to_location ?? null
+      from_location: payload.from_location ?? payload.departure ?? null,
+      to_location: payload.to_location ?? payload.arrival ?? null
     })
     .eq('id', logId);
 
@@ -776,6 +844,262 @@ export async function deleteLogEntry(logId) {
     .eq('id', logId);
   if (error) {
     console.error('deleteLogEntry error:', error);
+  }
+}
+
+// ----------------- Haulout entries -----------------
+
+export async function getHaulouts(boatId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return hauloutStorage.getAll(boatId);
+  }
+
+  const { data, error } = await supabase
+    .from('haulout_entries')
+    .select('*')
+    .eq('boat_id', boatId)
+    .order('haulout_date', { ascending: false });
+
+  if (error) {
+    console.error('getHaulouts error:', error);
+    return hauloutStorage.getAll(boatId);
+  }
+
+  return data || [];
+}
+
+export async function createHaulout(boatId, payload) {
+  if (await isBoatArchived(boatId)) return null;
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    const saved = hauloutStorage.save(payload, boatId);
+    return saved ? hauloutStorage.getAll(boatId).find((e) => e.haulout_date === payload.haulout_date) : null;
+  }
+
+  const row = {
+    boat_id: boatId,
+    owner_id: session.user.id,
+    haulout_date: payload.haulout_date,
+    launch_date: payload.launch_date || null,
+    yard_marina: payload.yard_marina || null,
+    reason_for_liftout: payload.reason_for_liftout || null,
+    antifoul_brand: payload.antifoul_brand || null,
+    antifoul_product_name: payload.antifoul_product_name || null,
+    antifoul_type: payload.antifoul_type || null,
+    antifoul_colour: payload.antifoul_colour || null,
+    antifoul_coats: payload.antifoul_coats ?? null,
+    antifoul_last_stripped_blasted: payload.antifoul_last_stripped_blasted ?? null,
+    antifoul_applied_by: payload.antifoul_applied_by || null,
+    anode_material: payload.anode_material || null,
+    anodes_replaced: payload.anodes_replaced ?? null,
+    anode_locations: payload.anode_locations || null,
+    old_anode_condition: payload.old_anode_condition || null,
+    props_condition: payload.props_condition || null,
+    props_serviced: payload.props_serviced ?? null,
+    shaft_condition: payload.shaft_condition || null,
+    shaft_issues: payload.shaft_issues || null,
+    cutless_bearings_checked: payload.cutless_bearings_checked || null,
+    rudder_steering_checked: payload.rudder_steering_checked || null,
+    rudder_steering_issues: payload.rudder_steering_issues || null,
+    seacocks_inspected: payload.seacocks_inspected || null,
+    seacocks_replaced: payload.seacocks_replaced ?? null,
+    seacock_material: payload.seacock_material || null,
+    seacocks_issues: payload.seacocks_issues || null,
+    hull_condition: payload.hull_condition || null,
+    osmosis_check: payload.osmosis_check || null,
+    keel_skeg_trim_tabs_checked: payload.keel_skeg_trim_tabs_checked || null,
+    hull_issues: payload.hull_issues || null,
+    osmosis_notes: payload.osmosis_notes || null,
+    keel_skeg_trim_tabs_notes: payload.keel_skeg_trim_tabs_notes || null,
+    yard_contractor_name: payload.yard_contractor_name || null,
+    total_cost: payload.total_cost ?? null,
+    general_notes: payload.general_notes || null,
+    recommendations_next_haulout: payload.recommendations_next_haulout || null,
+    next_haulout_due: payload.next_haulout_due || null
+  };
+
+  const { data, error } = await supabase
+    .from('haulout_entries')
+    .insert(row)
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('createHaulout error:', error);
+    return null;
+  }
+  return data;
+}
+
+export async function updateHaulout(hauloutId, payload) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    const existing = hauloutStorage.get(hauloutId) || { id: hauloutId };
+    hauloutStorage.save({ ...existing, ...payload }, existing.boat_id);
+    return;
+  }
+
+  const updateRow = {
+    haulout_date: payload.haulout_date,
+    launch_date: payload.launch_date ?? null,
+    yard_marina: payload.yard_marina ?? null,
+    reason_for_liftout: payload.reason_for_liftout ?? null,
+    antifoul_brand: payload.antifoul_brand ?? null,
+    antifoul_product_name: payload.antifoul_product_name ?? null,
+    antifoul_type: payload.antifoul_type ?? null,
+    antifoul_colour: payload.antifoul_colour ?? null,
+    antifoul_coats: payload.antifoul_coats ?? null,
+    antifoul_last_stripped_blasted: payload.antifoul_last_stripped_blasted ?? null,
+    antifoul_applied_by: payload.antifoul_applied_by ?? null,
+    anode_material: payload.anode_material ?? null,
+    anodes_replaced: payload.anodes_replaced ?? null,
+    anode_locations: payload.anode_locations ?? null,
+    old_anode_condition: payload.old_anode_condition ?? null,
+    props_condition: payload.props_condition ?? null,
+    props_serviced: payload.props_serviced ?? null,
+    shaft_condition: payload.shaft_condition ?? null,
+    shaft_issues: payload.shaft_issues ?? null,
+    cutless_bearings_checked: payload.cutless_bearings_checked ?? null,
+    rudder_steering_checked: payload.rudder_steering_checked ?? null,
+    rudder_steering_issues: payload.rudder_steering_issues ?? null,
+    seacocks_inspected: payload.seacocks_inspected ?? null,
+    seacocks_replaced: payload.seacocks_replaced ?? null,
+    seacock_material: payload.seacock_material ?? null,
+    seacocks_issues: payload.seacocks_issues ?? null,
+    hull_condition: payload.hull_condition ?? null,
+    osmosis_check: payload.osmosis_check ?? null,
+    keel_skeg_trim_tabs_checked: payload.keel_skeg_trim_tabs_checked ?? null,
+    hull_issues: payload.hull_issues ?? null,
+    osmosis_notes: payload.osmosis_notes ?? null,
+    keel_skeg_trim_tabs_notes: payload.keel_skeg_trim_tabs_notes ?? null,
+    yard_contractor_name: payload.yard_contractor_name ?? null,
+    total_cost: payload.total_cost ?? null,
+    general_notes: payload.general_notes ?? null,
+    recommendations_next_haulout: payload.recommendations_next_haulout ?? null,
+    next_haulout_due: payload.next_haulout_due ?? null
+  };
+
+  const { error } = await supabase
+    .from('haulout_entries')
+    .update(updateRow)
+    .eq('id', hauloutId);
+
+  if (error) {
+    console.error('updateHaulout error:', error);
+  }
+}
+
+export async function deleteHaulout(hauloutId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    hauloutStorage.delete(hauloutId);
+    return;
+  }
+
+  const { error } = await supabase
+    .from('haulout_entries')
+    .delete()
+    .eq('id', hauloutId);
+  if (error) {
+    console.error('deleteHaulout error:', error);
+  }
+}
+
+// ----------------- Calendar events -----------------
+
+export async function getCalendarEvents(boatId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return calendarEventsStorage.getAll(boatId);
+  }
+
+  const { data, error } = await supabase
+    .from('calendar_events')
+    .select('*')
+    .eq('boat_id', boatId)
+    .order('date', { ascending: true });
+
+  if (error) {
+    console.error('getCalendarEvents error:', error);
+    return calendarEventsStorage.getAll(boatId);
+  }
+
+  return (data || []).map((e) => ({
+    ...e,
+    time: e.time ? (typeof e.time === 'string' ? e.time.slice(0, 5) : e.time) : null
+  }));
+}
+
+export async function createCalendarEvent(boatId, payload) {
+  if (await isBoatArchived(boatId)) return null;
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    const event = { ...payload, boat_id: boatId };
+    calendarEventsStorage.save(event, boatId);
+    return calendarEventsStorage.getAll(boatId).find((e) => e.date === payload.date && e.title === payload.title) || event;
+  }
+
+  const { data, error } = await supabase
+    .from('calendar_events')
+    .insert({
+      boat_id: boatId,
+      owner_id: session.user.id,
+      date: payload.date,
+      time: payload.time || null,
+      title: payload.title,
+      notes: payload.notes || null,
+      repeat: payload.repeat || null,
+      repeat_until: payload.repeat_until || null
+    })
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('createCalendarEvent error:', error);
+    return null;
+  }
+  return data;
+}
+
+export async function updateCalendarEvent(eventId, payload) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    const existing = calendarEventsStorage.get(eventId) || { id: eventId };
+    calendarEventsStorage.save({ ...existing, ...payload }, existing.boat_id);
+    return;
+  }
+
+  const { error } = await supabase
+    .from('calendar_events')
+    .update({
+      date: payload.date,
+      time: payload.time ?? null,
+      title: payload.title,
+      notes: payload.notes ?? null,
+      repeat: payload.repeat ?? null,
+      repeat_until: payload.repeat_until ?? null
+    })
+    .eq('id', eventId);
+
+  if (error) {
+    console.error('updateCalendarEvent error:', error);
+  }
+}
+
+export async function deleteCalendarEvent(eventId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    calendarEventsStorage.delete(eventId);
+    return;
+  }
+
+  const { error } = await supabase
+    .from('calendar_events')
+    .delete()
+    .eq('id', eventId);
+  if (error) {
+    console.error('deleteCalendarEvent error:', error);
   }
 }
 

@@ -5,8 +5,7 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader } from '../components/header.js';
-import { isBoatArchived } from '../lib/dataService.js';
-import { serviceHistoryStorage, enginesStorage } from '../lib/storage.js';
+import { isBoatArchived, getServiceEntries, createServiceEntry, updateServiceEntry, deleteServiceEntry, getEngines } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
 
 let editingId = null;
@@ -395,9 +394,9 @@ function loadFilters() {
   });
 }
 
-function loadServices() {
+async function loadServices() {
   const listContainer = document.getElementById('service-list');
-  let services = serviceHistoryStorage.getAll(currentBoatId);
+  let services = currentBoatId ? await getServiceEntries(currentBoatId) : [];
 
   if (filterEngineId) {
     services = services.filter(s => s.engine_id === filterEngineId);
@@ -410,10 +409,11 @@ function loadServices() {
         <p>No service entries yet</p>
       </div>
     `;
+    attachHandlers();
     return;
   }
 
-  const engines = enginesStorage.getAll();
+  const engines = currentBoatId ? await getEngines(currentBoatId) : [];
   const getEngineLabel = (id) => {
     const engine = engines.find(e => e.id === id);
     return engine ? engine.label : 'Unknown Engine';
@@ -471,9 +471,9 @@ function attachHandlers() {
     showServiceForm();
   };
 
-  window.servicePageDelete = (id) => {
+  window.servicePageDelete = async (id) => {
     if (confirm('Delete this service entry?')) {
-      serviceHistoryStorage.delete(id);
+      await deleteServiceEntry(id);
       loadServices();
     }
   };
@@ -559,15 +559,15 @@ function attachServiceAttachmentHandlers() {
   });
 }
 
-function showServiceForm() {
-  // Ensure we have an ID even for new entries so uploads can be attached immediately
-  const existingEntry = editingId ? serviceHistoryStorage.get(editingId) : null;
+async function showServiceForm() {
+  const services = currentBoatId ? await getServiceEntries(currentBoatId) : [];
+  const existingEntry = editingId ? services.find((s) => s.id === editingId) : null;
   if (!editingId) {
     editingId = `service_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
   const entry = existingEntry;
-  const mode = entry?.mode || 'Professional'; // Default existing entries to Professional
-  const engines = enginesStorage.getAll();
+  const mode = entry?.mode || 'Professional';
+  const engines = currentBoatId ? await getEngines(currentBoatId) : [];
   const serviceTypes = ['Oil Change', 'Filter Change', 'Annual Service', 'Winterization', 'Other'];
 
   const selectedEngine = entry?.engine_id ? engines.find(e => e.id === entry.engine_id) : null;
@@ -993,7 +993,7 @@ function loadServiceFormAttachments(serviceId) {
   attachServiceAttachmentHandlers();
 }
 
-function saveService() {
+async function saveService() {
   const serviceMode = document.querySelector('input[name="service_mode"]:checked')?.value || 'Professional';
   let diyChecklist = null;
   let diyMeta = null;
@@ -1053,7 +1053,19 @@ function saveService() {
     pro_meta: proMeta
   };
 
-  serviceHistoryStorage.save(entry, currentBoatId);
+  const payload = {
+    date: entry.date,
+    service_type: entry.service_type,
+    notes: typeof entry.notes === 'string' && !entry.notes.startsWith('{') ? entry.notes : JSON.stringify(entry),
+    cost: entry.cost,
+    provider: entry.provider,
+    engine_id: entry.engine_id
+  };
+  if (editingId && String(editingId).includes('-')) {
+    await updateServiceEntry(editingId, payload);
+  } else {
+    await createServiceEntry(currentBoatId, payload);
+  }
   document.getElementById('service-form-card').remove();
   editingId = null;
   loadServices();

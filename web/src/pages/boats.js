@@ -72,7 +72,10 @@ function render() {
 
   const pageHeader = document.createElement('div');
   pageHeader.className = 'page-header';
-  pageHeader.innerHTML = `<p class="text-muted">Your boats</p>`;
+  pageHeader.innerHTML = `
+    <p class="text-muted">Your boats</p>
+    <p class="boats-limit-hint text-muted">You can have up to ${BOAT_LIMITS.MAX_ACTIVE_BOATS} active and ${BOAT_LIMITS.MAX_ARCHIVED_BOATS} archived boats (${BOAT_LIMITS.MAX_TOTAL_BOATS} total).</p>
+  `;
 
   const addBtn = document.createElement('button');
   addBtn.className = 'btn-primary';
@@ -122,6 +125,8 @@ async function loadBoats() {
         <p class="text-muted">Add your first boat to get started</p>
       </div>
     `;
+    updateAddBoatButton([]);
+    attachHandlers();
     return;
   }
 
@@ -174,19 +179,31 @@ async function loadBoats() {
     }
   });
 
-  updateAddBoatButton(boats.length);
+  updateAddBoatButton(boats);
   attachHandlers();
 }
 
-async function updateAddBoatButton(boatCount) {
+async function updateAddBoatButton(boatsList) {
   const addBtn = document.getElementById('boats-add-btn');
   if (!addBtn) return;
-  const counts = boatCount !== undefined ? { total: boatCount } : await getBoatCounts();
+  const counts = Array.isArray(boatsList)
+    ? {
+        total: boatsList.length,
+        active: boatsList.filter((b) => (b.status || 'active') === 'active').length,
+        archived: boatsList.filter((b) => b.status === 'archived').length
+      }
+    : await getBoatCounts();
   const atTotalLimit = counts.total >= BOAT_LIMITS.MAX_TOTAL_BOATS;
-  addBtn.disabled = atTotalLimit;
-  addBtn.title = atTotalLimit
-    ? 'You have the maximum number of boats. Archive or delete a boat to add another.'
-    : 'Add a new boat';
+  const atActiveLimit = counts.active >= BOAT_LIMITS.MAX_ACTIVE_BOATS;
+  const cannotAdd = atTotalLimit || atActiveLimit;
+  addBtn.disabled = cannotAdd;
+  if (atActiveLimit && !atTotalLimit) {
+    addBtn.title = `You have the maximum number of active boats (${BOAT_LIMITS.MAX_ACTIVE_BOATS}). Archive a boat to add another.`;
+  } else if (atTotalLimit) {
+    addBtn.title = `You have the maximum number of boats (${BOAT_LIMITS.MAX_TOTAL_BOATS}). Archive or delete a boat to add another.`;
+  } else {
+    addBtn.title = 'Add a new boat';
+  }
 }
 
 function attachHandlers() {
@@ -342,8 +359,12 @@ async function saveBoat() {
 
   // New boat
   const result = await createBoatApi({ boat_name: boat.boat_name, make_model: boat.make_model });
+  if (result && result.error === 'active_limit') {
+    alert(`You have the maximum number of active boats (${BOAT_LIMITS.MAX_ACTIVE_BOATS}). Archive a boat to add another.`);
+    return;
+  }
   if (result && result.error === 'total_limit') {
-    alert('You have the maximum number of boats. Archive or delete a boat to add another.');
+    alert(`You have the maximum number of boats (${BOAT_LIMITS.MAX_TOTAL_BOATS}). Archive or delete a boat to add another.`);
     return;
   }
   const dbBoat = result && result.id ? result : null;
