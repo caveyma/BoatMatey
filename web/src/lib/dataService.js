@@ -197,23 +197,59 @@ export async function updateBoat(boatId, payload) {
     return;
   }
 
+  const updatePayload = {
+    name: payload.boat_name,
+    make: payload.make_model || null,
+    model: null,
+    year: payload.year ?? null,
+    hull_id: payload.hull_id ?? null,
+    length_m: payload.length ?? null,
+    beam_m: payload.beam ?? null,
+    draft_m: payload.draft ?? null
+  };
+  if (payload.photo_url !== undefined) {
+    updatePayload.photo_url = payload.photo_url || null;
+  }
+
   const { error } = await supabase
     .from('boats')
-    .update({
-      name: payload.boat_name,
-      make: payload.make_model || null,
-      model: null,
-      year: payload.year ?? null,
-      hull_id: payload.hull_id ?? null,
-      length_m: payload.length ?? null,
-      beam_m: payload.beam ?? null,
-      draft_m: payload.draft ?? null
-    })
+    .update(updatePayload)
     .eq('id', boatId);
 
   if (error) {
     console.error('updateBoat error:', error);
   }
+}
+
+/**
+ * Upload boat photo to Supabase Storage (boat-photos bucket) and return public URL.
+ * Caller should then update the boat with photo_url and avoid storing base64 in localStorage.
+ */
+export async function uploadBoatPhoto(boatId, file) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return null;
+  }
+
+  const bucket = 'boat-photos';
+  const userId = session.user.id;
+  const ext = (file.name && file.name.split('.').pop()) || 'jpg';
+  const path = `${userId}/${boatId}/boat-photo.${ext.replace(/[^a-zA-Z0-9]/g, '')}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(bucket)
+    .upload(path, file, {
+      contentType: file.type || 'image/jpeg',
+      upsert: true
+    });
+
+  if (uploadError) {
+    console.error('Supabase boat photo upload error:', uploadError);
+    return null;
+  }
+
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  return data?.publicUrl || null;
 }
 
 export async function deleteBoat(boatId) {
