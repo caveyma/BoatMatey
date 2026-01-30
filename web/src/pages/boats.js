@@ -7,7 +7,16 @@ import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { renderLogo } from '../components/logo.js';
 import { boatsStorage } from '../lib/storage.js';
-import { getBoats as getBoatsFromApi, createBoat as createBoatApi, updateBoat as updateBoatApi, deleteBoat as deleteBoatApi } from '../lib/dataService.js';
+import {
+  getBoats as getBoatsFromApi,
+  createBoat as createBoatApi,
+  updateBoat as updateBoatApi,
+  deleteBoat as deleteBoatApi,
+  archiveBoat as archiveBoatApi,
+  reactivateBoat as reactivateBoatApi,
+  getBoatCounts,
+  BOAT_LIMITS
+} from '../lib/dataService.js';
 
 let editingBoatId = null;
 
@@ -16,8 +25,8 @@ import { createYachtHeader } from '../components/header.js';
 function render() {
   const wrapper = document.createElement('div');
   
-  // Yacht header
-  const header = createYachtHeader('');
+  // Yacht header with back button (browser history)
+  const header = createYachtHeader('', true, () => window.history.back());
   wrapper.appendChild(header);
   
   // Page content
@@ -33,6 +42,7 @@ function render() {
 
   const addBtn = document.createElement('button');
   addBtn.className = 'btn-primary';
+  addBtn.id = 'boats-add-btn';
   addBtn.innerHTML = `${renderIcon('plus')} Add Boat`;
   addBtn.onclick = () => showBoatForm();
   addBtn.style.marginBottom = 'var(--spacing-lg)';
@@ -61,6 +71,8 @@ async function loadBoats() {
 
   try {
     boats = await getBoatsFromApi();
+    // Keep local storage in sync with merged data (API + local photo) so boat dashboard shows photos
+    boats.forEach((b) => boatsStorage.save(b));
   } catch (e) {
     console.error('Error loading boats from Supabase, falling back to local storage:', e);
     boats = boatsStorage.getAll();
@@ -80,23 +92,32 @@ async function loadBoats() {
   }
 
   boats.forEach(boat => {
+    const isArchived = (boat.status || 'active') === 'archived';
     const card = document.createElement('div');
-    card.className = 'boat-card';
-    
-    // Boat photo or placeholder
+    card.className = 'boat-card' + (isArchived ? ' boat-card-archived' : '');
+
     const photoUrl = boat.photo_url || boat.photo_data || null;
-    const photoHtml = photoUrl 
+    const photoHtml = photoUrl
       ? `<img src="${photoUrl}" alt="${boat.boat_name || 'Boat'}" class="boat-card-photo">`
       : `<div class="boat-card-photo-placeholder">${renderIcon('boat')}</div>`;
+
+    const statusBadge = isArchived ? '<span class="boat-card-badge boat-card-badge-archived">Archived</span>' : '';
+    const archiveOrActivate = isArchived
+      ? `<button class="boat-card-action-btn" onclick="event.stopPropagation(); boatsPageActivate('${boat.id}')" title="Activate">${renderIcon('refresh')}</button>`
+      : `<button class="boat-card-action-btn" onclick="event.stopPropagation(); boatsPageArchive('${boat.id}')" title="Archive">${renderIcon('archive')}</button>`;
 
     card.innerHTML = `
       ${photoHtml}
       <div class="boat-card-content">
-        <div class="boat-card-title">${boat.boat_name || 'Unnamed Boat'}</div>
+        <div class="boat-card-title-row">
+          <div class="boat-card-title">${boat.boat_name || 'Unnamed Boat'}</div>
+          ${statusBadge}
+        </div>
         <div class="boat-card-subtitle">${boat.make_model || 'No details'}</div>
       </div>
       <div class="boat-card-actions">
-        <button class="boat-card-action-btn" onclick="event.stopPropagation(); boatsPageEdit('${boat.id}')" title="Edit">${renderIcon('edit')}</button>
+        ${!isArchived ? `<button class="boat-card-action-btn" onclick="event.stopPropagation(); boatsPageEdit('${boat.id}')" title="Edit">${renderIcon('edit')}</button>` : ''}
+        ${archiveOrActivate}
         <button class="boat-card-action-btn danger" onclick="event.stopPropagation(); boatsPageDelete('${boat.id}')" title="Delete">${renderIcon('trash')}</button>
       </div>
     `;
@@ -106,9 +127,32 @@ async function loadBoats() {
     };
 
     grid.appendChild(card);
+
+    // If image fails to load (e.g. data URL quota, CORS), show placeholder
+    const img = card.querySelector('.boat-card-photo');
+    if (img) {
+      img.onerror = function () {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'boat-card-photo-placeholder';
+        placeholder.innerHTML = renderIcon('boat');
+        this.replaceWith(placeholder);
+      };
+    }
   });
 
+  updateAddBoatButton(boats.length);
   attachHandlers();
+}
+
+async function updateAddBoatButton(boatCount) {
+  const addBtn = document.getElementById('boats-add-btn');
+  if (!addBtn) return;
+  const counts = boatCount !== undefined ? { total: boatCount } : await getBoatCounts();
+  const atTotalLimit = counts.total >= BOAT_LIMITS.MAX_TOTAL_BOATS;
+  addBtn.disabled = atTotalLimit;
+  addBtn.title = atTotalLimit
+    ? 'You have the maximum number of boats. Archive or delete a boat to add another.'
+    : 'Add a new boat';
 }
 
 function attachHandlers() {
@@ -120,10 +164,40 @@ function attachHandlers() {
   window.boatsPageDelete = (id) => {
     if (confirm('Delete this boat? All associated data will be deleted.')) {
       deleteBoatApi(id).finally(() => {
-        boatsStorage.delete(id); // keep local copy roughly in sync
+        boatsStorage.delete(id);
         loadBoats();
       });
     }
+  };
+
+  window.boatsPageArchive = async (id) => {
+    const message = `Archiving keeps all essential history such as logs, services, and boat details. Reference files like manuals, links, and equipment documents are removed to manage storage. Continue?`;
+    if (!confirm(message)) return;
+    const result = await archiveBoatApi(id);
+    if (result && result.error) {
+      if (result.error === 'archived_limit') {
+        alert('You have the maximum number of archived boats. Delete an archived boat to archive another.');
+      } else {
+        alert(result.error);
+      }
+      return;
+    }
+    boatsStorage.save(boatsStorage.get(id) ? { ...boatsStorage.get(id), status: 'archived' } : { id, status: 'archived' });
+    loadBoats();
+  };
+
+  window.boatsPageActivate = async (id) => {
+    const result = await reactivateBoatApi(id);
+    if (result && result.error) {
+      if (result.error === 'active_limit') {
+        alert(`You have the maximum number of active boats. Archive one to reactivate this boat.`);
+      } else {
+        alert(result.error);
+      }
+      return;
+    }
+    boatsStorage.save(boatsStorage.get(id) ? { ...boatsStorage.get(id), status: 'active' } : { id, status: 'active' });
+    loadBoats();
   };
 }
 
@@ -187,7 +261,7 @@ function showBoatForm() {
   };
 }
 
-function saveBoat() {
+async function saveBoat() {
   const boat = {
     id: editingBoatId,
     boat_name: document.getElementById('boat_name').value,
@@ -198,64 +272,66 @@ function saveBoat() {
   const photoInput = document.getElementById('boat_photo');
   if (photoInput.files[0]) {
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       boat.photo_data = event.target.result;
-      boat.photo_url = null; // Will be set if using external storage later
+      boat.photo_url = null;
       boatsStorage.save(boat);
 
-      const action = editingBoatId
-        ? updateBoatApi(editingBoatId, {
-            boat_name: boat.boat_name,
-            make_model: boat.make_model
-          })
-        : createBoatApi({
-            boat_name: boat.boat_name,
-            make_model: boat.make_model
-          }).then((dbBoat) => {
-            if (dbBoat && dbBoat.id) {
-              // Re-save with Supabase UUID so other pages can find it
-              boatsStorage.delete(boat.id);
-              boatsStorage.save({ ...boat, id: dbBoat.id });
-            }
-          });
+      if (editingBoatId) {
+        await updateBoatApi(editingBoatId, { boat_name: boat.boat_name, make_model: boat.make_model });
+        document.getElementById('boat-form-card').remove();
+        editingBoatId = null;
+        loadBoats();
+        return;
+      }
 
-      Promise.resolve(action).finally(() => {
+      const result = await createBoatApi({ boat_name: boat.boat_name, make_model: boat.make_model });
+      if (result && result.error === 'total_limit') {
+        alert('You have the maximum number of boats. Archive or delete a boat to add another.');
+        return;
+      }
+      const dbBoat = result && result.id ? result : null;
+      if (dbBoat && dbBoat.id) {
+        boatsStorage.delete(boat.id);
+        boatsStorage.save({ ...boat, id: dbBoat.id, status: 'active' });
+      }
+      document.getElementById('boat-form-card').remove();
+      editingBoatId = null;
+      loadBoats();
+    };
+    reader.readAsDataURL(photoInput.files[0]);
+  } else {
+    if (editingBoatId) {
+      const existing = boatsStorage.get(editingBoatId);
+      if (existing?.photo_data) boat.photo_data = existing.photo_data;
+    }
+    boatsStorage.save(boat);
+
+    if (editingBoatId) {
+      updateBoatApi(editingBoatId, { boat_name: boat.boat_name, make_model: boat.make_model }).finally(() => {
         document.getElementById('boat-form-card').remove();
         editingBoatId = null;
         loadBoats();
       });
-    };
-    reader.readAsDataURL(photoInput.files[0]);
-  } else {
-    // Keep existing photo if editing
-    if (editingBoatId) {
-      const existing = boatsStorage.get(editingBoatId);
-      if (existing?.photo_data) {
-        boat.photo_data = existing.photo_data;
-      }
+      return;
     }
-    boatsStorage.save(boat);
 
-    const action = editingBoatId
-      ? updateBoatApi(editingBoatId, {
-          boat_name: boat.boat_name,
-          make_model: boat.make_model
-        })
-      : createBoatApi({
-          boat_name: boat.boat_name,
-          make_model: boat.make_model
-        }).then((dbBoat) => {
-          if (dbBoat && dbBoat.id) {
-            boatsStorage.delete(boat.id);
-            boatsStorage.save({ ...boat, id: dbBoat.id });
-          }
-        });
-
-    Promise.resolve(action).finally(() => {
-      document.getElementById('boat-form-card').remove();
-      editingBoatId = null;
-      loadBoats();
+    const result = await createBoatApi({
+      boat_name: boat.boat_name,
+      make_model: boat.make_model
     });
+    if (result && result.error === 'total_limit') {
+      alert('You have the maximum number of boats. Archive or delete a boat to add another.');
+      return;
+    }
+    const dbBoat = result && result.id ? result : null;
+    if (dbBoat && dbBoat.id) {
+      boatsStorage.delete(boat.id);
+      boatsStorage.save({ ...boat, id: dbBoat.id, status: 'active' });
+    }
+    document.getElementById('boat-form-card').remove();
+    editingBoatId = null;
+    loadBoats();
   }
 }
 

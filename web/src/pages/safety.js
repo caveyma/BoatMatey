@@ -5,6 +5,7 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader } from '../components/header.js';
+import { isBoatArchived } from '../lib/dataService.js';
 import { safetyEquipmentStorage } from '../lib/storage.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
 
@@ -36,6 +37,7 @@ function render(params = {}) {
 
   const addBtn = document.createElement('button');
   addBtn.className = 'btn-primary';
+  addBtn.id = 'safety-add-btn';
   addBtn.innerHTML = `${renderIcon('plus')} Add Equipment`;
   addBtn.onclick = () => showSafetyForm();
 
@@ -59,11 +61,15 @@ function render(params = {}) {
   return wrapper;
 }
 
-function onMount(params = {}) {
+async function onMount(params = {}) {
   const boatId = params?.id || window.routeParams?.id;
   if (boatId) {
     currentBoatId = boatId;
   }
+
+  safetyArchived = currentBoatId ? await isBoatArchived(currentBoatId) : false;
+  const addBtn = document.getElementById('safety-add-btn');
+  if (addBtn && safetyArchived) addBtn.style.display = 'none';
 
   window.navigate = navigate;
 
@@ -151,8 +157,8 @@ function loadSafetyEquipment() {
           ${expiryDate ? `<span class="badge ${isExpired ? 'badge-error' : isExpiringSoon ? 'badge-warning' : 'badge-success'}">
             ${isExpired ? 'Expired' : isExpiringSoon ? 'Expiring Soon' : 'Valid'}
           </span>` : ''}
-          <button class="btn-link" onclick="safetyPageEdit('${item.id}')">${renderIcon('edit')}</button>
-          <button class="btn-link btn-danger" onclick="safetyPageDelete('${item.id}')">${renderIcon('trash')}</button>
+          ${!safetyArchived ? `<button class="btn-link" onclick="safetyPageEdit('${item.id}')">${renderIcon('edit')}</button>
+          <button class="btn-link btn-danger" onclick="safetyPageDelete('${item.id}')">${renderIcon('trash')}</button>` : ''}
         </div>
       </div>
       <div>
@@ -163,9 +169,9 @@ function loadSafetyEquipment() {
         <div class="safety-attachments" data-safety-id="${item.id}">
           <h4 style="margin-top: 0.75rem; margin-bottom: 0.25rem;">Attachments</h4>
           <div class="attachment-list" id="safety-attachments-list-${item.id}"></div>
-          <button type="button" class="btn-link" onclick="safetyPageAddAttachment('${item.id}')">
+          ${!safetyArchived ? `<button type="button" class="btn-link" onclick="safetyPageAddAttachment('${item.id}')">
             ${renderIcon('plus')} Add Attachment (max ${LIMITED_UPLOADS_PER_ENTITY}, 2 MB each)
-          </button>
+          </button>` : ''}
         </div>
       </div>
     </div>

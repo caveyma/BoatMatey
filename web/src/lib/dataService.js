@@ -5,8 +5,20 @@ import {
   serviceHistoryStorage,
   navEquipmentStorage,
   safetyEquipmentStorage,
-  shipsLogStorage
+  shipsLogStorage,
+  linksStorage,
+  uploadsStorage
 } from './storage.js';
+
+// Boat limits (design allows future tiers to override without schema change)
+export const BOAT_LIMITS = {
+  MAX_ACTIVE_BOATS: 2,
+  MAX_ARCHIVED_BOATS: 5,
+  MAX_TOTAL_BOATS: 7
+};
+
+// Entity types whose files are removed on archive (only service + logbook keep files)
+const ARCHIVE_REMOVE_FILE_ENTITY_TYPES = ['boat', 'engine', 'equipment', 'haulout'];
 
 // Small helper: returns current auth session (or null)
 export async function getSession() {
@@ -41,7 +53,7 @@ export async function getBoats() {
 
   if (error) {
     console.error('getBoats error:', error);
-    return boatsStorage.getAll();
+    return boatsStorage.getAll().map((b) => ({ ...b, status: b.status || 'active' }));
   }
 
   // Map DB shape → UI shape
@@ -56,6 +68,7 @@ export async function getBoats() {
       length: b.length_m,
       beam: b.beam_m,
       draft: b.draft_m,
+      status: b.status ?? 'active',
       created_at: b.created_at,
       updated_at: b.updated_at,
       photo_url: b.photo_url ?? local.photo_url ?? null,
@@ -78,9 +91,11 @@ export async function getBoat(boatId) {
 
   if (error || !data) {
     console.error('getBoat error:', error);
-    return boatsStorage.get(boatId);
+    const localBoat = boatsStorage.get(boatId);
+    return localBoat ? { ...localBoat, status: localBoat.status || 'active' } : null;
   }
 
+  const local = boatsStorage.get(boatId) || {};
   return {
     id: data.id,
     boat_name: data.name,
@@ -90,19 +105,62 @@ export async function getBoat(boatId) {
     length: data.length_m,
     beam: data.beam_m,
     draft: data.draft_m,
+    status: data.status ?? 'active',
     created_at: data.created_at,
-    updated_at: data.updated_at
+    updated_at: data.updated_at,
+    photo_url: data.photo_url ?? local.photo_url ?? null,
+    photo_data: local.photo_data ?? null
   };
+}
+
+/** Returns true if the boat is archived (read-only). */
+export async function isBoatArchived(boatId) {
+  if (!boatId) return false;
+  const boat = await getBoat(boatId);
+  return boat ? (boat.status || 'active') === 'archived' : false;
+}
+
+/** Returns { active, archived, total } for current user. Used for limit checks. */
+export async function getBoatCounts() {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    const all = boatsStorage.getAll();
+    const active = all.filter((b) => (b.status || 'active') === 'active').length;
+    const archived = all.filter((b) => b.status === 'archived').length;
+    return { active, archived, total: all.length };
+  }
+  const { data, error } = await supabase
+    .from('boats')
+    .select('status');
+  if (error) {
+    console.error('getBoatCounts error:', error);
+    return { active: 0, archived: 0, total: 0 };
+  }
+  const active = data.filter((b) => (b.status || 'active') === 'active').length;
+  const archived = data.filter((b) => b.status === 'archived').length;
+  return { active, archived, total: data.length };
 }
 
 export async function createBoat(payload) {
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
-    // Local fallback
-    return boatsStorage.save({
+    const all = boatsStorage.getAll();
+    if (all.length >= BOAT_LIMITS.MAX_TOTAL_BOATS) {
+      return { error: 'total_limit' };
+    }
+    const boat = {
       boat_name: payload.boat_name,
-      make_model: payload.make_model
-    });
+      make_model: payload.make_model,
+      status: 'active'
+    };
+    boatsStorage.save(boat);
+    const created = boatsStorage.getAll().find((b) => b.boat_name === boat.boat_name && b.status === 'active');
+    return created ?? boat;
+  }
+
+  const counts = await getBoatCounts();
+  if (counts.total >= BOAT_LIMITS.MAX_TOTAL_BOATS) {
+    return { error: 'total_limit' };
   }
 
   const ownerId = session.user.id;
@@ -117,7 +175,8 @@ export async function createBoat(payload) {
       hull_id: payload.hull_id ?? null,
       length_m: payload.length ?? null,
       beam_m: payload.beam ?? null,
-      draft_m: payload.draft ?? null
+      draft_m: payload.draft ?? null,
+      status: 'active'
     })
     .select('*')
     .single();
@@ -170,6 +229,143 @@ export async function deleteBoat(boatId) {
   }
 }
 
+/**
+ * Archive a boat: set status to archived, remove files from disallowed sections,
+ * remove all link records. Only Service History and Ship's Log keep files.
+ */
+export async function archiveBoat(boatId) {
+  const counts = await getBoatCounts();
+  if (counts.archived >= BOAT_LIMITS.MAX_ARCHIVED_BOATS) {
+    return { error: 'archived_limit' };
+  }
+
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    const boat = boatsStorage.get(boatId);
+    if (!boat) return { error: 'not_found' };
+    boatsStorage.save({ ...boat, status: 'archived' });
+    linksStorage.getAll(boatId).forEach((link) => linksStorage.delete(link.id));
+    const uploads = uploadsStorage.getAll().filter((u) => u.boat_id === boatId && ARCHIVE_REMOVE_FILE_ENTITY_TYPES.includes(u.entity_type));
+    uploads.forEach((u) => uploadsStorage.delete(u.id));
+    return {};
+  }
+
+  const attachments = await listAttachments(boatId);
+  const toRemove = attachments.filter((a) => ARCHIVE_REMOVE_FILE_ENTITY_TYPES.includes(a.entity_type));
+  const bucket = 'boatmatey-attachments';
+  for (const a of toRemove) {
+    if (a.path) {
+      try {
+        await supabase.storage.from(a.bucket || bucket).remove([a.path]);
+      } catch (e) {
+        console.warn('Archive: could not remove storage object', a.path, e);
+      }
+    }
+  }
+
+  const { error } = await supabase.rpc('archive_boat', { p_boat_id: boatId });
+  if (error) {
+    console.error('archiveBoat error:', error);
+    return { error: error.message };
+  }
+  return {};
+}
+
+/**
+ * Reactivate an archived boat. Caller must ensure active count is below limit.
+ */
+export async function reactivateBoat(boatId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    const boat = boatsStorage.get(boatId);
+    if (!boat) return { error: 'not_found' };
+    const counts = await getBoatCounts();
+    if (counts.active >= BOAT_LIMITS.MAX_ACTIVE_BOATS) return { error: 'active_limit' };
+    boatsStorage.save({ ...boat, status: 'active' });
+    return {};
+  }
+
+  const counts = await getBoatCounts();
+  if (counts.active >= BOAT_LIMITS.MAX_ACTIVE_BOATS) {
+    return { error: 'active_limit' };
+  }
+
+  const { error } = await supabase.rpc('reactivate_boat', { p_boat_id: boatId });
+  if (error) {
+    console.error('reactivateBoat error:', error);
+    return { error: error.message };
+  }
+  return {};
+}
+
+// ----------------- Links (boat_links when Supabase) -----------------
+
+export async function getLinks(boatId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return linksStorage.getAll(boatId);
+  }
+  const { data, error } = await supabase
+    .from('boat_links')
+    .select('*')
+    .eq('boat_id', boatId)
+    .order('created_at', { ascending: true });
+  if (error) {
+    console.error('getLinks error:', error);
+    return linksStorage.getAll(boatId);
+  }
+  return (data || []).map((row) => ({ id: row.id, boat_id: row.boat_id, name: row.name, url: row.url, created_at: row.created_at }));
+}
+
+export async function createLink(boatId, payload) {
+  if (await isBoatArchived(boatId)) return null;
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    const link = { name: payload.name, url: payload.url };
+    linksStorage.save(link, boatId);
+    return { id: link.id, boat_id: link.boat_id || boatId, name: link.name, url: link.url, created_at: link.created_at };
+  }
+  const { data, error } = await supabase
+    .from('boat_links')
+    .insert({
+      boat_id: boatId,
+      owner_id: session.user.id,
+      name: payload.name,
+      url: payload.url
+    })
+    .select('*')
+    .single();
+  if (error) {
+    console.error('createLink error:', error);
+    return null;
+  }
+  return { id: data.id, boat_id: data.boat_id, name: data.name, url: data.url, created_at: data.created_at };
+}
+
+export async function updateLink(linkId, boatId, payload) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    const existing = linksStorage.get(linkId);
+    if (existing) linksStorage.save({ ...existing, ...payload }, boatId);
+    return;
+  }
+  const { error } = await supabase
+    .from('boat_links')
+    .update({ name: payload.name, url: payload.url })
+    .eq('id', linkId);
+  if (error) console.error('updateLink error:', error);
+}
+
+export async function deleteLink(linkId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    linksStorage.delete(linkId);
+    return;
+  }
+  const { error } = await supabase.from('boat_links').delete().eq('id', linkId);
+  if (error) console.error('deleteLink error:', error);
+}
+
 // ----------------- Engines -----------------
 
 export async function getEngines(boatId) {
@@ -193,6 +389,7 @@ export async function getEngines(boatId) {
 }
 
 export async function createEngine(boatId, payload) {
+  if (await isBoatArchived(boatId)) return null;
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
     return enginesStorage.save(payload, boatId);
@@ -281,6 +478,7 @@ export async function getServiceEntries(boatId) {
 }
 
 export async function createServiceEntry(boatId, payload) {
+  if (await isBoatArchived(boatId)) return null;
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
     return serviceHistoryStorage.save(payload, boatId);
@@ -377,6 +575,7 @@ export async function getEquipment(boatId, category) {
 }
 
 export async function createEquipment(boatId, category, payload) {
+  if (await isBoatArchived(boatId)) return null;
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
     if (category === 'navigation') return navEquipmentStorage.save(payload, boatId);
@@ -475,6 +674,7 @@ export async function getLogbook(boatId) {
 }
 
 export async function createLogEntry(boatId, payload) {
+  if (await isBoatArchived(boatId)) return null;
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
     return shipsLogStorage.save(payload, boatId);
@@ -548,6 +748,10 @@ export async function deleteLogEntry(logId) {
 export async function uploadAttachment(boatId, file, entityType, entityId) {
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
+    return null;
+  }
+
+  if (await isBoatArchived(boatId)) {
     return null;
   }
 

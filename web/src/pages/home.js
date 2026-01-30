@@ -119,7 +119,7 @@ function render() {
     { id: 'safety', title: 'Safety Equipment', icon: 'shield', route: '/safety' },
     { id: 'log', title: "Ship's Log", icon: 'book', route: '/log' },
     { id: 'links', title: 'Web Links', icon: 'link', route: '/links' },
-    { id: 'account', title: 'Admin', icon: 'user', route: '/account' }
+    { id: 'account', title: 'Settings', icon: 'user', route: '/account' }
   ];
 
   cards.forEach(card => {

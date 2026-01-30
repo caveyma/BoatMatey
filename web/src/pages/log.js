@@ -5,12 +5,14 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader } from '../components/header.js';
+import { isBoatArchived } from '../lib/dataService.js';
 import { shipsLogStorage } from '../lib/storage.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOADS_PER_ENTITY } from '../lib/uploads.js';
 
 let editingId = null;
 let currentBoatId = null;
 let logFileInput = null;
+let logArchived = false;
 
 function render(params = {}) {
   // Get boat ID from route params
@@ -35,6 +37,7 @@ function render(params = {}) {
 
   const addBtn = document.createElement('button');
   addBtn.className = 'btn-primary';
+  addBtn.id = 'log-add-btn';
   addBtn.innerHTML = `${renderIcon('plus')} Add Trip`;
   addBtn.onclick = () => showLogForm();
 
@@ -233,8 +236,8 @@ function loadLogs() {
           <p class="text-muted">${entry.departure || 'N/A'} → ${entry.arrival || 'N/A'}</p>
         </div>
         <div>
-          <button class="btn-link" onclick="logPageEdit('${entry.id}')">${renderIcon('edit')}</button>
-          <button class="btn-link btn-danger" onclick="logPageDelete('${entry.id}')">${renderIcon('trash')}</button>
+          ${!logArchived ? `<button class="btn-link" onclick="logPageEdit('${entry.id}')">${renderIcon('edit')}</button>
+          <button class="btn-link btn-danger" onclick="logPageDelete('${entry.id}')">${renderIcon('trash')}</button>` : ''}
         </div>
       </div>
       <div>

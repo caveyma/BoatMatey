@@ -8,6 +8,7 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader } from '../components/header.js';
+import { isBoatArchived } from '../lib/dataService.js';
 import { hauloutStorage } from '../lib/storage.js';
 import {
   getUploads,
@@ -24,6 +25,7 @@ let editingId = null;
 let currentBoatId = null;
 let hauloutFileInput = null;
 let currentHauloutIdForUpload = null;
+let hauloutArchived = false;
 
 function render(params = {}) {
   // Get boat ID from route params
@@ -50,6 +52,7 @@ function render(params = {}) {
 
   const addBtn = document.createElement('button');
   addBtn.className = 'btn-primary';
+  addBtn.id = 'haulout-add-btn';
   addBtn.innerHTML = `${renderIcon('plus')} Add Haul-Out Record`;
   addBtn.onclick = () => showHauloutForm();
 
@@ -74,11 +77,15 @@ function render(params = {}) {
   return wrapper;
 }
 
-function onMount(params = {}) {
+async function onMount(params = {}) {
   const boatId = params?.id || window.routeParams?.id;
   if (boatId) {
     currentBoatId = boatId;
   }
+
+  hauloutArchived = currentBoatId ? await isBoatArchived(currentBoatId) : false;
+  const addBtn = document.getElementById('haulout-add-btn');
+  if (addBtn && hauloutArchived) addBtn.style.display = 'none';
 
   window.navigate = navigate;
 
@@ -166,8 +173,8 @@ function loadHaulouts() {
             <p class="text-muted">${yard} • ${reason}</p>
           </div>
           <div>
-            <button class="btn-link" onclick="hauloutPageEdit('${entry.id}')">${renderIcon('edit')}</button>
-            <button class="btn-link btn-danger" onclick="hauloutPageDelete('${entry.id}')">${renderIcon('trash')}</button>
+            ${!hauloutArchived ? `<button class="btn-link" onclick="hauloutPageEdit('${entry.id}')">${renderIcon('edit')}</button>
+            <button class="btn-link btn-danger" onclick="hauloutPageDelete('${entry.id}')">${renderIcon('trash')}</button>` : ''}
           </div>
         </div>
         <div>

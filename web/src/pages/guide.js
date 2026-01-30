@@ -113,7 +113,7 @@ export function render(params = {}) {
     </div>
 
     <div class="card">
-      <h3>Admin</h3>
+      <h3>Settings</h3>
       <p>
         Manage account-level settings such as your BoatMatey subscription and sign-in details.
         This is shared across all boats, not just the one you are viewing.

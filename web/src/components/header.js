@@ -3,9 +3,7 @@
  * Premium navy header bar for all pages
  */
 
-import { renderLogoMono } from './logo.js';
 import { navigate } from '../router.js';
-import { supabase } from '../lib/supabaseClient.js';
 
 export function createYachtHeader(title, showBack = false, backAction = null) {
   const header = document.createElement('div');
@@ -51,7 +49,7 @@ export function createYachtHeader(title, showBack = false, backAction = null) {
   header.appendChild(logoSection);
   header.appendChild(centerSection);
 
-  // Right-hand side actions: Sign out + Home
+  // Right-hand side actions: Settings + Home (Sign out is under Settings page)
   const actionsSection = document.createElement('div');
   actionsSection.className = 'yacht-header-actions';
   actionsSection.style.marginLeft = 'auto';
@@ -69,21 +67,12 @@ export function createYachtHeader(title, showBack = false, backAction = null) {
     btn.style.padding = '0';
   };
 
-  const signOutBtn = document.createElement('button');
-  signOutBtn.textContent = 'Sign out';
-  baseButtonStyles(signOutBtn);
-  signOutBtn.onclick = async (e) => {
+  const settingsBtn = document.createElement('button');
+  settingsBtn.textContent = 'Settings';
+  baseButtonStyles(settingsBtn);
+  settingsBtn.onclick = (e) => {
     e.preventDefault();
-    if (!confirm('Sign out of your BoatMatey account?')) return;
-    try {
-      if (supabase) {
-        await supabase.auth.signOut();
-      }
-    } catch (err) {
-      console.error('Error signing out:', err);
-    } finally {
-      navigate('/auth');
-    }
+    navigate('/account');
   };
 
   const homeBtn = document.createElement('button');
@@ -94,7 +83,7 @@ export function createYachtHeader(title, showBack = false, backAction = null) {
     navigate('/');
   };
 
-  actionsSection.appendChild(signOutBtn);
+  actionsSection.appendChild(settingsBtn);
   actionsSection.appendChild(homeBtn);
 
   header.appendChild(actionsSection);

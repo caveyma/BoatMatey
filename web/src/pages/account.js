@@ -13,12 +13,13 @@ import {
 } from '../lib/subscription.js';
 import { boatStorage, enginesStorage, serviceHistoryStorage, uploadsStorage } from '../lib/storage.js';
 import { supabase } from '../lib/supabaseClient.js';
+import { getSession } from '../lib/dataService.js';
 
 function render() {
   const wrapper = document.createElement('div');
 
   // Yacht header with back arrow using browser history
-  const yachtHeader = createYachtHeader('Account', true, () => window.history.back());
+  const yachtHeader = createYachtHeader('Settings', true, () => window.history.back());
   wrapper.appendChild(yachtHeader);
 
   const pageContent = document.createElement('div');
@@ -32,16 +33,37 @@ function render() {
 
   const content = document.createElement('div');
   content.innerHTML = `
-    <div class="card">
+    <div class="card" id="account-signin-card">
       <h3>BoatMatey Account</h3>
-      <p>Sign in to sync your boats and logs to the cloud, or continue using BoatMatey locally on this device.</p>
-      <div style="display:flex; flex-wrap:wrap; gap: 0.5rem; margin-top: 0.75rem;">
+      <p id="account-signin-message">Sign in to sync your boats and logs to the cloud, or continue using BoatMatey locally on this device.</p>
+      <div id="account-signin-actions" style="display:flex; flex-wrap:wrap; gap: 0.5rem; margin-top: 0.75rem;">
         <button class="btn-primary" id="account-auth-btn">
           ${renderIcon('user')} Sign in or create account
         </button>
         <button class="btn-secondary" id="account-local-btn">
           Continue without account
         </button>
+      </div>
+    </div>
+
+    <div class="card" id="account-signin-details-card" style="display: none;">
+      <h3>Sign-in details</h3>
+      <p class="text-muted">Update your email or password. Email changes may require you to confirm the new address.</p>
+      <p><strong>Current email:</strong> <span id="account-current-email"></span></p>
+      <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem;">
+        <div>
+          <label for="account-new-email" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Change email</label>
+          <input type="email" id="account-new-email" class="form-control" placeholder="New email address" style="margin-bottom: 0.25rem;">
+          <button type="button" class="btn-secondary" id="account-change-email-btn">Update email</button>
+          <span id="account-email-message" class="text-muted" style="display: block; margin-top: 0.25rem; font-size: 0.9rem;"></span>
+        </div>
+        <div>
+          <label for="account-new-password" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Change password</label>
+          <input type="password" id="account-new-password" class="form-control" placeholder="New password" style="margin-bottom: 0.25rem;">
+          <input type="password" id="account-confirm-password" class="form-control" placeholder="Confirm new password" style="margin-bottom: 0.25rem;">
+          <button type="button" class="btn-secondary" id="account-change-password-btn">Update password</button>
+          <span id="account-password-message" class="text-muted" style="display: block; margin-top: 0.25rem; font-size: 0.9rem;"></span>
+        </div>
       </div>
     </div>
 
@@ -114,6 +136,28 @@ function render() {
 function onMount() {
   window.navigate = navigate;
 
+  // Show/hide sign-in details and first card based on session
+  (async () => {
+    const session = await getSession();
+    const signinDetailsCard = document.getElementById('account-signin-details-card');
+    const signinMessage = document.getElementById('account-signin-message');
+    const signinActions = document.getElementById('account-signin-actions');
+    const currentEmailEl = document.getElementById('account-current-email');
+    const signOutBtn = document.getElementById('sign-out-btn');
+    if (session?.user) {
+      if (signinDetailsCard) signinDetailsCard.style.display = 'block';
+      if (currentEmailEl) currentEmailEl.textContent = session.user.email ?? '';
+      if (signinMessage) signinMessage.textContent = `You are signed in as ${session.user.email ?? 'your account'}.`;
+      if (signinActions) signinActions.style.display = 'none';
+      if (signOutBtn) signOutBtn.style.display = '';
+    } else {
+      if (signinDetailsCard) signinDetailsCard.style.display = 'none';
+      if (signinMessage) signinMessage.textContent = 'Sign in to sync your boats and logs to the cloud, or continue using BoatMatey locally on this device.';
+      if (signinActions) signinActions.style.display = 'flex';
+      if (signOutBtn) signOutBtn.style.display = 'none';
+    }
+  })();
+
   // Auth buttons
   const authBtn = document.getElementById('account-auth-btn');
   if (authBtn) {
@@ -126,6 +170,65 @@ function onMount() {
   if (localBtn) {
     localBtn.addEventListener('click', () => {
       alert('You are using BoatMatey in local-only mode. Data is stored on this device only.');
+    });
+  }
+
+  // Change email
+  const changeEmailBtn = document.getElementById('account-change-email-btn');
+  const newEmailInput = document.getElementById('account-new-email');
+  const emailMessageEl = document.getElementById('account-email-message');
+  if (changeEmailBtn && supabase) {
+    changeEmailBtn.addEventListener('click', async () => {
+      const newEmail = newEmailInput?.value?.trim();
+      if (!newEmail) {
+        if (emailMessageEl) { emailMessageEl.textContent = 'Please enter a new email address.'; emailMessageEl.style.color = ''; }
+        return;
+      }
+      changeEmailBtn.disabled = true;
+      if (emailMessageEl) emailMessageEl.textContent = 'Updating...';
+      try {
+        const { error } = await supabase.auth.updateUser({ email: newEmail });
+        if (error) throw error;
+        if (emailMessageEl) { emailMessageEl.textContent = 'Check your new email inbox to confirm the change.'; emailMessageEl.style.color = 'var(--color-success, green)'; }
+        if (newEmailInput) newEmailInput.value = '';
+      } catch (err) {
+        if (emailMessageEl) { emailMessageEl.textContent = err?.message ?? 'Failed to update email.'; emailMessageEl.style.color = 'var(--color-danger, #c00)'; }
+      } finally {
+        changeEmailBtn.disabled = false;
+      }
+    });
+  }
+
+  // Change password
+  const changePasswordBtn = document.getElementById('account-change-password-btn');
+  const newPasswordInput = document.getElementById('account-new-password');
+  const confirmPasswordInput = document.getElementById('account-confirm-password');
+  const passwordMessageEl = document.getElementById('account-password-message');
+  if (changePasswordBtn && supabase) {
+    changePasswordBtn.addEventListener('click', async () => {
+      const newPassword = newPasswordInput?.value ?? '';
+      const confirmPassword = confirmPasswordInput?.value ?? '';
+      if (!newPassword || newPassword.length < 6) {
+        if (passwordMessageEl) { passwordMessageEl.textContent = 'Password must be at least 6 characters.'; passwordMessageEl.style.color = 'var(--color-danger, #c00)'; }
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        if (passwordMessageEl) { passwordMessageEl.textContent = 'Passwords do not match.'; passwordMessageEl.style.color = 'var(--color-danger, #c00)'; }
+        return;
+      }
+      changePasswordBtn.disabled = true;
+      if (passwordMessageEl) passwordMessageEl.textContent = 'Updating...';
+      try {
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        if (error) throw error;
+        if (passwordMessageEl) { passwordMessageEl.textContent = 'Password updated successfully.'; passwordMessageEl.style.color = 'var(--color-success, green)'; }
+        if (newPasswordInput) newPasswordInput.value = '';
+        if (confirmPasswordInput) confirmPasswordInput.value = '';
+      } catch (err) {
+        if (passwordMessageEl) { passwordMessageEl.textContent = err?.message ?? 'Failed to update password.'; passwordMessageEl.style.color = 'var(--color-danger, #c00)'; }
+      } finally {
+        changePasswordBtn.disabled = false;
+      }
     });
   }
 

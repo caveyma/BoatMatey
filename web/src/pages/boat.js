@@ -7,7 +7,7 @@ import { renderIcon } from '../components/icons.js';
 import { createYachtHeader } from '../components/header.js';
 import { boatsStorage } from '../lib/storage.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOADS_PER_ENTITY } from '../lib/uploads.js';
-import { getBoat as getBoatFromApi, updateBoat as updateBoatApi } from '../lib/dataService.js';
+import { getBoat as getBoatFromApi, updateBoat as updateBoatApi, isBoatArchived } from '../lib/dataService.js';
 
 let currentBoat = null;
 let currentBoatId = null;
@@ -136,7 +136,6 @@ async function onMount(params = {}) {
   const boatId = params?.id || window.routeParams?.id;
   if (boatId) {
     currentBoatId = boatId;
-    // Prefer Supabase, fall back to local
     try {
       const remoteBoat = await getBoatFromApi(boatId);
       if (remoteBoat) {
@@ -148,6 +147,18 @@ async function onMount(params = {}) {
     } catch (e) {
       console.error('Error loading boat from Supabase, falling back to local:', e);
       currentBoat = boatsStorage.get(boatId);
+    }
+
+    const archived = await isBoatArchived(boatId);
+    const addAttachmentBtn = document.getElementById('add-attachment-btn');
+    const saveBtn = document.querySelector('button[type="submit"]');
+    const cancelBtn = document.getElementById('cancel-btn');
+    const inputs = document.querySelectorAll('form input, form select');
+    if (archived) {
+      if (addAttachmentBtn) addAttachmentBtn.style.display = 'none';
+      if (saveBtn) saveBtn.style.display = 'none';
+      if (cancelBtn) cancelBtn.style.display = 'none';
+      inputs.forEach((el) => { el.disabled = true; });
     }
   }
   fileInput = document.getElementById('file-input');

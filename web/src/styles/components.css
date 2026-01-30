@@ -252,11 +252,11 @@
 }
 
 .boat-card-action-btn {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-full);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.75);
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   backdrop-filter: blur(8px);
   border: none;
   display: flex;
@@ -264,24 +264,66 @@
   justify-content: center;
   cursor: pointer;
   transition: var(--transition);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
 .boat-card-action-btn:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.7);
   transform: scale(1.1);
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
 .boat-card-action-btn svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   stroke-width: 2.5;
-  color: white;
+  color: #fff;
 }
 
 .boat-card-action-btn.danger svg {
-  color: #ff6b6b;
+  color: #ff8a80;
+}
+
+.boat-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.boat-card-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--radius);
+}
+
+.boat-card-badge-archived {
+  background: var(--color-gray-light);
+  color: var(--color-text-light);
+}
+
+.boat-card-archived {
+  opacity: 0.92;
+}
+
+.boat-card-archived .boat-card-subtitle {
+  color: var(--color-text-light);
+}
+
+.archived-banner {
+  background: var(--color-gray-light);
+  color: var(--color-text);
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-radius: var(--radius);
+  margin-bottom: var(--spacing-lg);
+  font-size: var(--font-size-sm);
+}
+
+.archived-banner p {
+  margin: 0;
 }
 
 /* Form styles */

@@ -5,12 +5,14 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader } from '../components/header.js';
+import { isBoatArchived } from '../lib/dataService.js';
 import { enginesStorage } from '../lib/storage.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOADS_PER_ENTITY } from '../lib/uploads.js';
 
 let editingId = null;
 let currentBoatId = null;
 let enginesFileInput = null;
+let enginesArchived = false;
 
 function render(params = {}) {
   // Get boat ID from route params
@@ -65,14 +67,19 @@ function render(params = {}) {
   return wrapper;
 }
 
-function onMount(params = {}) {
+async function onMount(params = {}) {
   const boatId = params?.id || window.routeParams?.id;
   if (boatId) {
     currentBoatId = boatId;
   }
   enginesFileInput = document.getElementById('engines-file-input');
 
-  // Load attachments for Engines card
+  enginesArchived = currentBoatId ? await isBoatArchived(currentBoatId) : false;
+  const addBtn = document.getElementById('engines-add-btn');
+  const addAttachmentBtn = document.getElementById('engines-add-attachment-btn');
+  if (enginesArchived && addBtn) addBtn.style.display = 'none';
+  if (enginesArchived && addAttachmentBtn) addAttachmentBtn.style.display = 'none';
+
   loadEnginesAttachments();
 
   // File input handler with limits
@@ -230,8 +237,8 @@ function loadEngines() {
           <p class="text-muted">${engine.manufacturer || ''} ${engine.model || ''}</p>
         </div>
         <div>
-          <button class="btn-link" onclick="enginesPageEdit('${engine.id}')">${renderIcon('edit')}</button>
-          <button class="btn-link btn-danger" onclick="enginesPageDelete('${engine.id}')">${renderIcon('trash')}</button>
+          ${!enginesArchived ? `<button class="btn-link" onclick="enginesPageEdit('${engine.id}')">${renderIcon('edit')}</button>
+          <button class="btn-link btn-danger" onclick="enginesPageDelete('${engine.id}')">${renderIcon('trash')}</button>` : ''}
         </div>
       </div>
       <div>

@@ -1,19 +1,23 @@
 /**
- * Links Page
+ * Links Page (boat-scoped when route is /boat/:id/links)
  */
 
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader } from '../components/header.js';
-import { linksStorage } from '../lib/storage.js';
-import { Capacitor } from '@capacitor/core';
+import { getLinks, createLink, updateLink, deleteLink, isBoatArchived } from '../lib/dataService.js';
+import { boatsStorage, linksStorage } from '../lib/storage.js';
 
 let editingId = null;
+let currentBoatId = null;
+let isArchived = false;
+let currentLinksList = [];
 
-function render() {
+function render(params = {}) {
+  currentBoatId = params.id || null;
+
   const wrapper = document.createElement('div');
 
-  // Yacht header with back arrow using browser history
   const yachtHeader = createYachtHeader('Web Links', true, () => window.history.back());
   wrapper.appendChild(yachtHeader);
 
@@ -25,6 +29,7 @@ function render() {
 
   const addBtn = document.createElement('button');
   addBtn.className = 'btn-primary';
+  addBtn.id = 'links-add-btn';
   addBtn.innerHTML = `${renderIcon('plus')} Add Link`;
   addBtn.onclick = () => showLinkForm();
 
@@ -40,26 +45,53 @@ function render() {
   return wrapper;
 }
 
-function onMount() {
+async function onMount(params = {}) {
   window.navigate = navigate;
-  loadLinks();
+  currentBoatId = params.id || currentBoatId;
+
+  const boat = currentBoatId ? boatsStorage.get(currentBoatId) : null;
+  isArchived = boat ? (boat.status || 'active') === 'archived' : false;
+  try {
+    const archived = await isBoatArchived(currentBoatId);
+    if (archived) isArchived = true;
+  } catch (_) {}
+
+  const addBtn = document.getElementById('links-add-btn');
+  if (addBtn) addBtn.style.display = isArchived ? 'none' : '';
+
+  await loadLinks();
 }
 
-function loadLinks() {
+async function loadLinks() {
   const listContainer = document.getElementById('links-list');
-  const links = linksStorage.getAll();
+  if (!listContainer) return;
+
+  let links = [];
+  if (currentBoatId) {
+    try {
+      links = await getLinks(currentBoatId);
+    } catch (e) {
+      links = linksStorage.getAll(currentBoatId);
+    }
+  } else {
+    links = linksStorage.getAll();
+  }
+
+  currentLinksList = links;
 
   if (links.length === 0) {
     listContainer.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">${renderIcon('link')}</div>
         <p>No web links added yet</p>
+        ${isArchived ? '<p class="text-muted">Archived boats are view-only.</p>' : ''}
       </div>
     `;
+    attachHandlers();
     return;
   }
 
-  listContainer.innerHTML = links.map(link => `
+  listContainer.innerHTML = links.map((link) => `
     <div class="card">
       <div class="card-header">
         <div>
@@ -68,8 +100,10 @@ function loadLinks() {
         </div>
         <div>
           <button class="btn-primary" onclick="linksPageOpen('${link.id}')">Open</button>
-          <button class="btn-link" onclick="linksPageEdit('${link.id}')">${renderIcon('edit')}</button>
-          ${!link.id.startsWith('link_') ? `<button class="btn-link btn-danger" onclick="linksPageDelete('${link.id}')">${renderIcon('trash')}</button>` : ''}
+          ${!isArchived ? `
+            <button class="btn-link" onclick="linksPageEdit('${link.id}')">${renderIcon('edit')}</button>
+            ${!String(link.id || '').startsWith('link_') ? `<button class="btn-link btn-danger" onclick="linksPageDelete('${link.id}')">${renderIcon('trash')}</button>` : ''}
+          ` : ''}
         </div>
       </div>
     </div>
@@ -80,38 +114,38 @@ function loadLinks() {
 
 function attachHandlers() {
   window.linksPageOpen = (id) => {
-    const link = linksStorage.get(id);
+    const link = currentLinksList.find((l) => l.id === id) || linksStorage.get(id);
     if (!link) return;
 
     let url = link.url;
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       url = `https://${url}`;
     }
-
-    // Open in new window/tab
-    // Future: Use @capacitor/browser plugin when installed for better native experience
-    // if (Capacitor.isNativePlatform() && window.Capacitor?.Plugins?.Browser) {
-    //   window.Capacitor.Plugins.Browser.open({ url });
-    // } else {
     window.open(url, '_blank');
-    // }
   };
 
   window.linksPageEdit = (id) => {
+    if (isArchived) return;
     editingId = id;
     showLinkForm();
   };
 
-  window.linksPageDelete = (id) => {
-    if (confirm('Delete this link?')) {
+  window.linksPageDelete = async (id) => {
+    if (isArchived) return;
+    if (!confirm('Delete this link?')) return;
+    if (currentBoatId) {
+      await deleteLink(id);
+    } else {
       linksStorage.delete(id);
-      loadLinks();
     }
+    loadLinks();
   };
 }
 
 function showLinkForm() {
-  const link = editingId ? linksStorage.get(editingId) : null;
+  if (isArchived) return;
+
+  const link = editingId ? (currentLinksList.find((l) => l.id === editingId) || linksStorage.get(editingId)) : null;
 
   const formHtml = `
     <div class="card" id="link-form-card">
@@ -143,20 +177,29 @@ function showLinkForm() {
   });
 
   window.linksPageCancelForm = () => {
-    document.getElementById('link-form-card').remove();
+    const card = document.getElementById('link-form-card');
+    if (card) card.remove();
     editingId = null;
   };
 }
 
-function saveLink() {
-  const link = {
-    id: editingId,
-    name: document.getElementById('link_name').value,
-    url: document.getElementById('link_url').value
-  };
+async function saveLink() {
+  const name = document.getElementById('link_name').value;
+  const url = document.getElementById('link_url').value;
 
-  linksStorage.save(link);
-  document.getElementById('link-form-card').remove();
+  if (currentBoatId) {
+    if (editingId) {
+      await updateLink(editingId, currentBoatId, { name, url });
+    } else {
+      await createLink(currentBoatId, { name, url });
+    }
+  } else {
+    const link = { id: editingId, name, url };
+    linksStorage.save(link);
+  }
+
+  const card = document.getElementById('link-form-card');
+  if (card) card.remove();
   editingId = null;
   loadLinks();
 }

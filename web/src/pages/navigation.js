@@ -5,6 +5,7 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader } from '../components/header.js';
+import { isBoatArchived } from '../lib/dataService.js';
 import { navEquipmentStorage } from '../lib/storage.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
 
@@ -12,6 +13,7 @@ let editingId = null;
 let currentBoatId = null;
 let navFileInput = null;
 let currentNavItemIdForUpload = null;
+let navArchived = false;
 
 function render(params = {}) {
   // Get boat ID from route params
@@ -59,11 +61,15 @@ function render(params = {}) {
   return wrapper;
 }
 
-function onMount(params = {}) {
+async function onMount(params = {}) {
   const boatId = params?.id || window.routeParams?.id;
   if (boatId) {
     currentBoatId = boatId;
   }
+
+  navArchived = currentBoatId ? await isBoatArchived(currentBoatId) : false;
+  const addBtn = document.getElementById('nav-add-btn');
+  if (addBtn && navArchived) addBtn.style.display = 'none';
 
   window.navigate = navigate;
 
@@ -142,8 +148,8 @@ function loadNavEquipment() {
           <p class="text-muted">${item.manufacturer || ''} ${item.model || ''}</p>
         </div>
         <div>
-          <button class="btn-link" onclick="navPageEdit('${item.id}')">${renderIcon('edit')}</button>
-          <button class="btn-link btn-danger" onclick="navPageDelete('${item.id}')">${renderIcon('trash')}</button>
+          ${!navArchived ? `<button class="btn-link" onclick="navPageEdit('${item.id}')">${renderIcon('edit')}</button>
+          <button class="btn-link btn-danger" onclick="navPageDelete('${item.id}')">${renderIcon('trash')}</button>` : ''}
         </div>
       </div>
       <div>
@@ -153,9 +159,9 @@ function loadNavEquipment() {
         <div class="nav-attachments" data-nav-id="${item.id}">
           <h4 style="margin-top: 0.75rem; margin-bottom: 0.25rem;">Attachments</h4>
           <div class="attachment-list" id="nav-attachments-list-${item.id}"></div>
-          <button type="button" class="btn-link" onclick="navPageAddAttachment('${item.id}')">
+          ${!navArchived ? `<button type="button" class="btn-link" onclick="navPageAddAttachment('${item.id}')">
             ${renderIcon('plus')} Add Attachment (max ${LIMITED_UPLOADS_PER_ENTITY}, 2 MB each)
-          </button>
+          </button>` : ''}
         </div>
       </div>
     </div>

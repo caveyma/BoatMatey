@@ -5,7 +5,7 @@
 /* ---------- CSS Variables ---------- */
 
 :root {
-  --bm-header-height: 64px;
+  --bm-header-height: 72px;
   --bm-wave-height: 22px;
   --bm-header-total: calc(var(--bm-header-height) + var(--bm-wave-height));
   /* Core palette */
@@ -156,7 +156,7 @@ html, body {
 
 /* This is the CRITICAL clamp */
 .header-logo-img img {
-  max-height: 44px;   /* HARD LIMIT – prevents giant logo */
+  max-height: 64px;   /* sized to fit header */
   width: auto;
   display: block;
 }
@@ -189,7 +189,7 @@ html, body {
 }
 
 .header-logo-img {
-  max-height: 58px;   /* larger wordmark while staying within 64px header */
+  max-height: 64px;   /* larger wordmark within header */
   width: auto;
   display: block;
   /* High-contrast filter: darken structural elements, brighten accents, add separation */
@@ -203,7 +203,7 @@ html, body {
 
 
 
-/* Header action links (Home / Sign out) */
+/* Header action links (Settings / Home) */
 .yacht-header a,
 .yacht-header button,
 .yacht-header .header-action,

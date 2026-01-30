@@ -6,6 +6,7 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader } from '../components/header.js';
+import { getBoat } from '../lib/dataService.js';
 import { boatsStorage, enginesStorage, serviceHistoryStorage, hauloutStorage, navEquipmentStorage, safetyEquipmentStorage, shipsLogStorage, linksStorage } from '../lib/storage.js';
 
 const serviceIconUrl = new URL('../assets/service-wrench.png', import.meta.url).href;
@@ -14,7 +15,6 @@ const safetyIconUrl = new URL('../assets/safety-ring.png', import.meta.url).href
 const logIconUrl = new URL('../assets/log-book.png', import.meta.url).href;
 const linksIconUrl = new URL('../assets/links-globe.png', import.meta.url).href;
 const navigationIconUrl = new URL('../assets/navigation-compass.png', import.meta.url).href;
-const adminIconUrl = new URL('../assets/account-admin.png', import.meta.url).href;
 const boatIconUrl = new URL('../assets/boat-generic.png', import.meta.url).href;
 // Haul-out maintenance uses a tools/hoist themed icon.
 // Ensure the provided icon image is copied to `src/assets/haulout-hook.png`.
@@ -65,9 +65,6 @@ function getStatusText(cardId, boatId) {
       // so we just show a simple status label here.
       return 'Reminders & alerts';
     
-    case 'account':
-      return 'Settings';
-    
     case 'guide':
       return 'How each card works';
     
@@ -85,7 +82,7 @@ function createCard(id, title, iconName, route, boatId) {
     navigate(route);
   };
 
-  const useBitmapImage = id === 'boat' || id === 'service' || id === 'haulout' || id === 'engines' || id === 'navigation' || id === 'safety' || id === 'log' || id === 'links' || id === 'calendar' || id === 'account';
+  const useBitmapImage = id === 'boat' || id === 'service' || id === 'haulout' || id === 'engines' || id === 'navigation' || id === 'safety' || id === 'log' || id === 'links' || id === 'calendar';
   const badgeClass = useBitmapImage
     ? 'dashboard-card-icon-badge dashboard-card-icon-bitmap'
     : 'dashboard-card-icon-badge';
@@ -115,8 +112,6 @@ function createCard(id, title, iconName, route, boatId) {
     iconHtml = `<img src="${linksIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else if (id === 'calendar') {
     iconHtml = `<img src="${calendarIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
-  } else if (id === 'account') {
-    iconHtml = `<img src="${adminIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else {
     iconHtml = renderIcon(iconName);
   }
@@ -164,18 +159,25 @@ function render() {
     return container;
   }
 
-  // Cache the current boat so the Boat Details card can use its photo
-  currentBoat = boat;
+  currentBoat = { ...boat, status: boat.status || 'active' };
+  const isArchived = currentBoat.status === 'archived';
 
   const wrapper = document.createElement('div');
-  
-  // Yacht header
+
   const header = createYachtHeader(boat.boat_name || 'Boat Dashboard', true, () => navigate('/'));
   wrapper.appendChild(header);
-  
-  // Page content
+
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content';
+
+  if (isArchived) {
+    const banner = document.createElement('div');
+    banner.className = 'archived-banner';
+    banner.innerHTML = `
+      <p><strong>Archived boat.</strong> Viewing and exporting only. No new logs, services, uploads, or edits. To edit again, reactivate this boat from Your boats.</p>
+    `;
+    pageContent.appendChild(banner);
+  }
 
   const grid = document.createElement('div');
   grid.className = 'dashboard-grid';
@@ -190,7 +192,6 @@ function render() {
     { id: 'log', title: "Ship's Log", icon: 'book', route: `/boat/${currentBoatId}/log` },
     { id: 'calendar', title: 'Calendar & Alerts', icon: 'calendar', route: `/boat/${currentBoatId}/calendar` },
     { id: 'links', title: 'Web Links', icon: 'link', route: `/boat/${currentBoatId}/links` },
-    { id: 'account', title: 'Admin', icon: 'user', route: '/account' },
     { id: 'guide', title: 'Guide', icon: 'file', route: `/boat/${currentBoatId}/guide` }
   ];
 
@@ -206,12 +207,18 @@ function render() {
 }
 
 function onMount() {
-  // Refresh status text when page loads
   const hash = window.location.hash;
   const match = hash.match(/\/boat\/([^\/]+)/);
   const boatId = match ? match[1] : null;
-  
+
   if (boatId) {
+    getBoat(boatId).then((b) => {
+      if (b) {
+        boatsStorage.save(b);
+        currentBoat = b;
+      }
+    });
+
     const statusElements = document.querySelectorAll('.dashboard-card-status');
     statusElements.forEach((el, index) => {
       const cards = [
@@ -224,7 +231,6 @@ function onMount() {
         'log',
         'calendar',
         'links',
-        'account',
         'guide'
       ];
       if (cards[index]) {

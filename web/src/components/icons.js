@@ -28,7 +28,9 @@ export const icons = {
   trash: `<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>`,
   file: `<path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M13 2v7h7"/>`,
   check: `<path d="M20 6L9 17l-5-5"/>`,
-  x: `<path d="M18 6L6 18M6 6l12 12"/>`
+  x: `<path d="M18 6L6 18M6 6l12 12"/>`,
+  archive: `<path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/>`,
+  refresh: `<path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>`
 };
 
 /**

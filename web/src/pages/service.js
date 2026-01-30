@@ -5,10 +5,12 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader } from '../components/header.js';
+import { isBoatArchived } from '../lib/dataService.js';
 import { serviceHistoryStorage, enginesStorage } from '../lib/storage.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
 
 let editingId = null;
+let serviceArchived = false;
 let filterEngineId = null;
 let currentBoatId = null;
 let serviceFileInput = null;
@@ -283,6 +285,7 @@ function render(params = {}) {
 
   const addBtn = document.createElement('button');
   addBtn.className = 'btn-primary';
+  addBtn.id = 'service-add-btn';
   addBtn.innerHTML = `${renderIcon('plus')} Add Service Entry`;
   addBtn.onclick = () => showServiceForm();
 
@@ -308,11 +311,15 @@ function render(params = {}) {
   return wrapper;
 }
 
-function onMount(params = {}) {
+async function onMount(params = {}) {
   const boatId = params?.id || window.routeParams?.id;
   if (boatId) {
     currentBoatId = boatId;
   }
+
+  serviceArchived = currentBoatId ? await isBoatArchived(currentBoatId) : false;
+  const addBtn = document.getElementById('service-add-btn');
+  if (addBtn && serviceArchived) addBtn.style.display = 'none';
 
   window.navigate = navigate;
 
@@ -434,8 +441,8 @@ function loadServices() {
           <p class="text-muted">${enginesLabel} • ${service.service_type || 'Service'} • ${modeLabel}</p>
         </div>
         <div>
-          <button class="btn-link" onclick="servicePageEdit('${service.id}')">${renderIcon('edit')}</button>
-          <button class="btn-link btn-danger" onclick="servicePageDelete('${service.id}')">${renderIcon('trash')}</button>
+          ${!serviceArchived ? `<button class="btn-link" onclick="servicePageEdit('${service.id}')">${renderIcon('edit')}</button>
+          <button class="btn-link btn-danger" onclick="servicePageDelete('${service.id}')">${renderIcon('trash')}</button>` : ''}
         </div>
       </div>
       <div>
