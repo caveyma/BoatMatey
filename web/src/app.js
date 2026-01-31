@@ -7,6 +7,7 @@ import './styles/card-colors.css';
 import './styles/global.css';
 import './styles/components.css';
 import { init as initRouter, route, navigate } from './router.js';
+import { initRevenueCat } from './services/revenuecat.js';
 import { initSubscription } from './lib/subscription.js';
 import boatsPage from './pages/boats.js';
 import boatDashboardPage from './pages/boat-dashboard.js';
@@ -51,7 +52,9 @@ export function init() {
     // Initialize router
     initRouter();
 
-    // Initialize native subscription SDK (no-op on web)
+    // Initialize RevenueCat on native only (enables Play Billing / App Store detection)
+    initRevenueCat();
+    // Then refresh subscription state (no-op on web)
     initSubscription();
     
     console.log('BoatMatey: App initialized successfully');

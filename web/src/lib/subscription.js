@@ -52,25 +52,14 @@ export async function initSubscription() {
   try {
     const platform = Capacitor.getPlatform();
 
-    const apiKey =
-      platform === 'ios'
-        ? import.meta.env.VITE_REVENUECAT_API_KEY_IOS
-        : import.meta.env.VITE_REVENUECAT_API_KEY_ANDROID;
-
-    if (!apiKey) {
-      console.warn(
-        '[Subscription] RevenueCat API key is missing. Set VITE_REVENUECAT_API_KEY_ANDROID / VITE_REVENUECAT_API_KEY_IOS.'
-      );
-      initialized = true;
-      return;
+    // Android is configured in services/revenuecat.js at launch. Only configure iOS here if key is set.
+    if (platform === 'ios') {
+      const apiKey = import.meta.env.VITE_REVENUECAT_API_KEY_IOS;
+      if (apiKey) {
+        await Purchases.setLogLevel({ level: LOG_LEVEL.INFO });
+        await Purchases.configure({ apiKey, appUserID: null });
+      }
     }
-
-    await Purchases.setLogLevel({ level: LOG_LEVEL.INFO });
-
-    await Purchases.configure({
-      apiKey,
-      appUserID: null
-    });
 
     await refreshSubscriptionStatus();
     initialized = true;
