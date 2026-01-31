@@ -1,6 +1,10 @@
 /**
- * Simple hash-based router
+ * Simple hash-based router with subscription gate
  */
+
+import { Capacitor } from '@capacitor/core';
+import { supabase } from './lib/supabaseClient.js';
+import { hasActiveSubscription, refreshSubscriptionStatus } from './lib/subscription.js';
 
 let routes = {};
 let currentRoute = null;
@@ -100,6 +104,15 @@ async function loadRoute(path) {
   }
 
   console.log('Router: Loading route:', path);
+
+  // Check access requirements (subscription + auth gate)
+  const accessCheck = await checkAccess(path);
+  if (!accessCheck.allowed) {
+    console.log('Router: Access denied, redirecting to:', accessCheck.redirectTo);
+    window.location.hash = accessCheck.redirectTo;
+    return;
+  }
+
   const match = matchRoute(path);
   if (!match) {
     console.error(`Router: Route not found: ${path}`);
@@ -162,6 +175,50 @@ async function loadRoute(path) {
       app.innerHTML = `<div class="container"><h1>Error</h1><p>Failed to load page: ${e.message}</p></div>`;
     }
   }
+}
+
+/**
+ * Check if user has access to the requested route
+ * Enforces subscription + authentication requirements
+ */
+async function checkAccess(path) {
+  const isNative = Capacitor.isNativePlatform?.() ?? false;
+  
+  // Web mode: allow all access (dev/testing)
+  if (!isNative) {
+    return { allowed: true };
+  }
+
+  // Public routes (no authentication required)
+  const publicRoutes = ['/subscription', '/auth'];
+  if (publicRoutes.includes(path)) {
+    return { allowed: true };
+  }
+
+  // Native mode: check subscription
+  await refreshSubscriptionStatus();
+  const hasActive = hasActiveSubscription();
+
+  if (!hasActive) {
+    return { 
+      allowed: false, 
+      redirectTo: '/subscription' 
+    };
+  }
+
+  // Check authentication if Supabase is configured
+  if (supabase) {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) {
+      return { 
+        allowed: false, 
+        redirectTo: '/auth' 
+      };
+    }
+  }
+
+  return { allowed: true };
 }
 
 /**

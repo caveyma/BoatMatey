@@ -9,11 +9,13 @@ import {
   getSubscriptionStatus,
   hasActiveSubscription,
   purchaseSubscription,
-  restoreSubscription
+  restoreSubscription,
+  refreshSubscriptionStatus
 } from '../lib/subscription.js';
 import { boatStorage, enginesStorage, serviceHistoryStorage, uploadsStorage } from '../lib/storage.js';
 import { supabase } from '../lib/supabaseClient.js';
 import { getSession } from '../lib/dataService.js';
+import { Capacitor } from '@capacitor/core';
 
 function render() {
   const wrapper = document.createElement('div');
@@ -135,6 +137,22 @@ function render() {
 
 function onMount() {
   window.navigate = navigate;
+
+  // Refresh subscription status on mount
+  const isNative = Capacitor.isNativePlatform?.() ?? false;
+  if (isNative) {
+    refreshSubscriptionStatus().then(() => {
+      // Update subscription display after refresh
+      const status = getSubscriptionStatus();
+      const isActive = hasActiveSubscription();
+      
+      const statusBadge = document.querySelector('.badge');
+      if (statusBadge) {
+        statusBadge.textContent = isActive ? 'Active' : 'Not Active';
+        statusBadge.className = `badge ${isActive ? 'badge-success' : 'badge-warning'}`;
+      }
+    });
+  }
 
   // Show/hide sign-in details and first card based on session
   (async () => {
@@ -274,6 +292,8 @@ function onMount() {
   const signOutBtn = document.getElementById('sign-out-btn');
   if (signOutBtn) {
     signOutBtn.addEventListener('click', async () => {
+      const isNative = Capacitor.isNativePlatform?.() ?? false;
+      
       if (!confirm('Sign out of your BoatMatey cloud account?')) {
         return;
       }
@@ -285,7 +305,13 @@ function onMount() {
       } catch (error) {
         console.error('Error signing out of Supabase:', error);
       } finally {
-        navigate('/auth');
+        // On native, redirect to subscription page (requires subscription to access app)
+        // On web, redirect to auth page
+        if (isNative) {
+          navigate('/subscription');
+        } else {
+          navigate('/auth');
+        }
       }
     });
   }

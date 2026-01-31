@@ -1,24 +1,38 @@
 # BoatMatey
 
-A mobile-first web app for boat maintenance and logbook management. Built with Vite + Capacitor, runs as a website and inside Capacitor shells for Android/iOS.
+A mobile-first boat maintenance and logbook management app with subscription-based access. Built with Vite + Capacitor for Android and iOS, with Supabase for cloud sync.
 
 ## Features
 
 - **Boat Details**: Store comprehensive boat information including registration, insurance, and specifications
 - **Engines**: Manage multiple engines (port, starboard, generator) with warranty tracking
 - **Service History**: Track engine services with dates, hours, and notes
+- **Haul-out Records**: Complete documentation of haul-outs, antifouling, anodes, and hull inspections
 - **Navigation Equipment**: Catalog navigation equipment with warranty information
 - **Safety Equipment**: Track safety equipment with expiry dates and service intervals
 - **Ship's Log**: Record trips with departure/arrival, engine hours, and distance
-- **Links**: Quick access to useful marine links (Navionics, weather, etc.)
-- **Account**: Subscription management and usage tracking
+- **Calendar**: View all maintenance and service dates in calendar format
+- **Photo Attachments**: Upload and store photos for boats, equipment, and service records
+- **Cloud Sync**: Sync your data across all devices with Supabase
+- **Subscription**: £24.99/year with 1-month free trial for new subscribers
+
+## Subscription Model
+
+BoatMatey requires an active subscription to access the app:
+- **Price**: £24.99/year including VAT
+- **Free Trial**: 1 month for new subscribers
+- **Platforms**: Google Play Store & Apple App Store
+- **GDPR Compliant**: No data stored until subscription is active
+
+See [SUBSCRIPTION_QUICK_REFERENCE.md](SUBSCRIPTION_QUICK_REFERENCE.md) for details.
 
 ## Tech Stack
 
 - **Vite**: Build tool and dev server
-- **Capacitor**: Native mobile app wrapper
-- **Vanilla JavaScript**: No heavy frameworks, simple modular code
-- **Local Storage**: Data persistence (v1) - designed to be easily swapped with Supabase later
+- **Capacitor**: Native mobile app wrapper for Android & iOS
+- **Vanilla JavaScript**: No heavy frameworks, modular and maintainable
+- **Supabase**: PostgreSQL database with authentication and cloud storage
+- **RevenueCat**: Subscription management and billing
 
 ## Project Structure (same as PetHub+)
 
@@ -107,31 +121,85 @@ npx cap copy ios
 npx cap open ios
 ```
 
-## Subscription Model
+## Subscription Setup & Usage
 
-- **Paid Plan**: £24.99/year (including VAT)
-  - Unlimited boats
-  - Unlimited engines
-  - Unlimited service entries
-  - Unlimited uploads
+### Overview
 
-### Mobile subscriptions (Android / iOS)
+BoatMatey requires an active subscription to use the app on mobile devices (Android/iOS). Web development mode bypasses these checks for easier testing.
 
-BoatMatey uses **RevenueCat** with the official Capacitor SDK (`@revenuecat/purchases-capacitor`) to manage
-subscriptions across Android and iOS.
+- **Price**: £24.99/year including VAT
+- **Free Trial**: 1 month for new subscribers
+- **Platforms**: Google Play Store & Apple App Store
+- **Payment Processing**: RevenueCat
+- **GDPR Compliant**: No user data stored until subscription is confirmed
 
-- **Entitlement ID** in RevenueCat: `boatmatey_premium`
-- **Product ID** in both app stores: e.g. `boatmatey_yearly` (auto-renewing yearly subscription at £24.99/year)
+### Quick Start
 
-Environment variables (configured in your Vite env file, e.g. `.env`):
+1. **Complete Store Configuration**:
+   - Google Play: ✅ Active and configured
+   - App Store: ⚠️ Needs metadata completion (see [APP_STORE_SUBSCRIPTION_SETUP.md](APP_STORE_SUBSCRIPTION_SETUP.md))
 
+2. **Configure Environment**:
 ```bash
-VITE_REVENUECAT_API_KEY_ANDROID=rc_XXXXXXXXXXXXXXXXXXXXXXXXXXXX_android
-VITE_REVENUECAT_API_KEY_IOS=rc_XXXXXXXXXXXXXXXXXXXXXXXXXXXX_ios
+cd web
+cp .env.example .env.local
+# Edit .env.local and add:
+# - VITE_SUPABASE_URL
+# - VITE_SUPABASE_ANON_KEY
+# - VITE_REVENUECAT_API_KEY_IOS
 ```
 
-On web / dev server, the app keeps the previous behaviour and treats the subscription as **always active**
-so you can develop without needing store sandboxes.
+3. **RevenueCat Configuration**:
+   - **Entitlement ID**: `boatmatey_premium`
+   - **Google Play Product**: `boatmatey_premium_yearly:yearly`
+   - **App Store Product**: `boatmatey_yearly`
+
+### User Flow
+
+```
+Open App → Check Subscription → Purchase/Restore → Create Account → Access App
+```
+
+On native platforms:
+1. User sees subscription paywall on first launch
+2. Purchase subscription (or restore existing)
+3. Create account or sign in
+4. Full app access granted
+
+On web (development):
+- All subscription checks bypassed
+- Full access for testing
+
+### Documentation
+
+- **[SUBSCRIPTION_QUICK_REFERENCE.md](SUBSCRIPTION_QUICK_REFERENCE.md)** - Quick reference guide
+- **[SUBSCRIPTION_SETUP.md](SUBSCRIPTION_SETUP.md)** - Complete technical documentation
+- **[APP_STORE_SUBSCRIPTION_SETUP.md](APP_STORE_SUBSCRIPTION_SETUP.md)** - Fix "Missing Metadata" issue
+- **[SUBSCRIPTION_TESTING.md](SUBSCRIPTION_TESTING.md)** - Testing checklist
+- **[SUBSCRIPTION_IMPLEMENTATION.md](SUBSCRIPTION_IMPLEMENTATION.md)** - Implementation details
+
+### Testing
+
+**Development (Web)**:
+```bash
+cd web
+npm run dev
+# No subscription required - full access
+```
+
+**Android Sandbox**:
+```bash
+npm run cap:android
+# Sign in with Google Play test account on device
+# Test subscription purchase flow
+```
+
+**iOS Sandbox**:
+```bash
+npm run cap:ios
+# Sign in with App Store Connect sandbox tester
+# Complete App Store Connect setup first!
+```
 
 ## Development Notes
 

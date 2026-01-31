@@ -1,11 +1,87 @@
 /**
  * Auth / Onboarding Page
  * Email + password sign-in / sign-up with BoatMatey logo
+ * Requires active subscription before account creation (GDPR compliance)
  */
 
 import { navigate } from '../router.js';
 import { renderLogoFull } from '../components/logo.js';
 import { supabase } from '../lib/supabaseClient.js';
+import { 
+  hasActiveSubscription, 
+  getSubscriptionStatus,
+  refreshSubscriptionStatus 
+} from '../lib/subscription.js';
+import { Capacitor } from '@capacitor/core';
+
+/**
+ * Create profile with subscription data in Supabase
+ * This ensures GDPR compliance - only create profile after paid subscription
+ */
+async function createProfileWithSubscription(userId, email) {
+  if (!supabase) return;
+
+  try {
+    const subscriptionStatus = getSubscriptionStatus();
+    
+    const profileData = {
+      id: userId,
+      email: email,
+      subscription_plan: subscriptionStatus.plan,
+      subscription_status: subscriptionStatus.active ? 'active' : 'inactive',
+      subscription_expires_at: subscriptionStatus.expires_at,
+      metadata: {
+        created_via: Capacitor.getPlatform(),
+        subscription_price: subscriptionStatus.price
+      }
+    };
+
+    const { error } = await supabase
+      .from('profiles')
+      .upsert(profileData, { onConflict: 'id' });
+
+    if (error) {
+      console.error('Error creating profile:', error);
+      throw error;
+    }
+
+    console.log('Profile created with subscription data');
+  } catch (error) {
+    console.error('Failed to create profile:', error);
+    throw error;
+  }
+}
+
+/**
+ * Sync current subscription status to user's profile in Supabase
+ */
+async function syncSubscriptionToProfile(userId) {
+  if (!supabase) return;
+
+  try {
+    await refreshSubscriptionStatus();
+    const subscriptionStatus = getSubscriptionStatus();
+    
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        subscription_plan: subscriptionStatus.plan,
+        subscription_status: subscriptionStatus.active ? 'active' : 'inactive',
+        subscription_expires_at: subscriptionStatus.expires_at,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userId);
+
+    if (error) {
+      console.error('Error syncing subscription to profile:', error);
+    } else {
+      console.log('Subscription synced to profile');
+    }
+  } catch (error) {
+    console.error('Failed to sync subscription:', error);
+  }
+}
+
 
 function render() {
   const wrapper = document.createElement('div');
@@ -25,12 +101,12 @@ function render() {
         ${renderLogoFull(160)}
       </div>
       <h2>Welcome aboard</h2>
-      <p class="text-muted">Sign in or create a BoatMatey cloud account to sync your boats across devices.</p>
+      <p class="text-muted">Sign in or create your BoatMatey account to get started.</p>
     </div>
 
     <div class="form-group" id="auth-status" style="display: ${supabase ? 'none' : 'block'};">
       <p class="text-muted">
-        Cloud sync is not configured yet. You can continue using BoatMatey locally without signing in.
+        Cloud sync is not configured yet. Please contact support.
       </p>
     </div>
 
@@ -53,8 +129,7 @@ function render() {
         <input type="password" id="signin-password" required autocomplete="current-password" placeholder="••••••••">
       </div>
       <div class="form-actions">
-        <button type="button" class="btn-secondary" id="auth-skip-btn">Continue without account</button>
-        <button type="submit" class="btn-primary" id="signin-submit-btn">Sign In</button>
+        <button type="submit" class="btn-primary" id="signin-submit-btn" style="width: 100%;">Sign In</button>
       </div>
       <p class="form-help">Forgot your password? Use the Supabase reset link from your email (full reset UI coming soon).</p>
     </form>
@@ -126,12 +201,27 @@ function showMessage(text, isError = false) {
   messageContainer.style.display = text ? 'block' : 'none';
 }
 
-function onMount() {
+async function onMount() {
   window.navigate = navigate;
+
+  // Check subscription status on native platforms
+  const isNative = Capacitor.isNativePlatform?.() ?? false;
+  if (isNative && supabase) {
+    await refreshSubscriptionStatus();
+    const hasActive = hasActiveSubscription();
+    
+    if (!hasActive) {
+      // No active subscription - redirect back to subscription page
+      showMessage('Active subscription required to create an account.', true);
+      setTimeout(() => {
+        navigate('/subscription');
+      }, 2000);
+      return;
+    }
+  }
 
   const signinToggle = document.getElementById('auth-toggle-signin');
   const signupToggle = document.getElementById('auth-toggle-signup');
-  const skipBtn = document.getElementById('auth-skip-btn');
   const cancelSignupBtn = document.getElementById('auth-cancel-signup-btn');
   const signinForm = document.getElementById('auth-form-signin');
   const signupForm = document.getElementById('auth-form-signup');
@@ -149,12 +239,6 @@ function onMount() {
     signupToggle.addEventListener('click', () => {
       setMode('signup');
       showMessage('');
-    });
-  }
-
-  if (skipBtn) {
-    skipBtn.addEventListener('click', () => {
-      navigate('/');
     });
   }
 
@@ -189,11 +273,16 @@ function onMount() {
       }
 
       try {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
           console.error('Supabase signIn error:', error);
           showMessage(error.message || 'Unable to sign in. Please check your credentials.', true);
           return;
+        }
+
+        // Sync subscription status with profile
+        if (data.user && isNative) {
+          await syncSubscriptionToProfile(data.user.id);
         }
 
         navigate('/');
@@ -219,6 +308,20 @@ function onMount() {
         return;
       }
 
+      // On native platforms, verify subscription before allowing signup
+      if (isNative) {
+        await refreshSubscriptionStatus();
+        const hasActive = hasActiveSubscription();
+        
+        if (!hasActive) {
+          showMessage('Active subscription required to create an account. Please subscribe first.', true);
+          setTimeout(() => {
+            navigate('/subscription');
+          }, 2000);
+          return;
+        }
+      }
+
       const email = /** @type {HTMLInputElement} */ (document.getElementById('signup-email')).value.trim();
       const password = /** @type {HTMLInputElement} */ (document.getElementById('signup-password')).value;
       const confirmPassword = /** @type {HTMLInputElement} */ (document.getElementById('signup-password-confirm')).value;
@@ -239,7 +342,7 @@ function onMount() {
       }
 
       try {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password
         });
@@ -250,8 +353,19 @@ function onMount() {
           return;
         }
 
-        showMessage('Account created. Check your email for verification (if required), then sign in.', false);
-        setMode('signin');
+        // Create profile with subscription data (GDPR compliant - only after paid subscription)
+        if (data.user) {
+          await createProfileWithSubscription(data.user.id, email);
+          showMessage('Account created successfully! Signing you in...', false);
+          
+          // Auto sign-in after successful signup
+          setTimeout(() => {
+            navigate('/');
+          }, 1500);
+        } else {
+          showMessage('Account created. Check your email for verification (if required), then sign in.', false);
+          setMode('signin');
+        }
       } catch (err) {
         console.error('Sign-up unexpected error:', err);
         showMessage('Unexpected error while creating your account.', true);

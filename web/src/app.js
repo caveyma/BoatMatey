@@ -8,7 +8,9 @@ import './styles/global.css';
 import './styles/components.css';
 import { init as initRouter, route, navigate } from './router.js';
 import { initRevenueCat } from './services/revenuecat.js';
-import { initSubscription } from './lib/subscription.js';
+import { initSubscription, hasActiveSubscription, refreshSubscriptionStatus } from './lib/subscription.js';
+import { supabase } from './lib/supabaseClient.js';
+import { Capacitor } from '@capacitor/core';
 import boatsPage from './pages/boats.js';
 import boatDashboardPage from './pages/boat-dashboard.js';
 import boatDetailsPage from './pages/boat.js';
@@ -20,6 +22,7 @@ import logPage from './pages/log.js';
 import linksPage from './pages/links.js';
 import accountPage from './pages/account.js';
 import authPage from './pages/auth.js';
+import subscriptionPage from './pages/subscription.js';
 import hauloutPage from './pages/haulout.js';
 import calendarPage from './pages/calendar.js';
 import guidePage from './pages/guide.js';
@@ -27,11 +30,13 @@ import guidePage from './pages/guide.js';
 /**
  * Initialize the app
  */
-export function init() {
+export async function init() {
   try {
     console.log('BoatMatey: Initializing app...');
     
     // Register routes
+    route('/subscription', subscriptionPage); // Subscription paywall
+    route('/auth', authPage); // Auth page
     route('/', boatsPage); // Boats list (home)
     route('/boat/:id', boatDashboardPage); // Boat dashboard
     route('/boat/:id/details', boatDetailsPage); // Boat details
@@ -45,17 +50,19 @@ export function init() {
     route('/boat/:id/log', logPage);
     route('/boat/:id/links', linksPage);
     route('/account', accountPage);
-    route('/auth', authPage);
 
     console.log('BoatMatey: Routes registered, initializing router...');
     
+    // Initialize RevenueCat on native only (enables Play Billing / App Store detection)
+    await initRevenueCat();
+    // Then refresh subscription state (no-op on web)
+    await initSubscription();
+
+    // Check subscription and authentication status
+    await checkAccessAndRedirect();
+    
     // Initialize router
     initRouter();
-
-    // Initialize RevenueCat on native only (enables Play Billing / App Store detection)
-    initRevenueCat();
-    // Then refresh subscription state (no-op on web)
-    initSubscription();
     
     console.log('BoatMatey: App initialized successfully');
   } catch (error) {
@@ -71,4 +78,51 @@ export function init() {
       `;
     }
   }
+}
+
+/**
+ * Check access requirements and redirect if needed
+ * GDPR Compliance: No access without subscription + auth on native
+ */
+async function checkAccessAndRedirect() {
+  const isNative = Capacitor.isNativePlatform?.() ?? false;
+  const currentHash = window.location.hash.substring(1) || '/';
+  
+  // Web mode: no subscription required (dev/testing)
+  if (!isNative) {
+    console.log('BoatMatey: Web mode - no subscription required');
+    return;
+  }
+
+  // Native mode: subscription required
+  console.log('BoatMatey: Native mode - checking subscription...');
+  await refreshSubscriptionStatus();
+  const hasActive = hasActiveSubscription();
+
+  // Check if we're already on subscription or auth page
+  const isOnSubscriptionPage = currentHash === '/subscription';
+  const isOnAuthPage = currentHash === '/auth';
+
+  if (!hasActive && !isOnSubscriptionPage) {
+    // No subscription - redirect to subscription page
+    console.log('BoatMatey: No active subscription - redirecting to subscription page');
+    navigate('/subscription');
+    return;
+  }
+
+  if (hasActive && !isOnAuthPage && !isOnSubscriptionPage) {
+    // Has subscription - check authentication
+    if (supabase) {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        // Not authenticated - redirect to auth
+        console.log('BoatMatey: Not authenticated - redirecting to auth page');
+        navigate('/auth');
+        return;
+      }
+    }
+  }
+  
+  console.log('BoatMatey: Access check passed');
 }
