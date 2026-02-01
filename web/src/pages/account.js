@@ -85,7 +85,7 @@ function render() {
             : ''
         }
       </div>
-      <p class="text-muted">BoatMatey subscription includes unlimited boats, engines, service entries, and uploads.</p>
+      <p class="text-muted">BoatMatey subscription includes 2 active boats, 5 archived boats, unlimited engines, service entries, and uploads.</p>
       <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.75rem;">
         <button class="btn-primary" id="subscribe-btn" style="width: 100%;">
           ${renderIcon('star')} Subscribe for £24.99/year
@@ -93,7 +93,14 @@ function render() {
         <button class="btn-secondary" id="restore-purchases-btn" style="width: 100%;">
           Restore Purchases
         </button>
+        <button class="btn-secondary" id="manage-subscription-btn" style="width: 100%;">
+          Manage Subscription
+        </button>
       </div>
+      <p class="text-muted" style="font-size: 0.85rem; margin-top: 0.75rem;">
+        To cancel your subscription, use the App Store or Google Play subscription management. 
+        Note: Cancelling will delete your account and all data to comply with GDPR.
+      </p>
     </div>
 
     <div class="card">
@@ -284,6 +291,29 @@ function onMount() {
       } finally {
         restoreBtn.disabled = false;
         restoreBtn.textContent = originalLabel;
+      }
+    });
+  }
+
+  // Manage subscription - opens native store subscription management
+  const manageSubBtn = document.getElementById('manage-subscription-btn');
+  if (manageSubBtn) {
+    manageSubBtn.addEventListener('click', async () => {
+      const isNative = Capacitor.isNativePlatform?.() ?? false;
+      const platform = Capacitor.getPlatform();
+      
+      if (!isNative) {
+        alert('Subscription management is only available in the mobile app.');
+        return;
+      }
+
+      // Open the appropriate store's subscription management
+      if (platform === 'ios') {
+        // iOS: Open App Store subscription management
+        window.open('https://apps.apple.com/account/subscriptions', '_system');
+      } else if (platform === 'android') {
+        // Android: Open Google Play subscription management
+        window.open('https://play.google.com/store/account/subscriptions', '_system');
       }
     });
   }

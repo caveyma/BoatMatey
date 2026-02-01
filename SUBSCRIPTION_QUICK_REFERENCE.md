@@ -8,6 +8,25 @@
 **Payment**: RevenueCat  
 **GDPR**: No data stored until subscription paid  
 
+## 📊 Subscription Limits
+
+| Resource | Limit |
+|----------|-------|
+| **Active Boats** | 2 |
+| **Archived Boats** | 5 |
+| Engines | Unlimited |
+| Service Entries | Unlimited |
+| Equipment | Unlimited |
+| Logbook Entries | Unlimited |
+| Attachments | Unlimited |
+
+## ❌ Cancellation Policy
+
+- User cancels via App Store / Google Play
+- Access continues until subscription expires
+- **On expiration: ALL DATA DELETED (GDPR)**
+- RevenueCat webhook triggers data deletion  
+
 ## 📱 Product IDs
 
 | Platform | Product ID | Status |

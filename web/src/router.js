@@ -4,7 +4,7 @@
 
 import { Capacitor } from '@capacitor/core';
 import { supabase } from './lib/supabaseClient.js';
-import { hasActiveSubscription, refreshSubscriptionStatus } from './lib/subscription.js';
+// Note: subscription check moved to auth flow, not route access
 
 let routes = {};
 let currentRoute = null;
@@ -179,7 +179,7 @@ async function loadRoute(path) {
 
 /**
  * Check if user has access to the requested route
- * Enforces subscription + authentication requirements
+ * Flow: Welcome → Auth → (Subscription for new users) → Home
  */
 async function checkAccess(path) {
   const isNative = Capacitor.isNativePlatform?.() ?? false;
@@ -190,30 +190,20 @@ async function checkAccess(path) {
   }
 
   // Public routes (no authentication required)
-  const publicRoutes = ['/subscription', '/auth'];
+  const publicRoutes = ['/welcome', '/subscription', '/auth'];
   if (publicRoutes.includes(path)) {
     return { allowed: true };
   }
 
-  // Native mode: check subscription
-  await refreshSubscriptionStatus();
-  const hasActive = hasActiveSubscription();
-
-  if (!hasActive) {
-    return { 
-      allowed: false, 
-      redirectTo: '/subscription' 
-    };
-  }
-
-  // Check authentication if Supabase is configured
+  // Protected routes: check authentication
   if (supabase) {
     const { data: { session } } = await supabase.auth.getSession();
     
     if (!session) {
+      // Not authenticated - redirect to welcome
       return { 
         allowed: false, 
-        redirectTo: '/auth' 
+        redirectTo: '/welcome' 
       };
     }
   }

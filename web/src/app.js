@@ -8,7 +8,7 @@ import './styles/global.css';
 import './styles/components.css';
 import { init as initRouter, route, navigate } from './router.js';
 import { initRevenueCat } from './services/revenuecat.js';
-import { initSubscription, hasActiveSubscription, refreshSubscriptionStatus } from './lib/subscription.js';
+import { initSubscription, refreshSubscriptionStatus } from './lib/subscription.js';
 import { supabase } from './lib/supabaseClient.js';
 import { Capacitor } from '@capacitor/core';
 import boatsPage from './pages/boats.js';
@@ -23,6 +23,7 @@ import linksPage from './pages/links.js';
 import accountPage from './pages/account.js';
 import authPage from './pages/auth.js';
 import subscriptionPage from './pages/subscription.js';
+import welcomePage from './pages/welcome.js';
 import hauloutPage from './pages/haulout.js';
 import calendarPage from './pages/calendar.js';
 import guidePage from './pages/guide.js';
@@ -35,8 +36,9 @@ export async function init() {
     console.log('BoatMatey: Initializing app...');
     
     // Register routes
+    route('/welcome', welcomePage); // Welcome/onboarding page
     route('/subscription', subscriptionPage); // Subscription paywall
-    route('/auth', authPage); // Auth page
+    route('/auth', authPage); // Auth page (sign in / create account)
     route('/', boatsPage); // Boats list (home)
     route('/boat/:id', boatDashboardPage); // Boat dashboard
     route('/boat/:id/details', boatDetailsPage); // Boat details
@@ -82,45 +84,37 @@ export async function init() {
 
 /**
  * Check access requirements and redirect if needed
- * GDPR Compliance: No access without subscription + auth on native
+ * Flow: Welcome → Auth → (Subscription for new users) → Home
  */
 async function checkAccessAndRedirect() {
   const isNative = Capacitor.isNativePlatform?.() ?? false;
   const currentHash = window.location.hash.substring(1) || '/';
   
-  // Web mode: no subscription required (dev/testing)
+  // Web mode: no restrictions (dev/testing)
   if (!isNative) {
-    console.log('BoatMatey: Web mode - no subscription required');
+    console.log('BoatMatey: Web mode - no restrictions');
     return;
   }
 
-  // Native mode: subscription required
-  console.log('BoatMatey: Native mode - checking subscription...');
-  await refreshSubscriptionStatus();
-  const hasActive = hasActiveSubscription();
+  // Public routes that don't require authentication
+  const publicRoutes = ['/welcome', '/auth', '/subscription'];
+  const isOnPublicPage = publicRoutes.includes(currentHash);
 
-  // Check if we're already on subscription or auth page
-  const isOnSubscriptionPage = currentHash === '/subscription';
-  const isOnAuthPage = currentHash === '/auth';
-
-  if (!hasActive && !isOnSubscriptionPage) {
-    // No subscription - redirect to subscription page
-    console.log('BoatMatey: No active subscription - redirecting to subscription page');
-    navigate('/subscription');
-    return;
-  }
-
-  if (hasActive && !isOnAuthPage && !isOnSubscriptionPage) {
-    // Has subscription - check authentication
-    if (supabase) {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        // Not authenticated - redirect to auth
-        console.log('BoatMatey: Not authenticated - redirecting to auth page');
-        navigate('/auth');
-        return;
-      }
+  // Check authentication
+  if (supabase) {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session && !isOnPublicPage) {
+      // Not authenticated - redirect to welcome page
+      console.log('BoatMatey: Not authenticated - redirecting to welcome page');
+      navigate('/welcome');
+      return;
+    }
+    
+    if (session) {
+      // User is authenticated - sync subscription status
+      await refreshSubscriptionStatus();
+      console.log('BoatMatey: User authenticated, access granted');
     }
   }
   

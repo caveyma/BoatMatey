@@ -1,7 +1,12 @@
 /**
- * Auth / Onboarding Page
- * Email + password sign-in / sign-up with BoatMatey logo
- * Requires active subscription before account creation (GDPR compliance)
+ * Auth Page - Sign In / Create Account
+ * 
+ * Flow (like PetHub+):
+ * 1. User enters email + password
+ * 2. Sign In → existing users log in directly
+ * 3. Create Account → goes to subscription page → pays → account created
+ * 
+ * GDPR: No account created until payment confirmed
  */
 
 import { navigate } from '../router.js';
@@ -14,9 +19,35 @@ import {
 } from '../lib/subscription.js';
 import { Capacitor } from '@capacitor/core';
 
+// Store pending signup data (cleared after use)
+let pendingSignup = null;
+
+/**
+ * Store signup data for after payment
+ */
+export function setPendingSignup(email, password) {
+  pendingSignup = { email, password };
+}
+
+/**
+ * Get and clear pending signup data
+ */
+export function getPendingSignup() {
+  const data = pendingSignup;
+  pendingSignup = null;
+  return data;
+}
+
+/**
+ * Check if there's a pending signup
+ */
+export function hasPendingSignup() {
+  return pendingSignup !== null;
+}
+
 /**
  * Create profile with subscription data in Supabase
- * This ensures GDPR compliance - only create profile after paid subscription
+ * GDPR: Only create profile after paid subscription confirmed
  */
 async function createProfileWithSubscription(userId, email) {
   if (!supabase) return;
@@ -53,7 +84,45 @@ async function createProfileWithSubscription(userId, email) {
 }
 
 /**
- * Sync current subscription status to user's profile in Supabase
+ * Complete account creation after payment
+ * Called from subscription page after successful payment
+ */
+export async function completeAccountCreation() {
+  const signup = getPendingSignup();
+  if (!signup) {
+    console.error('No pending signup data');
+    return { success: false, error: 'No signup data found' };
+  }
+
+  if (!supabase) {
+    return { success: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email: signup.email,
+      password: signup.password
+    });
+
+    if (error) {
+      console.error('Supabase signUp error:', error);
+      return { success: false, error: error.message };
+    }
+
+    if (data.user) {
+      await createProfileWithSubscription(data.user.id, signup.email);
+      return { success: true, user: data.user };
+    }
+
+    return { success: true, needsVerification: true };
+  } catch (err) {
+    console.error('Account creation error:', err);
+    return { success: false, error: 'Unexpected error creating account' };
+  }
+}
+
+/**
+ * Sync subscription status to existing user's profile
  */
 async function syncSubscriptionToProfile(userId) {
   if (!supabase) return;
@@ -74,8 +143,6 @@ async function syncSubscriptionToProfile(userId) {
 
     if (error) {
       console.error('Error syncing subscription to profile:', error);
-    } else {
-      console.log('Subscription synced to profile');
     }
   } catch (error) {
     console.error('Failed to sync subscription:', error);
@@ -85,78 +152,92 @@ async function syncSubscriptionToProfile(userId) {
 
 function render() {
   const wrapper = document.createElement('div');
-  wrapper.className = 'page-content';
+  wrapper.className = 'page-fullscreen';
 
   const container = document.createElement('div');
   container.className = 'container';
 
   const card = document.createElement('div');
   card.className = 'card';
-  card.style.maxWidth = '480px';
-  card.style.margin = '0 auto';
+  card.style.padding = '2rem 1.5rem';
+
+  const isNative = Capacitor.isNativePlatform?.() ?? false;
 
   card.innerHTML = `
-    <div class="text-center mb-md">
+    <div class="text-center" style="margin-bottom: 1.5rem;">
       <div style="display:flex; justify-content:center; margin-bottom: 1rem;">
-        ${renderLogoFull(160)}
+        ${renderLogoFull(140)}
       </div>
-      <h2>Welcome aboard</h2>
-      <p class="text-muted">Sign in or create your BoatMatey account to get started.</p>
+      <h2 style="margin-bottom: 0.5rem;">Sign in to get started</h2>
+      <p class="text-muted">Use your existing account to continue.</p>
     </div>
 
-    <div class="form-group" id="auth-status" style="display: ${supabase ? 'none' : 'block'};">
-      <p class="text-muted">
-        Cloud sync is not configured yet. Please contact support.
-      </p>
-    </div>
+    <form id="auth-form">
+      <div class="form-group" style="margin-bottom: 1rem;">
+        <label for="auth-email" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Email</label>
+        <input type="email" id="auth-email" required autocomplete="email" placeholder="you@example.com" 
+               style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+      </div>
+      
+      <div class="form-group" style="margin-bottom: 1.25rem;">
+        <label for="auth-password" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Password</label>
+        <input type="password" id="auth-password" required autocomplete="current-password" placeholder="••••••••"
+               style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+      </div>
 
-    <div class="form-group" style="display:flex; gap: 0.5rem; margin-bottom: 1.5rem;">
-      <button type="button" class="btn-primary" id="auth-toggle-signin" style="flex:1;">
-        Sign In
+      <button type="submit" class="btn-primary" id="signin-btn" style="width: 100%; padding: 0.875rem; font-size: 1rem; margin-bottom: 0.75rem;">
+        Sign in
       </button>
-      <button type="button" class="btn-secondary" id="auth-toggle-signup" style="flex:1;">
-        Create Account
-      </button>
-    </div>
 
-    <form id="auth-form-signin">
-      <div class="form-group">
-        <label for="signin-email">Email</label>
-        <input type="email" id="signin-email" required autocomplete="email" placeholder="you@example.com">
-      </div>
-      <div class="form-group">
-        <label for="signin-password">Password</label>
-        <input type="password" id="signin-password" required autocomplete="current-password" placeholder="••••••••">
-      </div>
-      <div class="form-actions">
-        <button type="submit" class="btn-primary" id="signin-submit-btn" style="width: 100%;">Sign In</button>
-      </div>
-      <p class="form-help">Forgot your password? Use the Supabase reset link from your email (full reset UI coming soon).</p>
+      ${isNative ? `
+        <button type="button" class="btn-secondary" id="create-account-btn" style="width: 100%; padding: 0.875rem; font-size: 1rem;">
+          Create account
+        </button>
+        <p class="text-muted" style="text-align: center; margin-top: 0.75rem; font-size: 0.9rem;">
+          New here? Your free trial starts when you create an account.
+        </p>
+      ` : `
+        <div style="background: #fff3cd; border: 1px solid #ffc107; padding: 1rem; border-radius: 8px; margin-top: 1rem;">
+          <p style="margin: 0; color: #856404; font-size: 0.9rem;">
+            <strong>New to BoatMatey?</strong><br>
+            Download the mobile app to create an account and start your free trial.
+          </p>
+        </div>
+      `}
     </form>
 
-    <form id="auth-form-signup" style="display:none;">
-      <div class="form-group">
-        <label for="signup-email">Email</label>
-        <input type="email" id="signup-email" required autocomplete="email" placeholder="you@example.com">
-      </div>
-      <div class="form-group">
-        <label for="signup-password">Password</label>
-        <input type="password" id="signup-password" required autocomplete="new-password" placeholder="Create a password">
-      </div>
-      <div class="form-group">
-        <label for="signup-password-confirm">Confirm Password</label>
-        <input type="password" id="signup-password-confirm" required autocomplete="new-password" placeholder="Repeat your password">
-      </div>
-      <div class="form-actions">
-        <button type="button" class="btn-secondary" id="auth-cancel-signup-btn">Cancel</button>
-        <button type="submit" class="btn-primary" id="signup-submit-btn">Create Account</button>
-      </div>
-      <p class="form-help">We’ll send a verification email if your project is configured to require it.</p>
-    </form>
-
-    <div id="auth-message" class="mt-md" style="display:none;">
-      <p class="text-muted"></p>
+    <div style="border-top: 1px solid #eee; margin-top: 1.5rem; padding-top: 1.5rem;">
+      <button type="button" class="btn-link" id="forgot-password-btn" style="width: 100%; text-align: center; color: var(--color-primary);">
+        Forgot password?
+      </button>
     </div>
+
+    ${isNative ? `
+      <div style="border-top: 1px solid #eee; margin-top: 1rem; padding-top: 1.25rem;">
+        <p style="text-align: center; margin-bottom: 0.75rem; font-weight: 500; color: var(--color-text-light);">
+          Got a promo code?
+        </p>
+        <div style="display: flex; gap: 0.5rem;">
+          <input type="text" id="promo-code" placeholder="Enter promo code" 
+                 style="flex: 1; padding: 0.625rem; border: 1px solid #ddd; border-radius: 8px; font-size: 0.95rem;">
+          <button type="button" class="btn-secondary" id="apply-promo-btn" style="padding: 0.625rem 1rem;">
+            Apply
+          </button>
+        </div>
+      </div>
+    ` : ''}
+
+    <div id="auth-message" style="display: none; margin-top: 1rem; padding: 0.75rem; border-radius: 8px;">
+      <p style="margin: 0; font-size: 0.95rem;"></p>
+    </div>
+
+    ${isNative ? `
+      <div style="margin-top: 1.5rem; text-align: center;">
+        <button type="button" class="btn-link" id="back-btn" style="color: var(--color-text-light);">
+          ← Back
+        </button>
+      </div>
+    ` : ''}
   `;
 
   container.appendChild(card);
@@ -165,225 +246,186 @@ function render() {
   return wrapper;
 }
 
-function setMode(mode) {
-  const signinForm = document.getElementById('auth-form-signin');
-  const signupForm = document.getElementById('auth-form-signup');
-  const signinToggle = document.getElementById('auth-toggle-signin');
-  const signupToggle = document.getElementById('auth-toggle-signup');
-
-  if (!signinForm || !signupForm || !signinToggle || !signupToggle) return;
-
-  if (mode === 'signup') {
-    signupForm.style.display = 'block';
-    signinForm.style.display = 'none';
-    signupToggle.classList.remove('btn-secondary');
-    signupToggle.classList.add('btn-primary');
-    signinToggle.classList.remove('btn-primary');
-    signinToggle.classList.add('btn-secondary');
-  } else {
-    signinForm.style.display = 'block';
-    signupForm.style.display = 'none';
-    signinToggle.classList.remove('btn-secondary');
-    signinToggle.classList.add('btn-primary');
-    signupToggle.classList.remove('btn-primary');
-    signupToggle.classList.add('btn-secondary');
-  }
-}
-
-function showMessage(text, isError = false) {
+function showMessage(text, isError = false, isSuccess = false) {
   const messageContainer = document.getElementById('auth-message');
   if (!messageContainer) return;
   const p = messageContainer.querySelector('p');
   if (!p) return;
 
   p.textContent = text;
-  p.style.color = isError ? 'var(--color-error)' : 'var(--color-text-light)';
+  
+  if (isError) {
+    messageContainer.style.background = '#fee2e2';
+    messageContainer.style.border = '1px solid #f87171';
+    p.style.color = '#dc2626';
+  } else if (isSuccess) {
+    messageContainer.style.background = '#dcfce7';
+    messageContainer.style.border = '1px solid #4ade80';
+    p.style.color = '#16a34a';
+  } else {
+    messageContainer.style.background = '#f0f8ff';
+    messageContainer.style.border = '1px solid var(--color-primary)';
+    p.style.color = 'var(--color-text)';
+  }
+  
   messageContainer.style.display = text ? 'block' : 'none';
 }
 
 async function onMount() {
   window.navigate = navigate;
 
-  // Check subscription status on native platforms
   const isNative = Capacitor.isNativePlatform?.() ?? false;
-  if (isNative && supabase) {
-    await refreshSubscriptionStatus();
-    const hasActive = hasActiveSubscription();
-    
-    if (!hasActive) {
-      // No active subscription - redirect back to subscription page
-      showMessage('Active subscription required to create an account.', true);
-      setTimeout(() => {
-        navigate('/subscription');
-      }, 2000);
-      return;
-    }
-  }
 
-  const signinToggle = document.getElementById('auth-toggle-signin');
-  const signupToggle = document.getElementById('auth-toggle-signup');
-  const cancelSignupBtn = document.getElementById('auth-cancel-signup-btn');
-  const signinForm = document.getElementById('auth-form-signin');
-  const signupForm = document.getElementById('auth-form-signup');
-  const signinSubmitBtn = document.getElementById('signin-submit-btn');
-  const signupSubmitBtn = document.getElementById('signup-submit-btn');
+  const authForm = document.getElementById('auth-form');
+  const signinBtn = document.getElementById('signin-btn');
+  const createAccountBtn = document.getElementById('create-account-btn');
+  const forgotPasswordBtn = document.getElementById('forgot-password-btn');
+  const applyPromoBtn = document.getElementById('apply-promo-btn');
+  const backBtn = document.getElementById('back-btn');
 
-  if (signinToggle) {
-    signinToggle.addEventListener('click', () => {
-      setMode('signin');
-      showMessage('');
-    });
-  }
-
-  if (signupToggle) {
-    signupToggle.addEventListener('click', () => {
-      setMode('signup');
-      showMessage('');
-    });
-  }
-
-  if (cancelSignupBtn) {
-    cancelSignupBtn.addEventListener('click', () => {
-      setMode('signin');
-      showMessage('');
-    });
-  }
-
-  if (signinForm) {
-    signinForm.addEventListener('submit', async (e) => {
+  // Sign In form submission
+  if (authForm) {
+    authForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       showMessage('');
 
       if (!supabase) {
-        showMessage('Supabase is not configured. You can continue using BoatMatey locally without signing in.', true);
+        showMessage('Cloud sync is not configured.', true);
         return;
       }
 
-      const email = /** @type {HTMLInputElement} */ (document.getElementById('signin-email')).value.trim();
-      const password = /** @type {HTMLInputElement} */ (document.getElementById('signin-password')).value;
+      const email = document.getElementById('auth-email').value.trim();
+      const password = document.getElementById('auth-password').value;
 
       if (!email || !password) {
         showMessage('Please enter both email and password.', true);
         return;
       }
 
-      if (signinSubmitBtn) {
-        signinSubmitBtn.disabled = true;
-        signinSubmitBtn.textContent = 'Signing in...';
+      if (signinBtn) {
+        signinBtn.disabled = true;
+        signinBtn.textContent = 'Signing in...';
       }
 
       try {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        
         if (error) {
-          console.error('Supabase signIn error:', error);
+          console.error('Sign-in error:', error);
           showMessage(error.message || 'Unable to sign in. Please check your credentials.', true);
           return;
         }
 
-        // Sync subscription status with profile
+        // Sync subscription on native
         if (data.user && isNative) {
           await syncSubscriptionToProfile(data.user.id);
         }
 
-        navigate('/');
+        showMessage('Signed in successfully!', false, true);
+        setTimeout(() => navigate('/'), 500);
+
       } catch (err) {
-        console.error('Sign-in unexpected error:', err);
-        showMessage('Unexpected error while signing in.', true);
+        console.error('Unexpected sign-in error:', err);
+        showMessage('Unexpected error. Please try again.', true);
       } finally {
-        if (signinSubmitBtn) {
-          signinSubmitBtn.disabled = false;
-          signinSubmitBtn.textContent = 'Sign In';
+        if (signinBtn) {
+          signinBtn.disabled = false;
+          signinBtn.textContent = 'Sign in';
         }
       }
     });
   }
 
-  if (signupForm) {
-    signupForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      showMessage('');
+  // Create Account button - goes to subscription page
+  if (createAccountBtn) {
+    createAccountBtn.addEventListener('click', () => {
+      const email = document.getElementById('auth-email').value.trim();
+      const password = document.getElementById('auth-password').value;
+
+      // Validate before going to subscription
+      if (!email) {
+        showMessage('Please enter your email address.', true);
+        return;
+      }
+
+      if (!password || password.length < 6) {
+        showMessage('Please enter a password (at least 6 characters).', true);
+        return;
+      }
+
+      // Basic email validation
+      if (!email.includes('@') || !email.includes('.')) {
+        showMessage('Please enter a valid email address.', true);
+        return;
+      }
+
+      // Store credentials for after payment
+      setPendingSignup(email, password);
+      
+      // Navigate to subscription page
+      navigate('/subscription');
+    });
+  }
+
+  // Forgot password
+  if (forgotPasswordBtn) {
+    forgotPasswordBtn.addEventListener('click', async () => {
+      const email = document.getElementById('auth-email').value.trim();
+      
+      if (!email) {
+        showMessage('Please enter your email address first.', true);
+        return;
+      }
 
       if (!supabase) {
-        showMessage('Supabase is not configured. You can continue using BoatMatey locally without creating an account.', true);
+        showMessage('Password reset is not available.', true);
         return;
       }
 
-      // On native platforms, verify subscription before allowing signup
-      if (isNative) {
-        await refreshSubscriptionStatus();
-        const hasActive = hasActiveSubscription();
-        
-        if (!hasActive) {
-          showMessage('Active subscription required to create an account. Please subscribe first.', true);
-          setTimeout(() => {
-            navigate('/subscription');
-          }, 2000);
-          return;
-        }
-      }
-
-      const email = /** @type {HTMLInputElement} */ (document.getElementById('signup-email')).value.trim();
-      const password = /** @type {HTMLInputElement} */ (document.getElementById('signup-password')).value;
-      const confirmPassword = /** @type {HTMLInputElement} */ (document.getElementById('signup-password-confirm')).value;
-
-      if (!email || !password || !confirmPassword) {
-        showMessage('Please complete all fields.', true);
-        return;
-      }
-
-      if (password !== confirmPassword) {
-        showMessage('Passwords do not match.', true);
-        return;
-      }
-
-      if (signupSubmitBtn) {
-        signupSubmitBtn.disabled = true;
-        signupSubmitBtn.textContent = 'Creating account...';
-      }
+      forgotPasswordBtn.disabled = true;
+      forgotPasswordBtn.textContent = 'Sending...';
 
       try {
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password
-        });
-
+        const { error } = await supabase.auth.resetPasswordForEmail(email);
+        
         if (error) {
-          console.error('Supabase signUp error:', error);
-          showMessage(error.message || 'Unable to create account. Please try again.', true);
-          return;
-        }
-
-        // Create profile with subscription data (GDPR compliant - only after paid subscription)
-        if (data.user) {
-          await createProfileWithSubscription(data.user.id, email);
-          showMessage('Account created successfully! Signing you in...', false);
-          
-          // Auto sign-in after successful signup
-          setTimeout(() => {
-            navigate('/');
-          }, 1500);
+          showMessage(error.message || 'Unable to send reset email.', true);
         } else {
-          showMessage('Account created. Check your email for verification (if required), then sign in.', false);
-          setMode('signin');
+          showMessage('Password reset email sent. Check your inbox.', false, true);
         }
       } catch (err) {
-        console.error('Sign-up unexpected error:', err);
-        showMessage('Unexpected error while creating your account.', true);
+        showMessage('Error sending reset email.', true);
       } finally {
-        if (signupSubmitBtn) {
-          signupSubmitBtn.disabled = false;
-          signupSubmitBtn.textContent = 'Create Account';
-        }
+        forgotPasswordBtn.disabled = false;
+        forgotPasswordBtn.textContent = 'Forgot password?';
       }
     });
   }
 
-  // Default to sign-in mode
-  setMode('signin');
+  // Promo code
+  if (applyPromoBtn) {
+    applyPromoBtn.addEventListener('click', () => {
+      const promoCode = document.getElementById('promo-code').value.trim();
+      
+      if (!promoCode) {
+        showMessage('Please enter a promo code.', true);
+        return;
+      }
+
+      // TODO: Implement promo code validation with RevenueCat
+      showMessage('Promo code feature coming soon!');
+    });
+  }
+
+  // Back button
+  if (backBtn) {
+    backBtn.addEventListener('click', () => {
+      navigate('/welcome');
+    });
+  }
 }
 
 export default {
   render,
   onMount
 };
-

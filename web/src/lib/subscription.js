@@ -102,42 +102,99 @@ export async function refreshSubscriptionStatus() {
 
 /**
  * Purchase the yearly subscription (native only).
- * Returns the updated subscription status.
+ * Returns the updated subscription status with additional metadata.
  */
 export async function purchaseSubscription() {
   const isNative = Capacitor.isNativePlatform?.() ?? false;
   if (!isNative) {
-    alert('Subscriptions can only be purchased from the Android or iOS app.');
-    return subscriptionState;
+    return { ...subscriptionState, cancelled: false, error: 'Web not supported' };
   }
 
   try {
+    console.log('[Subscription] Getting offerings...');
     const offerings = await Purchases.getOfferings();
+    console.log('[Subscription] Offerings:', JSON.stringify(offerings, null, 2));
 
     const current = offerings.current;
     if (!current) {
-      throw new Error('No current offering configured in RevenueCat.');
+      console.error('[Subscription] No current offering found');
+      return { ...subscriptionState, cancelled: false, error: 'No offering configured' };
     }
+
+    console.log('[Subscription] Current offering:', current.identifier);
+    console.log('[Subscription] Available packages:', current.availablePackages?.map(p => p.identifier));
 
     // Prefer the annual package if available, otherwise any available package.
     const selectedPackage = current.annual || current.availablePackages?.[0];
     if (!selectedPackage) {
-      throw new Error('No purchasable package found in the current offering.');
+      console.error('[Subscription] No package found in offering');
+      return { ...subscriptionState, cancelled: false, error: 'No package available' };
     }
 
-    await Purchases.purchasePackage({ aPackage: selectedPackage });
+    console.log('[Subscription] Selected package:', selectedPackage.identifier);
+    console.log('[Subscription] Initiating purchase...');
 
-    // After a successful purchase, refresh entitlements.
-    return await refreshSubscriptionStatus();
+    try {
+      const purchaseResult = await Purchases.purchasePackage({ aPackage: selectedPackage });
+      console.log('[Subscription] Purchase completed successfully');
+      console.log('[Subscription] Purchase result:', JSON.stringify(purchaseResult, null, 2));
+    } catch (purchaseError) {
+      // Sometimes purchase succeeds in store but throws error
+      // Check if we actually got the entitlement despite the error
+      console.warn('[Subscription] Purchase call threw error, checking entitlements...', purchaseError);
+    }
+
+    // Always refresh and check entitlements after purchase attempt
+    console.log('[Subscription] Refreshing entitlements...');
+    await refreshSubscriptionStatus();
+    
+    const hasActive = hasActiveSubscription();
+    console.log('[Subscription] Active subscription after purchase?', hasActive);
+    
+    if (hasActive) {
+      console.log('[Subscription] ✅ Subscription activated successfully');
+      return { ...subscriptionState, cancelled: false, error: null };
+    } else {
+      console.error('[Subscription] ❌ No active subscription found after purchase');
+      // Still no entitlement - this was likely cancelled or failed
+      return { ...subscriptionState, cancelled: true, error: null };
+    }
+    
   } catch (error) {
-    // User cancellations are expected; RevenueCat exposes a flag for that in TS,
-    // but here we just log and surface a friendly message.
-    console.error('[Subscription] Purchase failed:', error);
-    alert(
-      error?.message ||
-        'Something went wrong while processing your subscription. Please try again.'
-    );
-    return subscriptionState;
+    console.error('[Subscription] Purchase error:', error);
+    console.error('[Subscription] Error details:', JSON.stringify(error, null, 2));
+    
+    // Check if this was a user cancellation
+    // RevenueCat error codes: https://www.revenuecat.com/docs/error-codes
+    const errorCode = error?.code || error?.errorCode;
+    const errorMessage = error?.message || error?.underlyingErrorMessage || '';
+    
+    // User cancelled the purchase
+    if (errorCode === 1 || 
+        errorCode === 'PURCHASE_CANCELLED' || 
+        errorMessage.toLowerCase().includes('cancel') ||
+        errorMessage.toLowerCase().includes('user cancelled')) {
+      console.log('[Subscription] User cancelled purchase');
+      return { ...subscriptionState, cancelled: true, error: null };
+    }
+    
+    // Before reporting error, check if subscription actually went through
+    try {
+      await refreshSubscriptionStatus();
+      if (hasActiveSubscription()) {
+        console.log('[Subscription] Purchase succeeded despite error!');
+        return { ...subscriptionState, cancelled: false, error: null };
+      }
+    } catch (refreshError) {
+      console.error('[Subscription] Failed to refresh after error:', refreshError);
+    }
+    
+    // Actual error
+    return { 
+      ...subscriptionState, 
+      cancelled: false, 
+      error: errorMessage || 'Purchase failed. Please try again.' 
+    };
   }
 }
 
@@ -182,19 +239,66 @@ export function getSubscriptionStatus() {
 }
 
 /**
- * Limit helpers – currently keep everything unlimited.
- * These functions are still here to preserve the existing API surface.
+ * Subscription limits for BoatMatey
+ * - 2 active boats
+ * - 5 archived boats
+ * - Unlimited engines, service entries, equipment, etc.
+ */
+const LIMITS = {
+  active_boats: 2,
+  archived_boats: 5,
+  engines: Infinity,
+  service_entries: Infinity,
+  equipment: Infinity,
+  logbook_entries: Infinity,
+  attachments: Infinity
+};
+
+/**
+ * Check if a resource limit allows adding more items
+ * @param {string} resourceType - 'active_boats', 'archived_boats', 'engines', etc.
+ * @param {number} currentCount - Current count of the resource
+ * @returns {{ allowed: boolean, limit: number, current: number, remaining: number }}
  */
 export function checkLimit(resourceType, currentCount) {
+  const limit = LIMITS[resourceType] ?? Infinity;
+  const remaining = Math.max(0, limit - currentCount);
+  
   return {
-    allowed: true,
-    limit: Infinity,
-    current: currentCount
+    allowed: currentCount < limit,
+    limit: limit,
+    current: currentCount,
+    remaining: remaining
   };
 }
 
+/**
+ * Get limit information for a resource type
+ * @param {string} resourceType - 'active_boats', 'archived_boats', 'engines', etc.
+ * @returns {{ limit: number, label: string }}
+ */
 export function getLimitInfo(resourceType) {
-  return { limit: Infinity, label: 'Unlimited' };
+  const limit = LIMITS[resourceType] ?? Infinity;
+  
+  if (limit === Infinity) {
+    return { limit: Infinity, label: 'Unlimited' };
+  }
+  
+  return { limit: limit, label: `${limit}` };
+}
+
+/**
+ * Get all limits for display
+ */
+export function getAllLimits() {
+  return {
+    activeBoats: { limit: LIMITS.active_boats, label: `${LIMITS.active_boats} active boats` },
+    archivedBoats: { limit: LIMITS.archived_boats, label: `${LIMITS.archived_boats} archived boats` },
+    engines: { limit: LIMITS.engines, label: 'Unlimited engines' },
+    serviceEntries: { limit: LIMITS.service_entries, label: 'Unlimited service entries' },
+    equipment: { limit: LIMITS.equipment, label: 'Unlimited equipment' },
+    attachments: { limit: LIMITS.attachments, label: 'Unlimited attachments' }
+  };
 }
 
 // Placeholder for backwards compatibility – no longer used.
