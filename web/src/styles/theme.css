@@ -171,7 +171,7 @@ html, body {
   text-align: center;
 }
 
-/* Back button */
+/* Back button (header - Settings/Home only) */
 .yacht-header .btn-link {
   background: none;
   border: none;
@@ -179,6 +179,25 @@ html, body {
   font-size: 1.2rem;
   cursor: pointer;
   padding: 0;
+}
+
+/* Back button in main body - top-left, same size as Home/Settings (0.8rem), no arrow */
+.page-body-back {
+  padding: var(--spacing-xs, 0.25rem) var(--spacing-md, 12px) var(--spacing-sm, 0.5rem);
+  margin-bottom: 0;
+}
+.page-body-back .page-body-back-btn,
+.page-body-back-btn {
+  background: none;
+  border: none;
+  color: #0B3C5D;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0;
+}
+.page-body-back .page-body-back-btn:hover,
+.page-body-back-btn:hover {
+  opacity: 0.85;
 }
 
 /* Hard clamp header logo so it can NEVER be massive */
@@ -221,6 +240,7 @@ html, body {
 
 .page-content {
   padding: var(--spacing-lg);
+  padding-bottom: var(--spacing-3xl);  /* extra space at bottom of each page */
   height: calc(100vh - var(--bm-header-total));
   overflow-y: auto;                    /* only this area scrolls */
   -webkit-overflow-scrolling: touch;

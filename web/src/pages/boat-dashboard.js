@@ -5,8 +5,8 @@
 
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
-import { createYachtHeader } from '../components/header.js';
-import { getBoat } from '../lib/dataService.js';
+import { createYachtHeader, createBackButton } from '../components/header.js';
+import { getBoat, getEngines, getServiceEntries, getHaulouts, getEquipment, getLogbook, getLinks } from '../lib/dataService.js';
 import { boatsStorage, enginesStorage, serviceHistoryStorage, hauloutStorage, navEquipmentStorage, safetyEquipmentStorage, shipsLogStorage, linksStorage } from '../lib/storage.js';
 
 const serviceIconUrl = new URL('../assets/service-wrench.png', import.meta.url).href;
@@ -16,13 +16,17 @@ const logIconUrl = new URL('../assets/log-book.png', import.meta.url).href;
 const linksIconUrl = new URL('../assets/links-globe.png', import.meta.url).href;
 const navigationIconUrl = new URL('../assets/navigation-compass.png', import.meta.url).href;
 const boatIconUrl = new URL('../assets/boat-generic.png', import.meta.url).href;
+// Sails & Rigging card icon – use custom sailboat artwork.
+// Ensure the image exists at: web/src/assets/sails-rigging.png
+const sailsRiggingIconUrl = new URL('../assets/sails-rigging.png', import.meta.url).href;
+// Watermaker card icon – place your supplied glass-of-water image at this path:
+// web/src/assets/watermaker.png
+const watermakerIconUrl = new URL('../assets/watermaker.png', import.meta.url).href;
 // Haul-out maintenance uses a tools/hoist themed icon.
 // Ensure the provided icon image is copied to `src/assets/haulout-hook.png`.
 const hauloutIconUrl = new URL('../assets/haulout-hook.png', import.meta.url).href;
-// Calendar / reminders card uses the calendar artwork provided by the user.
-// Copy the image into `src/assets/calendar-card.png` if it is not already present.
-const calendarIconUrl = new URL('../assets/calendar-card.png', import.meta.url).href;
-
+// User Guide card – place your icon at: web/src/assets/user-guide.png
+const userGuideIconUrl = new URL('../assets/user-guide.png', import.meta.url).href;
 let currentBoatId = null;
 let currentBoat = null;
 
@@ -60,10 +64,11 @@ function getStatusText(cardId, boatId) {
       const links = linksStorage.getAll(boatId);
       return `${links.length} link${links.length !== 1 ? 's' : ''}`;
     
-    case 'calendar':
-      // Calendar aggregates reminders from engines / service / haul-out,
-      // so we just show a simple status label here.
-      return 'Reminders & alerts';
+    case 'watermaker':
+      return 'Track watermaker service';
+
+    case 'sails-rigging':
+      return 'Sails & rigging';
     
     case 'guide':
       return 'How each card works';
@@ -82,20 +87,17 @@ function createCard(id, title, iconName, route, boatId) {
     navigate(route);
   };
 
-  const useBitmapImage = id === 'boat' || id === 'service' || id === 'haulout' || id === 'engines' || id === 'navigation' || id === 'safety' || id === 'log' || id === 'links' || id === 'calendar';
+  const useBitmapImage = id === 'boat' || id === 'service' || id === 'haulout' || id === 'engines' || id === 'navigation' || id === 'safety' || id === 'log' || id === 'links' || id === 'watermaker' || id === 'sails-rigging' || id === 'guide';
   const badgeClass = useBitmapImage
     ? 'dashboard-card-icon-badge dashboard-card-icon-bitmap'
     : 'dashboard-card-icon-badge';
 
   let iconHtml;
-  if (id === 'boat') {
-    const photoUrl = currentBoat?.photo_url || currentBoat?.photo_data || null;
-    if (photoUrl) {
-      iconHtml = `<img src="${photoUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
-    } else {
-      // Fall back to the same generic boat artwork used on the home screen
-      iconHtml = `<img src="${boatIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
-    }
+  if (id === 'sails-rigging') {
+    iconHtml = `<img src="${sailsRiggingIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
+  } else if (id === 'boat') {
+    // Always use the generic boat artwork so the card matches the home screen.
+    iconHtml = `<img src="${boatIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else if (id === 'service') {
     iconHtml = `<img src="${serviceIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else if (id === 'haulout') {
@@ -110,8 +112,10 @@ function createCard(id, title, iconName, route, boatId) {
     iconHtml = `<img src="${logIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else if (id === 'links') {
     iconHtml = `<img src="${linksIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
-  } else if (id === 'calendar') {
-    iconHtml = `<img src="${calendarIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
+  } else if (id === 'watermaker') {
+    iconHtml = `<img src="${watermakerIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
+  } else if (id === 'guide') {
+    iconHtml = `<img src="${userGuideIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else {
     iconHtml = renderIcon(iconName);
   }
@@ -164,11 +168,12 @@ function render() {
 
   const wrapper = document.createElement('div');
 
-  const header = createYachtHeader(boat.boat_name || 'Boat Dashboard', true, () => navigate('/'));
+  const header = createYachtHeader(boat.boat_name || 'Boat Dashboard');
   wrapper.appendChild(header);
 
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content';
+  pageContent.appendChild(createBackButton());
 
   if (isArchived) {
     const banner = document.createElement('div');
@@ -186,13 +191,18 @@ function render() {
     { id: 'boat', title: 'Boat Details', icon: 'boat', route: `/boat/${currentBoatId}/details` },
     { id: 'engines', title: 'Engines', icon: 'engine', route: `/boat/${currentBoatId}/engines` },
     { id: 'service', title: 'Service History', icon: 'wrench', route: `/boat/${currentBoatId}/service` },
+    ...(currentBoat.watermaker_installed
+      ? [{ id: 'watermaker', title: 'Watermaker Service', icon: 'droplet', route: `/boat/${currentBoatId}/watermaker` }]
+      : []),
     { id: 'haulout', title: 'Haul-Out Maintenance', icon: 'wrench', route: `/boat/${currentBoatId}/haulout` },
+    ...(currentBoat.boat_type === 'sailing'
+      ? [{ id: 'sails-rigging', title: 'Sails & Rigging', icon: 'sail', route: `/boat/${currentBoatId}/sails-rigging` }]
+      : []),
     { id: 'navigation', title: 'Navigation Equipment', icon: 'chart', route: `/boat/${currentBoatId}/navigation` },
     { id: 'safety', title: 'Safety Equipment', icon: 'shield', route: `/boat/${currentBoatId}/safety` },
     { id: 'log', title: "Ship's Log", icon: 'book', route: `/boat/${currentBoatId}/log` },
-    { id: 'calendar', title: 'Calendar & Alerts', icon: 'calendar', route: `/boat/${currentBoatId}/calendar` },
     { id: 'links', title: 'Web Links', icon: 'link', route: `/boat/${currentBoatId}/links` },
-    { id: 'guide', title: 'Guide', icon: 'file', route: `/boat/${currentBoatId}/guide` }
+    { id: 'guide', title: 'User Guide', icon: 'file', route: `/boat/${currentBoatId}/guide` }
   ];
 
   cards.forEach(card => {
@@ -206,35 +216,45 @@ function render() {
   return wrapper;
 }
 
-function onMount() {
+async function onMount() {
   const hash = window.location.hash;
   const match = hash.match(/\/boat\/([^\/]+)/);
   const boatId = match ? match[1] : null;
 
   if (boatId) {
-    getBoat(boatId).then((b) => {
-      if (b) {
-        boatsStorage.save(b);
-        currentBoat = b;
-      }
-    });
+    const b = await getBoat(boatId);
+    if (b) {
+      boatsStorage.save(b);
+      currentBoat = b;
+    }
+    // Fetch and sync all section data so card counts are correct
+    await Promise.all([
+      getEngines(boatId),
+      getServiceEntries(boatId),
+      getHaulouts(boatId),
+      getEquipment(boatId, 'navigation'),
+      getEquipment(boatId, 'safety'),
+      getLogbook(boatId),
+      getLinks(boatId)
+    ]);
 
     const statusElements = document.querySelectorAll('.dashboard-card-status');
+    const cardIds = [
+      'boat',
+      'engines',
+      'service',
+      ...(currentBoat?.watermaker_installed ? ['watermaker'] : []),
+      'haulout',
+      ...(currentBoat?.boat_type === 'sailing' ? ['sails-rigging'] : []),
+      'navigation',
+      'safety',
+      'log',
+      'links',
+      'guide'
+    ];
     statusElements.forEach((el, index) => {
-      const cards = [
-        'boat',
-        'engines',
-        'service',
-        'haulout',
-        'navigation',
-        'safety',
-        'log',
-        'calendar',
-        'links',
-        'guide'
-      ];
-      if (cards[index]) {
-        el.textContent = getStatusText(cards[index], boatId);
+      if (cardIds[index]) {
+        el.textContent = getStatusText(cardIds[index], boatId);
       }
     });
   }

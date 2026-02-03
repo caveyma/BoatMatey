@@ -6,6 +6,9 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { renderLogo } from '../components/logo.js';
+
+const calendarIconUrl = new URL('../assets/calendar-card.png', import.meta.url).href;
+const settingsIconUrl = new URL('../assets/account-admin.png', import.meta.url).href;
 import { boatsStorage } from '../lib/storage.js';
 import {
   getBoats as getBoatsFromApi,
@@ -21,7 +24,7 @@ import {
 
 let editingBoatId = null;
 
-import { createYachtHeader } from '../components/header.js';
+import { createYachtHeader, createBackButton } from '../components/header.js';
 
 /** Compress image to a small data URL for local storage (avoids QuotaExceededError). */
 function compressImageToDataUrl(file, maxPx = 280, quality = 0.55) {
@@ -59,14 +62,14 @@ function compressImageToDataUrl(file, maxPx = 280, quality = 0.55) {
 function render() {
   const wrapper = document.createElement('div');
   
-  // Yacht header with back button (browser history)
-  const header = createYachtHeader('', true, () => window.history.back());
+  const header = createYachtHeader('');
   wrapper.appendChild(header);
   
   // Page content
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content';
-  
+  pageContent.appendChild(createBackButton());
+
   const container = document.createElement('div');
   container.className = 'container';
 
@@ -98,6 +101,42 @@ function render() {
   return wrapper;
 }
 
+function createCalendarCard() {
+  const card = document.createElement('a');
+  card.href = '#/calendar';
+  card.className = 'dashboard-card card-color-calendar calendar-home-card';
+  card.innerHTML = `
+    <div class="dashboard-card-icon-badge dashboard-card-icon-bitmap">
+      <img src="${calendarIconUrl}" alt="Calendar" class="dashboard-card-icon-img">
+    </div>
+    <div class="dashboard-card-title">Calendar & Alerts</div>
+    <div class="dashboard-card-status text-muted">Reminders & appointments</div>
+  `;
+  card.onclick = (e) => {
+    e.preventDefault();
+    navigate('/calendar');
+  };
+  return card;
+}
+
+function createSettingsCard() {
+  const card = document.createElement('a');
+  card.href = '#/account';
+  card.className = 'dashboard-card card-color-account settings-home-card';
+  card.innerHTML = `
+    <div class="dashboard-card-icon-badge dashboard-card-icon-bitmap">
+      <img src="${settingsIconUrl}" alt="Settings" class="dashboard-card-icon-img">
+    </div>
+    <div class="dashboard-card-title">Settings</div>
+    <div class="dashboard-card-status text-muted">Account & subscription</div>
+  `;
+  card.onclick = (e) => {
+    e.preventDefault();
+    navigate('/account');
+  };
+  return card;
+}
+
 async function onMount() {
   await loadBoats();
 }
@@ -118,19 +157,29 @@ async function loadBoats() {
   grid.innerHTML = '';
 
   if (boats.length === 0) {
-    grid.innerHTML = `
-      <div class="empty-state" style="grid-column: 1 / -1;">
-        <div class="empty-state-icon">${renderIcon('boat')}</div>
-        <p>No boats added yet</p>
-        <p class="text-muted">Add your first boat to get started</p>
-      </div>
+    const emptyState = document.createElement('div');
+    emptyState.className = 'empty-state';
+    emptyState.style.gridColumn = '1 / -1';
+    emptyState.innerHTML = `
+      <div class="empty-state-icon">${renderIcon('boat')}</div>
+      <p>No boats added yet</p>
+      <p class="text-muted">Add your first boat to get started</p>
     `;
+    grid.appendChild(emptyState);
+    const container = grid.parentElement;
+    const existingRow = container.querySelector('.boats-settings-calendar-row');
+    if (existingRow) existingRow.remove();
+    const settingsCalendarRow = document.createElement('div');
+    settingsCalendarRow.className = 'boats-settings-calendar-row';
+    settingsCalendarRow.appendChild(createCalendarCard());
+    settingsCalendarRow.appendChild(createSettingsCard());
+    container.appendChild(settingsCalendarRow);
     updateAddBoatButton([]);
     attachHandlers();
     return;
   }
 
-  boats.forEach(boat => {
+  boats.forEach((boat) => {
     const isArchived = (boat.status || 'active') === 'archived';
     const card = document.createElement('div');
     card.className = 'boat-card' + (isArchived ? ' boat-card-archived' : '');
@@ -167,7 +216,6 @@ async function loadBoats() {
 
     grid.appendChild(card);
 
-    // If image fails to load (e.g. data URL quota, CORS), show placeholder
     const img = card.querySelector('.boat-card-photo');
     if (img) {
       img.onerror = function () {
@@ -178,6 +226,16 @@ async function loadBoats() {
       };
     }
   });
+
+  const container = grid.parentElement;
+  const existingRow = container.querySelector('.boats-settings-calendar-row');
+  if (existingRow) existingRow.remove();
+
+  const settingsCalendarRow = document.createElement('div');
+  settingsCalendarRow.className = 'boats-settings-calendar-row';
+  settingsCalendarRow.appendChild(createCalendarCard());
+  settingsCalendarRow.appendChild(createSettingsCard());
+  container.appendChild(settingsCalendarRow);
 
   updateAddBoatButton(boats);
   attachHandlers();
@@ -264,6 +322,14 @@ function showBoatForm() {
           <input type="text" id="boat_name" required value="${boat?.boat_name || ''}">
         </div>
         <div class="form-group">
+          <label for="boat_type">Boat Type</label>
+          <select id="boat_type">
+            <option value="motor" ${(boat?.boat_type || 'motor') === 'motor' ? 'selected' : ''}>Motor boat</option>
+            <option value="sailing" ${boat?.boat_type === 'sailing' ? 'selected' : ''}>Sailing boat</option>
+          </select>
+          <p class="text-muted" style="margin-top: 0.25rem; font-size: 0.875rem;">Sailing boats get a Sails & Rigging card and sail/rigging service options.</p>
+        </div>
+        <div class="form-group">
           <label for="boat_make_model">Make & Model</label>
           <input type="text" id="boat_make_model" value="${boat?.make_model || ''}">
         </div>
@@ -316,6 +382,7 @@ async function saveBoat() {
   const boat = {
     id: editingBoatId,
     boat_name: document.getElementById('boat_name').value,
+    boat_type: document.getElementById('boat_type').value || 'motor',
     make_model: document.getElementById('boat_make_model').value
   };
 
@@ -348,6 +415,7 @@ async function saveBoat() {
     boatsStorage.save(boat);
     await updateBoatApi(editingBoatId, {
       boat_name: boat.boat_name,
+      boat_type: boat.boat_type,
       make_model: boat.make_model,
       photo_url: boat.photo_url
     });
@@ -358,7 +426,7 @@ async function saveBoat() {
   }
 
   // New boat
-  const result = await createBoatApi({ boat_name: boat.boat_name, make_model: boat.make_model });
+  const result = await createBoatApi({ boat_name: boat.boat_name, boat_type: boat.boat_type, make_model: boat.make_model });
   if (result && result.error === 'active_limit') {
     alert(`You have the maximum number of active boats (${BOAT_LIMITS.MAX_ACTIVE_BOATS}). Archive a boat to add another.`);
     return;
@@ -380,7 +448,7 @@ async function saveBoat() {
 
   if (dbBoat?.id) {
     boatsStorage.delete(boat.id);
-    boatsStorage.save({ ...boat, id: dbBoat.id, status: 'active' });
+    boatsStorage.save({ ...boat, id: dbBoat.id, status: 'active', boat_type: boat.boat_type });
   } else {
     boatsStorage.save(boat);
   }

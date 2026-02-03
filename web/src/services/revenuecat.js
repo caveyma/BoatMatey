@@ -2,6 +2,9 @@
  * RevenueCat Purchases init – runs at app launch on native platforms only.
  * Configures the SDK so Google Play / App Store can detect billing.
  * Web builds skip this (no-op).
+ *
+ * Like PetHub+: call logInWithAppUserId(pending_${email}) before purchase so the
+ * purchase is tied to the user; after account creation call logInWithAppUserId(user.id).
  */
 
 import { Capacitor } from '@capacitor/core';
@@ -46,5 +49,25 @@ export async function initRevenueCat() {
     console.log('[RevenueCat] Purchases configured for', platform);
   } catch (error) {
     console.error('[RevenueCat] Configure failed:', error);
+  }
+}
+
+/**
+ * Log in RevenueCat with an app user ID (like PetHub+).
+ * Call before purchase with pending_${email} so the purchase is tied to the user.
+ * Call after account creation with user.id to transfer purchases to the real user.
+ */
+export async function logInWithAppUserId(appUserID) {
+  const isNative = Capacitor.isNativePlatform?.() ?? false;
+  if (!isNative || !appUserID) return;
+
+  try {
+    await initRevenueCat();
+    const result = await Purchases.logIn({ appUserID });
+    console.log('[RevenueCat] logIn completed for', appUserID, result);
+    return result;
+  } catch (error) {
+    console.error('[RevenueCat] logIn failed:', error);
+    throw error;
   }
 }

@@ -4,7 +4,7 @@
 
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
-import { createYachtHeader } from '../components/header.js';
+import { createYachtHeader, createBackButton } from '../components/header.js';
 import {
   getSubscriptionStatus,
   hasActiveSubscription,
@@ -12,7 +12,8 @@ import {
   restoreSubscription,
   refreshSubscriptionStatus
 } from '../lib/subscription.js';
-import { boatStorage, enginesStorage, serviceHistoryStorage, uploadsStorage } from '../lib/storage.js';
+import { storage, boatStorage, boatsStorage, enginesStorage, serviceHistoryStorage, uploadsStorage } from '../lib/storage.js';
+import { getBoats, getEngines, getServiceEntries, getHaulouts, getEquipment, getLogbook, getLinks } from '../lib/dataService.js';
 import { supabase } from '../lib/supabaseClient.js';
 import { getSession } from '../lib/dataService.js';
 import { Capacitor } from '@capacitor/core';
@@ -20,12 +21,12 @@ import { Capacitor } from '@capacitor/core';
 function render() {
   const wrapper = document.createElement('div');
 
-  // Yacht header with back arrow using browser history
-  const yachtHeader = createYachtHeader('Settings', true, () => window.history.back());
+  const yachtHeader = createYachtHeader('Settings');
   wrapper.appendChild(yachtHeader);
 
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content card-color-account';
+  pageContent.appendChild(createBackButton());
 
   const container = document.createElement('div');
   container.className = 'container';
@@ -69,21 +70,17 @@ function render() {
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="account-subscription-card">
       <h3>Subscription</h3>
-      <div style="margin-bottom: 1rem;">
+      <div style="margin-bottom: 1rem;" id="account-subscription-details">
         <p><strong>Status:</strong> 
-          <span class="badge ${isActive ? 'badge-success' : 'badge-warning'}">
+          <span class="badge ${isActive ? 'badge-success' : 'badge-warning'}" id="account-subscription-badge">
             ${isActive ? 'Active' : 'Not Active'}
           </span>
         </p>
-        <p><strong>Plan:</strong> ${status.plan}</p>
+        <p><strong>Plan:</strong> <span id="account-subscription-plan">${status.plan}</span></p>
         ${status.price ? `<p><strong>Price:</strong> ${status.price}</p>` : ''}
-        ${
-          status.expires_at
-            ? `<p><strong>Renews:</strong> ${new Date(status.expires_at).toLocaleDateString()}</p>`
-            : ''
-        }
+        <p id="account-subscription-renew" style="${status.expires_at ? '' : 'display: none;'}"><strong>Renews:</strong> <span id="account-subscription-renew-date">${status.expires_at ? new Date(status.expires_at).toLocaleDateString() : ''}</span></p>
       </div>
       <p class="text-muted">BoatMatey subscription includes 2 active boats, 5 archived boats, unlimited engines, service entries, and uploads.</p>
       <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.75rem;">
@@ -106,10 +103,10 @@ function render() {
     <div class="card">
       <h3>Usage</h3>
       <div>
-        <p><strong>Boats:</strong> ${boatStorage.get() ? 1 : 0}</p>
-        <p><strong>Engines:</strong> ${enginesStorage.getAll().length}</p>
-        <p><strong>Service Entries:</strong> ${serviceHistoryStorage.getAll().length}</p>
-        <p><strong>Uploads:</strong> ${uploadsStorage.count()}</p>
+        <p><strong>Boats:</strong> <span id="account-usage-boats">${boatsStorage.getAll().length}</span></p>
+        <p><strong>Engines:</strong> <span id="account-usage-engines">${enginesStorage.getAll().length}</span></p>
+        <p><strong>Service Entries:</strong> <span id="account-usage-service">${serviceHistoryStorage.getAll().length}</span></p>
+        <p><strong>Uploads:</strong> <span id="account-usage-uploads">${uploadsStorage.count()}</span></p>
       </div>
     </div>
 
@@ -127,10 +124,28 @@ function render() {
         <a href="https://boatmatey.com/privacy.html" target="_blank" rel="noopener" class="btn-link" style="width: 100%; text-align: left; text-decoration: none; color: inherit;">
           Privacy Policy
         </a>
-        <button class="btn-link btn-danger" id="sign-out-btn" style="width: 100%; text-align: left;">
-          Sign Out
-        </button>
       </div>
+    </div>
+
+    <div class="card" id="account-signout-card">
+      <h3>Sign Out</h3>
+      <p class="text-muted">Sign out of your BoatMatey cloud account on this device.</p>
+      <button class="btn-link btn-danger" id="sign-out-btn" style="width: 100%; text-align: left; margin-top: 0.5rem;">
+        Sign Out
+      </button>
+    </div>
+
+    <div class="card" id="account-delete-card" style="display: none;">
+      <h3>Delete Account</h3>
+      <p class="text-muted" style="font-size: 0.9rem;">
+        Permanently delete your BoatMatey cloud account and all data stored on our servers for this account.
+        <br><br>
+        <strong>This will not cancel your App Store or Google Play subscription.</strong>
+        To stop future charges, you must also cancel the subscription in the store.
+      </p>
+      <button class="btn-link btn-danger" id="delete-account-btn" style="width: 100%; text-align: left; margin-top: 0.5rem;">
+        Delete Account &amp; Data
+      </button>
     </div>
   `;
 
@@ -142,21 +157,55 @@ function render() {
   return wrapper;
 }
 
-function onMount() {
+async function onMount() {
   window.navigate = navigate;
+
+  // Sync all boat data so Usage counts are correct (e.g. when using Supabase)
+  const boats = await getBoats();
+  for (const boat of boats) {
+    await Promise.all([
+      getEngines(boat.id),
+      getServiceEntries(boat.id),
+      getHaulouts(boat.id),
+      getEquipment(boat.id, 'navigation'),
+      getEquipment(boat.id, 'safety'),
+      getLogbook(boat.id),
+      getLinks(boat.id)
+    ]);
+  }
+  const boatsEl = document.getElementById('account-usage-boats');
+  const enginesEl = document.getElementById('account-usage-engines');
+  const serviceEl = document.getElementById('account-usage-service');
+  const uploadsEl = document.getElementById('account-usage-uploads');
+  if (boatsEl) boatsEl.textContent = boats.length;
+  if (enginesEl) enginesEl.textContent = enginesStorage.getAll().length;
+  if (serviceEl) serviceEl.textContent = serviceHistoryStorage.getAll().length;
+  if (uploadsEl) uploadsEl.textContent = uploadsStorage.count();
 
   // Refresh subscription status on mount
   const isNative = Capacitor.isNativePlatform?.() ?? false;
   if (isNative) {
     refreshSubscriptionStatus().then(() => {
-      // Update subscription display after refresh
+      // Update subscription display after refresh (RevenueCat + Supabase profile fallback)
       const status = getSubscriptionStatus();
       const isActive = hasActiveSubscription();
-      
-      const statusBadge = document.querySelector('.badge');
+
+      const statusBadge = document.getElementById('account-subscription-badge');
       if (statusBadge) {
         statusBadge.textContent = isActive ? 'Active' : 'Not Active';
         statusBadge.className = `badge ${isActive ? 'badge-success' : 'badge-warning'}`;
+      }
+      const planEl = document.getElementById('account-subscription-plan');
+      if (planEl) planEl.textContent = status.plan;
+      const renewEl = document.getElementById('account-subscription-renew');
+      const renewDateEl = document.getElementById('account-subscription-renew-date');
+      if (renewEl && renewDateEl) {
+        if (status.expires_at) {
+          renewEl.style.display = '';
+          renewDateEl.textContent = new Date(status.expires_at).toLocaleDateString();
+        } else {
+          renewEl.style.display = 'none';
+        }
       }
     });
   }
@@ -168,18 +217,23 @@ function onMount() {
     const signinMessage = document.getElementById('account-signin-message');
     const signinActions = document.getElementById('account-signin-actions');
     const currentEmailEl = document.getElementById('account-current-email');
+    const signOutCard = document.getElementById('account-signout-card');
     const signOutBtn = document.getElementById('sign-out-btn');
+    const deleteAccountBtn = document.getElementById('delete-account-btn');
+    const deleteAccountCard = document.getElementById('account-delete-card');
     if (session?.user) {
       if (signinDetailsCard) signinDetailsCard.style.display = 'block';
       if (currentEmailEl) currentEmailEl.textContent = session.user.email ?? '';
       if (signinMessage) signinMessage.textContent = `You are signed in as ${session.user.email ?? 'your account'}.`;
       if (signinActions) signinActions.style.display = 'none';
-      if (signOutBtn) signOutBtn.style.display = '';
+      if (signOutCard) signOutCard.style.display = '';
+      if (deleteAccountCard) deleteAccountCard.style.display = '';
     } else {
       if (signinDetailsCard) signinDetailsCard.style.display = 'none';
       if (signinMessage) signinMessage.textContent = 'Sign in to sync your boats and logs to the cloud, or continue using BoatMatey locally on this device.';
       if (signinActions) signinActions.style.display = 'flex';
-      if (signOutBtn) signOutBtn.style.display = 'none';
+      if (signOutCard) signOutCard.style.display = 'none';
+      if (deleteAccountCard) deleteAccountCard.style.display = 'none';
     }
   })();
 
@@ -335,13 +389,69 @@ function onMount() {
       } catch (error) {
         console.error('Error signing out of Supabase:', error);
       } finally {
-        // On native, redirect to subscription page (requires subscription to access app)
-        // On web, redirect to auth page
-        if (isNative) {
-          navigate('/subscription');
-        } else {
-          navigate('/auth');
+        navigate('/auth');
+      }
+    });
+  }
+
+  // Delete account & data
+  const deleteAccountBtn = document.getElementById('delete-account-btn');
+  if (deleteAccountBtn && supabase) {
+    deleteAccountBtn.addEventListener('click', async () => {
+      const isNative = Capacitor.isNativePlatform?.() ?? false;
+
+      // Make sure we know which user we are deleting
+      const session = await getSession();
+      if (!session?.user?.id) {
+        alert('You must be signed in to delete your BoatMatey account.');
+        return;
+      }
+
+      const confirmed = confirm(
+        'Are you sure you want to permanently delete your BoatMatey cloud account and all data stored on our servers for this account?\n\n' +
+        'This will NOT cancel your App Store or Google Play subscription. You must cancel the subscription separately in the store.\n\n' +
+        'This action cannot be undone.'
+      );
+      if (!confirmed) return;
+
+      deleteAccountBtn.disabled = true;
+      try {
+        const { data, error } = await supabase.rpc('delete_user_self', {
+          p_user_id: session.user.id
+        });
+
+        if (error) {
+          console.error('Account deletion RPC error:', error);
+          alert(error.message || 'Sorry, something went wrong deleting your account. Please try again or contact support.');
+          return;
         }
+
+        if (!data || data.success === false) {
+          console.error('Account deletion RPC result:', data);
+          const msg = data?.error || 'Sorry, something went wrong deleting your account. Please try again or contact support.';
+          alert(msg);
+          return;
+        }
+
+        // Clear local data on this device as well
+        storage.clear();
+
+        // Silent success: we've already confirmed once; now just return
+        // the user to the welcome screen so there is only one dialog
+        // to acknowledge for the whole delete flow.
+        if (isNative) {
+          navigate('/welcome');
+        } else {
+          navigate('/welcome');
+        }
+
+        // Full reload to clear any in-memory state/session
+        window.location.reload();
+      } catch (err) {
+        console.error('Error deleting account:', err);
+        alert('Sorry, something went wrong deleting your account. Please try again or contact support.');
+      } finally {
+        deleteAccountBtn.disabled = false;
       }
     });
   }

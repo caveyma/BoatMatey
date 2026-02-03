@@ -188,6 +188,13 @@ export const enginesStorage = {
     const engines = this.getAll();
     const filtered = engines.filter(e => e.id !== id);
     return storage.set(STORAGE_KEYS.ENGINES, filtered);
+  },
+
+  /** Replace all engines for a boat (used when syncing from API). */
+  replaceForBoat(boatId, engines) {
+    const all = this.getAll().filter(e => e.boat_id !== boatId);
+    const withBoatId = (engines || []).map(e => ({ ...e, boat_id: boatId }));
+    return storage.set(STORAGE_KEYS.ENGINES, all.concat(withBoatId));
   }
 };
 
@@ -232,6 +239,12 @@ export const serviceHistoryStorage = {
     const entries = this.getAll();
     const filtered = entries.filter(e => e.id !== id);
     return storage.set(STORAGE_KEYS.SERVICE_HISTORY, filtered);
+  },
+
+  replaceForBoat(boatId, entries) {
+    const all = this.getAll().filter(e => e.boat_id !== boatId);
+    const withBoatId = (entries || []).map(e => ({ ...e, boat_id: boatId }));
+    return storage.set(STORAGE_KEYS.SERVICE_HISTORY, all.concat(withBoatId));
   },
 
   getByEngine(engineId) {
@@ -281,6 +294,12 @@ export const hauloutStorage = {
     const entries = this.getAll();
     const filtered = entries.filter(e => e.id !== id);
     return storage.set(STORAGE_KEYS.HAULOUTS, filtered);
+  },
+
+  replaceForBoat(boatId, entries) {
+    const all = this.getAll().filter(e => e.boat_id !== boatId);
+    const withBoatId = (entries || []).map(e => ({ ...e, boat_id: boatId }));
+    return storage.set(STORAGE_KEYS.HAULOUTS, all.concat(withBoatId));
   }
 };
 
@@ -323,6 +342,12 @@ export const navEquipmentStorage = {
     const items = this.getAll();
     const filtered = items.filter(e => e.id !== id);
     return storage.set(STORAGE_KEYS.NAV_EQUIPMENT, filtered);
+  },
+
+  replaceForBoat(boatId, items) {
+    const all = this.getAll().filter(e => e.boat_id !== boatId);
+    const withBoatId = (items || []).map(e => ({ ...e, boat_id: boatId }));
+    return storage.set(STORAGE_KEYS.NAV_EQUIPMENT, all.concat(withBoatId));
   }
 };
 
@@ -365,6 +390,12 @@ export const safetyEquipmentStorage = {
     const items = this.getAll();
     const filtered = items.filter(e => e.id !== id);
     return storage.set(STORAGE_KEYS.SAFETY_EQUIPMENT, filtered);
+  },
+
+  replaceForBoat(boatId, items) {
+    const all = this.getAll().filter(e => e.boat_id !== boatId);
+    const withBoatId = (items || []).map(e => ({ ...e, boat_id: boatId }));
+    return storage.set(STORAGE_KEYS.SAFETY_EQUIPMENT, all.concat(withBoatId));
   }
 };
 
@@ -409,6 +440,12 @@ export const shipsLogStorage = {
     const entries = this.getAll();
     const filtered = entries.filter(e => e.id !== id);
     return storage.set(STORAGE_KEYS.SHIPS_LOG, filtered);
+  },
+
+  replaceForBoat(boatId, entries) {
+    const all = this.getAll().filter(e => e.boat_id !== boatId);
+    const withBoatId = (entries || []).map(e => ({ ...e, boat_id: boatId }));
+    return storage.set(STORAGE_KEYS.SHIPS_LOG, all.concat(withBoatId));
   }
 };
 
@@ -463,6 +500,12 @@ export const linksStorage = {
     const links = this.getAll();
     const filtered = links.filter(e => e.id !== id);
     return storage.set(STORAGE_KEYS.LINKS, filtered);
+  },
+
+  replaceForBoat(boatId, links) {
+    const all = this.getAll().filter(l => l.boat_id !== boatId);
+    const withBoatId = (links || []).map(l => ({ ...l, boat_id: boatId }));
+    return storage.set(STORAGE_KEYS.LINKS, all.concat(withBoatId));
   }
 };
 

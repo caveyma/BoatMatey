@@ -4,22 +4,22 @@
  * Aggregates upcoming reminders such as:
  * - Engine warranty expiry dates
  * - Next service due dates
- * - (Future) next haul-out dates
+ * - Next haul-out dates
  *
- * For each reminder we expose an "Add to calendar" action which downloads
- * a .ics file so the user can add it into their phone / tablet calendar
- * app without needing BoatMatey to be open.
+ * Appointments and reminders trigger OS notifications (when the app is installed natively).
  */
 
 import { navigate } from '../router.js';
-import { createYachtHeader } from '../components/header.js';
-import { boatsStorage, enginesStorage, serviceHistoryStorage, hauloutStorage } from '../lib/storage.js';
-import { getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '../lib/dataService.js';
-import { buildIcsEvent, downloadIcsFile } from '../lib/calendar.js';
+import { createYachtHeader, createBackButton } from '../components/header.js';
+import { boatsStorage, enginesStorage, serviceHistoryStorage, hauloutStorage, navEquipmentStorage } from '../lib/storage.js';
+import { getBoats, getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '../lib/dataService.js';
+import { ensureNotificationSetup, syncOsNotifications, scheduleBrowserNotifications } from '../lib/notifications.js';
 
-let currentBoatId = null;
+let allBoats = [];
+let boatMap = {}; // id -> { boat_name, ... }
 let currentMonthDate = new Date();
 let selectedDateStr = null;
+let editingEventId = null; // when set, form is in edit mode
 
 function toIsoDate(date) {
   const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -100,6 +100,10 @@ function expandRecurringEvents(baseEvents, fromDate, toDate) {
   return results;
 }
 
+const DEFAULT_REMINDER_HAULOUT = 1440;   // 1 day
+const DEFAULT_REMINDER_WARRANTY = 10080; // 1 week
+const DEFAULT_REMINDER_SERVICE = 1440;   // 1 day
+
 function collectEngineWarrantyReminders(boatId) {
   const boat = boatsStorage.get(boatId);
   const engines = enginesStorage.getAll(boatId);
@@ -107,9 +111,13 @@ function collectEngineWarrantyReminders(boatId) {
 
   engines.forEach((engine) => {
     if (!engine.warranty_expiry_date) return;
+    const mins = engine.warranty_reminder_minutes ?? DEFAULT_REMINDER_WARRANTY;
+    if (!mins || mins <= 0) return;
     reminders.push({
       id: `engine-warranty-${engine.id}`,
+      boat_id: boatId,
       type: 'Engine warranty',
+      editRoute: `/boat/${boatId}/engines/${engine.id}`,
       date: engine.warranty_expiry_date,
       title: `Engine warranty expiry – ${engine.label || engine.model || ''}`.trim(),
       description: [
@@ -122,7 +130,8 @@ function collectEngineWarrantyReminders(boatId) {
       meta: {
         boatName: boat?.boat_name || '',
         engineLabel: engine.label || '',
-      }
+      },
+      reminder_minutes: mins
     });
   });
 
@@ -136,9 +145,13 @@ function collectNextServiceReminders(boatId) {
 
   services.forEach((entry) => {
     if (!entry.next_service_due) return;
+    const mins = entry.next_service_reminder_minutes ?? DEFAULT_REMINDER_SERVICE;
+    if (!mins || mins <= 0) return;
     reminders.push({
       id: `service-next-${entry.id}`,
+      boat_id: boatId,
       type: 'Next service due',
+      editRoute: `/boat/${boatId}/service/${entry.id}`,
       date: entry.next_service_due,
       title: `Next service due – ${entry.service_type || 'Engine service'}`,
       description: [
@@ -150,7 +163,8 @@ function collectNextServiceReminders(boatId) {
         .join('\\n'),
       meta: {
         boatName: boat?.boat_name || '',
-      }
+      },
+      reminder_minutes: mins
     });
   });
 
@@ -164,9 +178,13 @@ function collectHauloutReminders(boatId) {
 
   haulouts.forEach((entry) => {
     if (!entry.next_haulout_due) return;
+    const mins = entry.next_haulout_reminder_minutes ?? DEFAULT_REMINDER_HAULOUT;
+    if (!mins || mins <= 0) return;
     reminders.push({
       id: `haulout-next-${entry.id}`,
+      boat_id: boatId,
       type: 'Next haul-out',
+      editRoute: `/boat/${boatId}/haulout/${entry.id}`,
       date: entry.next_haulout_due,
       title: 'Next haul-out due',
       description: [
@@ -178,7 +196,39 @@ function collectHauloutReminders(boatId) {
         .join('\\n'),
       meta: {
         boatName: boat?.boat_name || '',
-      }
+      },
+      reminder_minutes: mins
+    });
+  });
+
+  return reminders;
+}
+
+function collectNavWarrantyReminders(boatId) {
+  const boat = boatsStorage.get(boatId);
+  const navItems = navEquipmentStorage.getAll(boatId);
+  const reminders = [];
+
+  navItems.forEach((item) => {
+    const expiry = item.warranty_expiry_date || item.expiry_date;
+    if (!expiry) return;
+    const mins = item.warranty_reminder_minutes ?? DEFAULT_REMINDER_WARRANTY;
+    if (!mins || mins <= 0) return;
+    reminders.push({
+      id: `nav-warranty-${item.id}`,
+      boat_id: boatId,
+      type: 'Warranty expiry',
+      editRoute: `/boat/${boatId}/navigation/${item.id}`,
+      date: expiry,
+      title: `Warranty expiry – ${item.name || 'Navigation equipment'}`.trim(),
+      description: [
+        boat?.boat_name ? `Boat: ${boat.boat_name}` : null,
+        item.manufacturer || item.model ? `Item: ${[item.manufacturer, item.model].filter(Boolean).join(' ')}` : null
+      ]
+        .filter(Boolean)
+        .join('\\n'),
+      meta: { boatName: boat?.boat_name || '' },
+      reminder_minutes: mins
     });
   });
 
@@ -189,7 +239,8 @@ function buildRemindersForBoat(boatId) {
   const all = [
     ...collectEngineWarrantyReminders(boatId),
     ...collectNextServiceReminders(boatId),
-    ...collectHauloutReminders(boatId)
+    ...collectHauloutReminders(boatId),
+    ...collectNavWarrantyReminders(boatId)
   ];
 
   // Only keep ones that still have a valid date string
@@ -200,19 +251,99 @@ function buildRemindersForBoat(boatId) {
   return upcoming;
 }
 
-function handleAddToCalendar(reminder) {
-  const ics = buildIcsEvent({
-    uid: reminder.id,
-    title: reminder.title,
-    description: reminder.description,
-    date: reminder.date
+/**
+ * Load all calendar events and reminders across all boats.
+ */
+async function loadAllCalendarData() {
+  const boats = await getBoats();
+  allBoats = boats || [];
+  boatMap = {};
+  allBoats.forEach((b) => {
+    boatMap[b.id] = b;
   });
 
-  const safeBoat = (reminder.meta && reminder.meta.boatName) || 'boat';
-  const filenameSafeBoat = safeBoat.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'boat';
-  const filename = `boatmatey-${filenameSafeBoat}-${reminder.id}.ics`;
+  const baseEvents = [];
+  const reminders = [];
 
-  downloadIcsFile(ics, filename);
+  for (const boat of allBoats) {
+    if (!boat.id) continue;
+    const events = await getCalendarEvents(boat.id);
+    const withBoat = events.map((e) => ({
+      ...e,
+      boat_id: boat.id,
+      recurrence_type: e.repeat || 'none',
+      recurrence_until: e.repeat_until
+    }));
+    baseEvents.push(...withBoat);
+    reminders.push(...buildRemindersForBoat(boat.id));
+  }
+
+  reminders.sort((a, b) => new Date(a.date) - new Date(b.date));
+  baseEvents.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  return { baseEvents, reminders };
+}
+
+/**
+ * Build all notification targets from all boats (calendar events + system reminders).
+ * Used by OS & browser notifications (PetHub+-style).
+ */
+async function buildAllNotificationTargets() {
+  const boats = await getBoats();
+  const targets = [];
+  const now = new Date();
+  const horizon = new Date(now.getFullYear(), now.getMonth() + 18, now.getDate());
+
+  for (const boat of boats || []) {
+    const boatId = boat.id;
+    if (!boatId) continue;
+
+    const baseEvents = await getCalendarEvents(boatId);
+    const mapped = baseEvents.map((e) => ({
+      ...e,
+      recurrence_type: e.repeat || 'none',
+      recurrence_until: e.repeat_until
+    }));
+    const expanded = expandRecurringEvents(mapped, now, horizon);
+
+    expanded.forEach((ev) => {
+      if (ev.reminder_minutes === null || ev.reminder_minutes === 0) return;
+      const mins = typeof ev.reminder_minutes === 'number' ? ev.reminder_minutes : 60;
+      targets.push({
+        id: ev.id,
+        title: ev.title || 'Appointment',
+        date: ev.date,
+        time: ev.time || null,
+        notes: ev.notes || null,
+        reminder_minutes: mins
+      });
+    });
+
+    const sysReminders = buildRemindersForBoat(boatId);
+    sysReminders.forEach((r) => {
+      targets.push({
+        id: r.id,
+        title: r.title || r.type || 'Reminder',
+        date: r.date,
+        time: null,
+        notes: r.description || null,
+        reminder_minutes: r.reminder_minutes ?? 1440
+      });
+    });
+  }
+
+  return targets;
+}
+
+async function syncCalendarNotifications() {
+  try {
+    const targets = await buildAllNotificationTargets();
+    ensureNotificationSetup(targets);
+    await syncOsNotifications(targets);
+    scheduleBrowserNotifications(targets);
+  } catch (e) {
+    console.warn('[BoatMatey] Calendar notification sync failed:', e);
+  }
 }
 
 function renderRemindersList(reminders) {
@@ -236,18 +367,17 @@ function renderRemindersList(reminders) {
   listContainer.innerHTML = reminders
     .map((reminder) => {
       const dateLabel = new Date(reminder.date).toLocaleDateString();
+      const editBtn = reminder.editRoute
+        ? `<a href="#${reminder.editRoute}" class="btn-link">Edit</a>`
+        : '';
       return `
-        <div class="card">
+        <div class="card calendar-reminder-card">
           <div class="card-header">
             <div>
               <h3 class="card-title">${dateLabel}</h3>
               <p class="text-muted">${reminder.type}</p>
             </div>
-            <div>
-              <button class="btn-primary calendar-add-btn" data-reminder-id="${reminder.id}">
-                Add to calendar
-              </button>
-            </div>
+            ${editBtn ? `<div class="card-actions">${editBtn}</div>` : ''}
           </div>
           ${reminder.description ? `<p>${reminder.description.replace(/\\n/g, '<br>')}</p>` : ''}
         </div>
@@ -255,14 +385,11 @@ function renderRemindersList(reminders) {
     })
     .join('');
 
-  // Attach click handlers after rendering
-  document.querySelectorAll('.calendar-add-btn').forEach((btn) => {
-    const id = btn.getAttribute('data-reminder-id');
-    const reminder = reminders.find((r) => r.id === id);
-    if (!reminder) return;
-
-    btn.addEventListener('click', () => {
-      handleAddToCalendar(reminder);
+  listContainer.querySelectorAll('.calendar-reminder-card a[href^="#"]').forEach((link) => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const path = link.getAttribute('href').slice(1);
+      navigate(path);
     });
   });
 }
@@ -407,7 +534,8 @@ function renderAppointmentsForSelectedDate(baseEvents) {
       const timeLabel = ev.time || 'All day';
       const recurrenceType = ev.recurrence_type && ev.recurrence_type !== 'none' ? ev.recurrence_type : null;
       const recurrenceLabel = recurrenceType ? recurrenceLabels[recurrenceType] || '' : '';
-      const metaParts = [timeLabel, recurrenceLabel].filter(Boolean).join(' • ');
+      const boatLabel = ev.boat_id && boatMap[ev.boat_id] ? boatMap[ev.boat_id].boat_name : '';
+      const metaParts = [boatLabel, timeLabel, recurrenceLabel].filter(Boolean).join(' • ');
       const notes = ev.notes ? `<p class="text-muted">${ev.notes}</p>` : '';
       return `
         <div class="calendar-appointment-row">
@@ -417,32 +545,20 @@ function renderAppointmentsForSelectedDate(baseEvents) {
             ${notes}
           </div>
           <div class="calendar-appointment-actions">
-            <button type="button" class="btn-link calendar-event-export" data-event-id="${ev.id}">
-              Add to calendar
-            </button>
-            <button type="button" class="btn-link btn-danger calendar-event-delete" data-event-id="${ev.id}">
-              Delete
-            </button>
+            <button type="button" class="btn-link calendar-event-edit" data-event-id="${ev.id}">Edit</button>
+            <button type="button" class="btn-link btn-danger calendar-event-delete" data-event-id="${ev.id}">Delete</button>
           </div>
         </div>
       `;
     })
     .join('');
 
-  // Attach handlers
-  listEl.querySelectorAll('.calendar-event-export').forEach((btn) => {
+  listEl.querySelectorAll('.calendar-event-edit').forEach((btn) => {
     const id = btn.getAttribute('data-event-id');
-    const ev = (baseEvents || []).find((e) => e.id === id);
-    if (!ev) return;
     btn.addEventListener('click', () => {
-      const ics = buildIcsEvent({
-        uid: ev.id,
-        title: ev.title,
-        description: ev.notes ? `BoatMatey appointment\\n${ev.notes}` : 'BoatMatey appointment',
-        date: ev.date
-      });
-      const safeTitle = ev.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'appointment';
-      downloadIcsFile(ics, `boatmatey-${safeTitle}-${ev.id}.ics`);
+      const ev = (baseEvents || []).find((e) => e.id === id);
+      if (!ev) return;
+      populateFormForEdit(ev);
     });
   });
 
@@ -451,31 +567,55 @@ function renderAppointmentsForSelectedDate(baseEvents) {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this appointment?')) return;
       await deleteCalendarEvent(id);
-      const refreshedBase = await getCalendarEvents(currentBoatId);
-      const mapped = refreshedBase.map((e) => ({ ...e, recurrence_type: e.repeat || 'none', recurrence_until: e.repeat_until }));
-      const reminders = buildRemindersForBoat(currentBoatId);
-      renderMonthView(reminders, mapped);
-      renderAppointmentsForSelectedDate(mapped);
+      editingEventId = null;
+      resetFormToAddMode();
+      const { baseEvents: refreshedBase, reminders } = await loadAllCalendarData();
+      renderMonthView(reminders, refreshedBase);
+      renderAppointmentsForSelectedDate(refreshedBase);
+      syncCalendarNotifications();
     });
   });
 }
 
-export function render(params = {}) {
-  currentBoatId = params?.id || window.routeParams?.id;
-  if (!currentBoatId) {
-    const wrapperError = document.createElement('div');
-    wrapperError.innerHTML =
-      '<div class="page-content"><div class="container"><h1>Error</h1><p>Boat ID required</p></div></div>';
-    return wrapperError;
-  }
+function populateFormForEdit(ev) {
+  editingEventId = ev.id;
+  document.getElementById('calendar-appointment-date').value = ev.date || selectedDateStr;
+  document.getElementById('calendar-appointment-boat').value = ev.boat_id || '';
+  document.getElementById('calendar-appointment-title').value = ev.title || '';
+  document.getElementById('calendar-appointment-time').value = ev.time ? ev.time.slice(0, 5) : '';
+  document.getElementById('calendar-appointment-repeat').value = ev.repeat || ev.recurrence_type || 'none';
+  document.getElementById('calendar-appointment-repeat-until').value = ev.repeat_until || ev.recurrence_until || '';
+  document.getElementById('calendar-appointment-reminder').value = ev.reminder_minutes != null ? String(ev.reminder_minutes) : '';
+  document.getElementById('calendar-appointment-notes').value = ev.notes || '';
+  const submitBtn = document.querySelector('#calendar-appointment-form button[type="submit"]');
+  const cancelBtn = document.getElementById('calendar-appointment-cancel');
+  if (submitBtn) submitBtn.textContent = 'Update appointment';
+  if (cancelBtn) cancelBtn.style.display = 'inline-block';
+}
 
+function resetFormToAddMode() {
+  editingEventId = null;
+  document.getElementById('calendar-appointment-title').value = '';
+  document.getElementById('calendar-appointment-time').value = '';
+  document.getElementById('calendar-appointment-repeat').value = 'none';
+  document.getElementById('calendar-appointment-repeat-until').value = '';
+  document.getElementById('calendar-appointment-reminder').value = '';
+  document.getElementById('calendar-appointment-notes').value = '';
+  const submitBtn = document.querySelector('#calendar-appointment-form button[type="submit"]');
+  const cancelBtn = document.getElementById('calendar-appointment-cancel');
+  if (submitBtn) submitBtn.textContent = 'Save appointment';
+  if (cancelBtn) cancelBtn.style.display = 'none';
+}
+
+export function render(params = {}) {
   const wrapper = document.createElement('div');
 
-  const yachtHeader = createYachtHeader('Calendar & Alerts', true, () => navigate(`/boat/${currentBoatId}`));
+  const yachtHeader = createYachtHeader('Calendar & Alerts');
   wrapper.appendChild(yachtHeader);
 
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content card-color-calendar';
+  pageContent.appendChild(createBackButton());
 
   const container = document.createElement('div');
   container.className = 'container';
@@ -485,9 +625,7 @@ export function render(params = {}) {
   headerBlock.innerHTML = `
     <h2>Calendar & Alerts</h2>
     <p class="text-muted">
-      See upcoming reminders and add your own appointments for this boat.
-      Tap a date in the calendar, add an appointment, and then use "Add to calendar"
-      to send it to your phone or tablet's calendar app (Outlook, Apple Calendar, etc.).
+      See reminders from all your boats and add appointments. Choose which boat each appointment belongs to.
     </p>
   `;
 
@@ -512,7 +650,7 @@ export function render(params = {}) {
     <div class="card" id="calendar-appointment-card">
       <h3>Appointments</h3>
       <p class="text-muted">
-        Appointments are stored with this boat and can also be exported to your device calendar.
+        Add appointments and choose which boat they belong to. Set a reminder to get notified.
       </p>
       <div class="form-group">
         <label>Selected date</label>
@@ -520,6 +658,12 @@ export function render(params = {}) {
       </div>
       <form id="calendar-appointment-form">
         <input type="hidden" id="calendar-appointment-date">
+        <div class="form-group" id="calendar-boat-select-wrap">
+          <label for="calendar-appointment-boat">Boat *</label>
+          <select id="calendar-appointment-boat" required>
+            <option value="">Select a boat</option>
+          </select>
+        </div>
         <div class="form-group">
           <label for="calendar-appointment-title">Title *</label>
           <input type="text" id="calendar-appointment-title" required placeholder="e.g. Engine service booking">
@@ -544,11 +688,27 @@ export function render(params = {}) {
           <p class="text-muted">If left blank, the repeat continues for up to the next 12 months.</p>
         </div>
         <div class="form-group">
+          <label for="calendar-appointment-reminder">Reminder</label>
+          <select id="calendar-appointment-reminder">
+            <option value="">None</option>
+            <option value="5">5 minutes before</option>
+            <option value="15">15 minutes before</option>
+            <option value="30">30 minutes before</option>
+            <option value="60">1 hour before</option>
+            <option value="120">2 hours before</option>
+            <option value="1440">1 day before</option>
+            <option value="2880">2 days before</option>
+            <option value="10080">1 week before</option>
+          </select>
+          <p class="text-muted">You will receive a notification at this time before the appointment.</p>
+        </div>
+        <div class="form-group">
           <label for="calendar-appointment-notes">Notes</label>
           <textarea id="calendar-appointment-notes" rows="3" placeholder="Location, contact details, booking reference..."></textarea>
         </div>
         <div class="form-actions">
           <button type="submit" class="btn-primary">Save appointment</button>
+          <button type="button" class="btn-link" id="calendar-appointment-cancel" style="display: none; margin-left: 0.5rem;">Cancel</button>
         </div>
       </form>
       <div class="form-group" style="margin-top:1rem;">
@@ -571,33 +731,42 @@ export function render(params = {}) {
 }
 
 export async function onMount(params = {}) {
-  const boatId = params?.id || window.routeParams?.id;
-  if (boatId) {
-    currentBoatId = boatId;
-  }
-  if (!currentBoatId) return;
-
-  const reminders = buildRemindersForBoat(currentBoatId);
-  let baseEvents = await getCalendarEvents(currentBoatId);
-  baseEvents = baseEvents.map((e) => ({ ...e, recurrence_type: e.repeat || 'none', recurrence_until: e.repeat_until }));
+  const { baseEvents, reminders } = await loadAllCalendarData();
 
   selectedDateStr = toIsoDate(new Date());
+
+  const boatSelect = document.getElementById('calendar-appointment-boat');
+  const boatWrap = document.getElementById('calendar-boat-select-wrap');
+  const activeBoats = allBoats.filter((b) => (b.status || 'active') === 'active');
+  if (boatSelect && boatWrap) {
+    boatSelect.innerHTML = '<option value="">Select a boat</option>';
+    activeBoats.forEach((b) => {
+      const opt = document.createElement('option');
+      opt.value = b.id;
+      opt.textContent = b.boat_name || 'Unnamed Boat';
+      boatSelect.appendChild(opt);
+    });
+    if (activeBoats.length === 0) {
+      boatWrap.style.opacity = '0.6';
+      boatSelect.disabled = true;
+    }
+  }
 
   const prevBtn = document.getElementById('calendar-prev-month');
   const nextBtn = document.getElementById('calendar-next-month');
   if (prevBtn) {
     prevBtn.addEventListener('click', async () => {
       currentMonthDate = new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth() - 1, 1);
-      const refreshedBase = await getCalendarEvents(currentBoatId);
-      renderMonthView(reminders, refreshedBase.map((e) => ({ ...e, recurrence_type: e.repeat || 'none', recurrence_until: e.repeat_until })));
+      const { baseEvents: refreshedBase, reminders: refreshedReminders } = await loadAllCalendarData();
+      renderMonthView(refreshedReminders, refreshedBase);
       renderAppointmentsForSelectedDate(refreshedBase);
     });
   }
   if (nextBtn) {
     nextBtn.addEventListener('click', async () => {
       currentMonthDate = new Date(currentMonthDate.getFullYear(), currentMonthDate.getMonth() + 1, 1);
-      const refreshedBase = await getCalendarEvents(currentBoatId);
-      renderMonthView(reminders, refreshedBase.map((e) => ({ ...e, recurrence_type: e.repeat || 'none', recurrence_until: e.repeat_until })));
+      const { baseEvents: refreshedBase, reminders: refreshedReminders } = await loadAllCalendarData();
+      renderMonthView(refreshedReminders, refreshedBase);
       renderAppointmentsForSelectedDate(refreshedBase);
     });
   }
@@ -606,11 +775,22 @@ export async function onMount(params = {}) {
   if (form) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const boatId = document.getElementById('calendar-appointment-boat')?.value;
+      if (!boatId && activeBoats.length > 0 && !editingEventId) {
+        alert('Please select a boat for this appointment.');
+        return;
+      }
+      if (activeBoats.length === 0 && !editingEventId) {
+        alert('Add a boat first to create appointments.');
+        return;
+      }
+
       const dateValue = document.getElementById('calendar-appointment-date').value || selectedDateStr;
       const titleEl = document.getElementById('calendar-appointment-title');
       const timeEl = document.getElementById('calendar-appointment-time');
       const repeatEl = document.getElementById('calendar-appointment-repeat');
       const repeatUntilEl = document.getElementById('calendar-appointment-repeat-until');
+      const reminderEl = document.getElementById('calendar-appointment-reminder');
       const notesEl = document.getElementById('calendar-appointment-notes');
 
       const title = titleEl.value.trim();
@@ -619,42 +799,47 @@ export async function onMount(params = {}) {
         return;
       }
 
+      const reminderVal = reminderEl?.value ? parseInt(reminderEl.value, 10) : null;
+
       const payload = {
         date: dateValue,
         title,
         time: timeEl.value || null,
         notes: notesEl.value || '',
         repeat: repeatEl.value === 'none' ? null : repeatEl.value,
-        repeat_until: repeatUntilEl.value || null
+        repeat_until: repeatUntilEl.value || null,
+        reminder_minutes: Number.isFinite(reminderVal) ? reminderVal : null
       };
 
-      const created = await createCalendarEvent(currentBoatId, payload);
-      const newest = created || { id: '', ...payload };
+      if (editingEventId) {
+        await updateCalendarEvent(editingEventId, payload);
+        editingEventId = null;
+        resetFormToAddMode();
+      } else {
+        const created = await createCalendarEvent(boatId, payload);
+      }
 
-      titleEl.value = '';
-      timeEl.value = '';
-      notesEl.value = '';
-
-      const updatedBase = await getCalendarEvents(currentBoatId);
-      renderMonthView(reminders, updatedBase.map((e) => ({ ...e, recurrence_type: e.repeat || 'none', recurrence_until: e.repeat_until })));
+      const { baseEvents: updatedBase, reminders: updatedReminders } = await loadAllCalendarData();
+      renderMonthView(updatedReminders, updatedBase);
       renderAppointmentsForSelectedDate(updatedBase);
 
-      if (confirm('Appointment saved. Do you also want to add it to your device calendar now?')) {
-        const ics = buildIcsEvent({
-          uid: newest.id,
-          title: newest.title,
-          description: newest.notes ? `BoatMatey appointment\\n${newest.notes}` : 'BoatMatey appointment',
-          date: newest.date
-        });
-        const safeTitle = newest.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'appointment';
-        downloadIcsFile(ics, `boatmatey-${safeTitle}-${newest.id}.ics`);
-      }
+      syncCalendarNotifications();
+    });
+  }
+
+  const cancelBtn = document.getElementById('calendar-appointment-cancel');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
+      editingEventId = null;
+      resetFormToAddMode();
     });
   }
 
   renderMonthView(reminders, baseEvents);
   renderAppointmentsForSelectedDate(baseEvents);
   renderRemindersList(reminders);
+
+  setTimeout(() => syncCalendarNotifications(), 400);
 }
 
 export default {

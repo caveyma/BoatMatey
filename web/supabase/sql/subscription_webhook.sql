@@ -12,6 +12,7 @@ create or replace function public.update_subscription_from_webhook(
 returns void
 language plpgsql
 security definer
+set search_path = ''
 as $$
 begin
   -- Update the user's profile with the latest subscription status

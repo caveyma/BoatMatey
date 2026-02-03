@@ -22,6 +22,18 @@ export const BOAT_LIMITS = {
 // Entity types whose files are removed on archive (only service + logbook keep files)
 const ARCHIVE_REMOVE_FILE_ENTITY_TYPES = ['boat', 'engine', 'equipment', 'haulout'];
 
+// Log Supabase errors once per resource per session (avoids console spam when tables don't exist)
+const _loggedFallbacks = new Set();
+function logSupabaseFallback(resource, error) {
+  const key = resource;
+  if (_loggedFallbacks.has(key)) return;
+  _loggedFallbacks.add(key);
+  console.warn(
+    `[BoatMatey] Cloud sync unavailable for ${resource}.`,
+    error?.message || error
+  );
+}
+
 // Small helper: returns current auth session (or null)
 export async function getSession() {
   if (!supabase) return null;
@@ -70,6 +82,10 @@ export async function getBoats() {
       length: b.length_m,
       beam: b.beam_m,
       draft: b.draft_m,
+      boat_type: b.boat_type ?? 'motor',
+      sails_rigging_data: b.sails_rigging_data ?? local.sails_rigging_data ?? null,
+      watermaker_installed: b.watermaker_installed ?? local.watermaker_installed ?? false,
+      watermaker_data: b.watermaker_data ?? local.watermaker_data ?? null,
       status: b.status ?? 'active',
       created_at: b.created_at,
       updated_at: b.updated_at,
@@ -107,6 +123,10 @@ export async function getBoat(boatId) {
     length: data.length_m,
     beam: data.beam_m,
     draft: data.draft_m,
+    boat_type: data.boat_type ?? 'motor',
+    sails_rigging_data: data.sails_rigging_data ?? local.sails_rigging_data ?? null,
+    watermaker_installed: data.watermaker_installed ?? local.watermaker_installed ?? false,
+    watermaker_data: data.watermaker_data ?? local.watermaker_data ?? null,
     status: data.status ?? 'active',
     created_at: data.created_at,
     updated_at: data.updated_at,
@@ -157,6 +177,7 @@ export async function createBoat(payload) {
     const boat = {
       boat_name: payload.boat_name,
       make_model: payload.make_model,
+      boat_type: payload.boat_type ?? 'motor',
       status: 'active'
     };
     boatsStorage.save(boat);
@@ -185,6 +206,7 @@ export async function createBoat(payload) {
       length_m: payload.length ?? null,
       beam_m: payload.beam ?? null,
       draft_m: payload.draft ?? null,
+      boat_type: payload.boat_type ?? 'motor',
       status: 'active'
     })
     .select('*')
@@ -216,17 +238,41 @@ export async function updateBoat(boatId, payload) {
     beam_m: payload.beam ?? null,
     draft_m: payload.draft ?? null
   };
+  if (payload.boat_type !== undefined) {
+    updatePayload.boat_type = payload.boat_type || 'motor';
+  }
+  if (payload.sails_rigging_data !== undefined) {
+    updatePayload.sails_rigging_data = payload.sails_rigging_data;
+  }
+  if (payload.watermaker_installed !== undefined) {
+    updatePayload.watermaker_installed = !!payload.watermaker_installed;
+  }
+  if (payload.watermaker_data !== undefined) {
+    updatePayload.watermaker_data = payload.watermaker_data;
+  }
   if (payload.photo_url !== undefined) {
     updatePayload.photo_url = payload.photo_url || null;
   }
 
-  const { error } = await supabase
+  let result = await supabase
     .from('boats')
     .update(updatePayload)
     .eq('id', boatId);
 
-  if (error) {
-    console.error('updateBoat error:', error);
+  // If update fails (e.g. 400 from missing watermaker columns), retry without watermaker fields
+  // so boat name, type, etc. still save when migration boat_watermaker.sql has not been run.
+  if (result.error) {
+    const hasWatermaker = updatePayload.watermaker_installed !== undefined || updatePayload.watermaker_data !== undefined;
+    if (hasWatermaker) {
+      const { watermaker_installed: _wi, watermaker_data: _wd, ...payloadWithoutWatermaker } = updatePayload;
+      result = await supabase
+        .from('boats')
+        .update(payloadWithoutWatermaker)
+        .eq('id', boatId);
+    }
+    if (result.error) {
+      console.error('updateBoat error:', result.error);
+    }
   }
 }
 
@@ -345,6 +391,14 @@ export async function reactivateBoat(boatId) {
 
 // ----------------- Links (boat_links when Supabase) -----------------
 
+/** Default links seeded when a boat has no links (local and Supabase). */
+const DEFAULT_LINKS = [
+  { name: 'Navionics', url: 'https://www.navionics.com' },
+  { name: 'Met Office Marine', url: 'https://www.metoffice.gov.uk/weather/marine' },
+  { name: 'Windy', url: 'https://www.windy.com' },
+  { name: 'Local Marina', url: 'https://example.com' }
+];
+
 export async function getLinks(boatId) {
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
@@ -359,7 +413,27 @@ export async function getLinks(boatId) {
     console.error('getLinks error:', error);
     return linksStorage.getAll(boatId);
   }
-  return (data || []).map((row) => ({ id: row.id, boat_id: row.boat_id, name: row.name, url: row.url, created_at: row.created_at }));
+  let rows = data || [];
+  // Seed default links when boat has none (same behaviour as local storage)
+  if (rows.length === 0) {
+    const ownerId = session.user.id;
+    const { data: inserted, error: insertError } = await supabase
+      .from('boat_links')
+      .insert(DEFAULT_LINKS.map((link) => ({
+        boat_id: boatId,
+        owner_id: ownerId,
+        name: link.name,
+        url: link.url
+      })))
+      .select('*')
+      .order('created_at', { ascending: true });
+    if (!insertError && inserted?.length) {
+      rows = inserted;
+    }
+  }
+  const mapped = rows.map((row) => ({ id: row.id, boat_id: boatId, name: row.name, url: row.url, created_at: row.created_at }));
+  linksStorage.replaceForBoat(boatId, mapped);
+  return mapped;
 }
 
 export async function createLink(boatId, payload) {
@@ -430,22 +504,26 @@ export async function getEngines(boatId) {
     return enginesStorage.getAll(boatId);
   }
 
-  return (data || []).map((e) => {
+  const mapped = (data || []).map((e) => {
     const out = {
       ...e,
+      boat_id: boatId,
       manufacturer: e.make,
       serial_number: e.serial,
       horsepower: e.hours,
       label: e.position || [e.make, e.model].filter(Boolean).join(' ') || 'Engine'
     };
     try {
-      if (e.notes && typeof e.notes === 'string') {
-        const d = JSON.parse(e.notes);
+      if (e.notes != null) {
+        const d = typeof e.notes === 'string' ? JSON.parse(e.notes) : e.notes;
         if (d && typeof d === 'object') Object.assign(out, d);
       }
     } catch (_) {}
     return out;
   });
+  // Sync to local storage so boat dashboard and account Usage show correct counts
+  enginesStorage.replaceForBoat(boatId, mapped);
+  return mapped;
 }
 
 export async function createEngine(boatId, payload) {
@@ -472,8 +550,25 @@ export async function createEngine(boatId, payload) {
 
   if (error) {
     console.error('createEngine error:', error);
+    return null;
   }
-
+  if (data) {
+    const mapped = {
+      ...data,
+      boat_id: boatId,
+      manufacturer: data.make,
+      serial_number: data.serial,
+      horsepower: data.hours,
+      label: data.position || [data.make, data.model].filter(Boolean).join(' ') || 'Engine'
+    };
+    try {
+      if (data.notes != null) {
+        const d = typeof data.notes === 'string' ? JSON.parse(data.notes) : data.notes;
+        if (d && typeof d === 'object') Object.assign(mapped, d);
+      }
+    } catch (_) {}
+    enginesStorage.save(mapped, boatId);
+  }
   return data ?? null;
 }
 
@@ -499,6 +594,12 @@ export async function updateEngine(engineId, payload) {
 
   if (error) {
     console.error('updateEngine error:', error);
+  } else {
+    const existing = enginesStorage.get(engineId);
+    if (existing) {
+      const notesObj = typeof payload.notes === 'string' && payload.notes.startsWith('{') ? (() => { try { return JSON.parse(payload.notes); } catch (_) { return {}; } })() : {};
+      enginesStorage.save({ ...existing, ...payload, ...notesObj }, existing.boat_id);
+    }
   }
 }
 
@@ -512,6 +613,8 @@ export async function deleteEngine(engineId) {
   const { error } = await supabase.from('engines').delete().eq('id', engineId);
   if (error) {
     console.error('deleteEngine error:', error);
+  } else {
+    enginesStorage.delete(engineId);
   }
 }
 
@@ -534,8 +637,8 @@ export async function getServiceEntries(boatId) {
     return serviceHistoryStorage.getAll(boatId);
   }
 
-  return (data || []).map((e) => {
-    const out = { ...e, date: e.service_date, service_type: e.title, notes: e.description };
+  const mapped = (data || []).map((e) => {
+    const out = { ...e, boat_id: boatId, date: e.service_date, service_type: e.title, notes: e.description };
     try {
       if (e.description && typeof e.description === 'string' && (e.description.startsWith('{') || e.description.startsWith('['))) {
         const d = JSON.parse(e.description);
@@ -544,6 +647,8 @@ export async function getServiceEntries(boatId) {
     } catch (_) {}
     return out;
   });
+  serviceHistoryStorage.replaceForBoat(boatId, mapped);
+  return mapped;
 }
 
 export async function createServiceEntry(boatId, payload) {
@@ -640,8 +745,8 @@ export async function getEquipment(boatId, category) {
     return [];
   }
 
-  return (data || []).map((item) => {
-    const out = { ...item, notes: item.details };
+  const mapped = (data || []).map((item) => {
+    const out = { ...item, boat_id: boatId, notes: item.details };
     try {
       if (item.details && typeof item.details === 'string') {
         const d = JSON.parse(item.details);
@@ -650,6 +755,9 @@ export async function getEquipment(boatId, category) {
     } catch (_) {}
     return out;
   });
+  if (category === 'navigation') navEquipmentStorage.replaceForBoat(boatId, mapped);
+  if (category === 'safety') safetyEquipmentStorage.replaceForBoat(boatId, mapped);
+  return mapped;
 }
 
 export async function createEquipment(boatId, category, payload) {
@@ -663,7 +771,7 @@ export async function createEquipment(boatId, category, payload) {
 
   const detailsObj = category === 'safety'
     ? { type: payload.type, serial_number: payload.serial_number, service_interval: payload.service_interval, notes: payload.notes }
-    : { manufacturer: payload.manufacturer, model: payload.model, serial_number: payload.serial_number, install_date: payload.install_date, warranty_expiry_date: payload.warranty_expiry_date, notes: payload.notes };
+    : { manufacturer: payload.manufacturer, model: payload.model, serial_number: payload.serial_number, install_date: payload.install_date, warranty_expiry_date: payload.warranty_expiry_date, warranty_reminder_minutes: payload.warranty_reminder_minutes ?? null, notes: payload.notes };
   const detailsStr = Object.keys(detailsObj).some((k) => detailsObj[k] != null) ? JSON.stringify(detailsObj) : (payload.notes || null);
   const expiry = category === 'safety' ? (payload.expiry_date ?? null) : (payload.warranty_expiry_date ?? null);
 
@@ -703,7 +811,7 @@ export async function updateEquipment(equipmentId, category, payload) {
 
   const detailsObj = category === 'safety'
     ? { type: payload.type, serial_number: payload.serial_number, service_interval: payload.service_interval, notes: payload.notes }
-    : { manufacturer: payload.manufacturer, model: payload.model, serial_number: payload.serial_number, install_date: payload.install_date, warranty_expiry_date: payload.warranty_expiry_date, notes: payload.notes };
+    : { manufacturer: payload.manufacturer, model: payload.model, serial_number: payload.serial_number, install_date: payload.install_date, warranty_expiry_date: payload.warranty_expiry_date, warranty_reminder_minutes: payload.warranty_reminder_minutes ?? null, notes: payload.notes };
   const detailsStr = Object.keys(detailsObj).some((k) => detailsObj[k] != null) ? JSON.stringify(detailsObj) : (payload.notes || null);
   const expiry = category === 'safety' ? (payload.expiry_date ?? null) : (payload.warranty_expiry_date ?? null);
 
@@ -760,8 +868,8 @@ export async function getLogbook(boatId) {
     return shipsLogStorage.getAll(boatId);
   }
 
-  return (data || []).map((e) => {
-    const out = { ...e, date: e.trip_date, departure: e.from_location, arrival: e.to_location };
+  const mapped = (data || []).map((e) => {
+    const out = { ...e, boat_id: boatId, date: e.trip_date, departure: e.from_location, arrival: e.to_location };
     try {
       if (e.notes && typeof e.notes === 'string') {
         const d = JSON.parse(e.notes);
@@ -775,6 +883,8 @@ export async function getLogbook(boatId) {
     } catch (_) {}
     return out;
   });
+  shipsLogStorage.replaceForBoat(boatId, mapped);
+  return mapped;
 }
 
 export async function createLogEntry(boatId, payload) {
@@ -862,11 +972,13 @@ export async function getHaulouts(boatId) {
     .order('haulout_date', { ascending: false });
 
   if (error) {
-    console.error('getHaulouts error:', error);
+    logSupabaseFallback('haulout_entries', error);
     return hauloutStorage.getAll(boatId);
   }
 
-  return data || [];
+  const list = (data || []).map((row) => ({ ...row, boat_id: boatId }));
+  hauloutStorage.replaceForBoat(boatId, list);
+  return list;
 }
 
 export async function createHaulout(boatId, payload) {
@@ -916,7 +1028,8 @@ export async function createHaulout(boatId, payload) {
     total_cost: payload.total_cost ?? null,
     general_notes: payload.general_notes || null,
     recommendations_next_haulout: payload.recommendations_next_haulout || null,
-    next_haulout_due: payload.next_haulout_due || null
+    next_haulout_due: payload.next_haulout_due || null,
+    next_haulout_reminder_minutes: payload.next_haulout_reminder_minutes ?? null
   };
 
   const { data, error } = await supabase
@@ -926,7 +1039,7 @@ export async function createHaulout(boatId, payload) {
     .single();
 
   if (error) {
-    console.error('createHaulout error:', error);
+    logSupabaseFallback('haulout_entries', error);
     return null;
   }
   return data;
@@ -977,7 +1090,8 @@ export async function updateHaulout(hauloutId, payload) {
     total_cost: payload.total_cost ?? null,
     general_notes: payload.general_notes ?? null,
     recommendations_next_haulout: payload.recommendations_next_haulout ?? null,
-    next_haulout_due: payload.next_haulout_due ?? null
+    next_haulout_due: payload.next_haulout_due ?? null,
+    next_haulout_reminder_minutes: payload.next_haulout_reminder_minutes ?? null
   };
 
   const { error } = await supabase
@@ -986,7 +1100,7 @@ export async function updateHaulout(hauloutId, payload) {
     .eq('id', hauloutId);
 
   if (error) {
-    console.error('updateHaulout error:', error);
+    logSupabaseFallback('haulout_entries', error);
   }
 }
 
@@ -1002,7 +1116,7 @@ export async function deleteHaulout(hauloutId) {
     .delete()
     .eq('id', hauloutId);
   if (error) {
-    console.error('deleteHaulout error:', error);
+    logSupabaseFallback('haulout_entries', error);
   }
 }
 
@@ -1021,7 +1135,7 @@ export async function getCalendarEvents(boatId) {
     .order('date', { ascending: true });
 
   if (error) {
-    console.error('getCalendarEvents error:', error);
+    logSupabaseFallback('calendar_events', error);
     return calendarEventsStorage.getAll(boatId);
   }
 
@@ -1034,6 +1148,18 @@ export async function getCalendarEvents(boatId) {
 export async function createCalendarEvent(boatId, payload) {
   if (await isBoatArchived(boatId)) return null;
   const session = await getSession();
+  const dbPayload = {
+    boat_id: boatId,
+    owner_id: session?.user?.id,
+    date: payload.date,
+    time: payload.time || null,
+    title: payload.title,
+    notes: payload.notes || null,
+    repeat: payload.repeat || null,
+    repeat_until: payload.repeat_until || null,
+    reminder_minutes: payload.reminder_minutes ?? null
+  };
+
   if (!session || !isSupabaseEnabled()) {
     const event = { ...payload, boat_id: boatId };
     calendarEventsStorage.save(event, boatId);
@@ -1042,22 +1168,16 @@ export async function createCalendarEvent(boatId, payload) {
 
   const { data, error } = await supabase
     .from('calendar_events')
-    .insert({
-      boat_id: boatId,
-      owner_id: session.user.id,
-      date: payload.date,
-      time: payload.time || null,
-      title: payload.title,
-      notes: payload.notes || null,
-      repeat: payload.repeat || null,
-      repeat_until: payload.repeat_until || null
-    })
+    .insert(dbPayload)
     .select('*')
     .single();
 
   if (error) {
-    console.error('createCalendarEvent error:', error);
-    return null;
+    logSupabaseFallback('calendar_events', error);
+    // Fall back to local storage when Supabase fails (e.g. table not migrated)
+    const event = { ...payload, boat_id: boatId };
+    calendarEventsStorage.save(event, boatId);
+    return calendarEventsStorage.getAll(boatId).find((e) => e.date === payload.date && e.title === payload.title) || event;
   }
   return data;
 }
@@ -1078,12 +1198,15 @@ export async function updateCalendarEvent(eventId, payload) {
       title: payload.title,
       notes: payload.notes ?? null,
       repeat: payload.repeat ?? null,
-      repeat_until: payload.repeat_until ?? null
+      repeat_until: payload.repeat_until ?? null,
+      reminder_minutes: payload.reminder_minutes ?? null
     })
     .eq('id', eventId);
 
   if (error) {
-    console.error('updateCalendarEvent error:', error);
+    logSupabaseFallback('calendar_events', error);
+    const existing = calendarEventsStorage.get(eventId) || { id: eventId };
+    calendarEventsStorage.save({ ...existing, ...payload }, existing.boat_id);
   }
 }
 
@@ -1099,7 +1222,8 @@ export async function deleteCalendarEvent(eventId) {
     .delete()
     .eq('id', eventId);
   if (error) {
-    console.error('deleteCalendarEvent error:', error);
+    logSupabaseFallback('calendar_events', error);
+    calendarEventsStorage.delete(eventId);
   }
 }
 

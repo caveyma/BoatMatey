@@ -21,7 +21,9 @@ const PAGE_COLOR_CLASSES = [
   'page-color-log',
   'page-color-links',
   'page-color-account',
-  'page-color-guide'
+  'page-color-guide',
+  'page-color-sails-rigging',
+  'page-color-watermaker'
 ];
 
 function applyPageColor(path) {
@@ -39,6 +41,8 @@ function applyPageColor(path) {
   else if (path.includes('/links')) key = 'links';
   else if (path.includes('/account')) key = 'account';
   else if (path.includes('/guide')) key = 'guide';
+  else if (path.includes('/sails-rigging')) key = 'sails-rigging';
+  else if (path.includes('/watermaker')) key = 'watermaker';
 
   if (key) document.body.classList.add(`page-color-${key}`);
 }
@@ -103,13 +107,14 @@ async function loadRoute(path) {
     path = '/';
   }
 
-  console.log('Router: Loading route:', path);
+  if (path === currentRoute) return;
+  currentRoute = path;
 
   // Check access requirements (subscription + auth gate)
   const accessCheck = await checkAccess(path);
   if (!accessCheck.allowed) {
-    console.log('Router: Access denied, redirecting to:', accessCheck.redirectTo);
     window.location.hash = accessCheck.redirectTo;
+    currentRoute = null;
     return;
   }
 
@@ -125,8 +130,6 @@ async function loadRoute(path) {
 
   const route = match.route;
   const params = match.params;
-
-  currentRoute = path;
   applyPageColor(path);
 
   // Clean up previous page
@@ -182,9 +185,12 @@ async function loadRoute(path) {
  * Flow: Welcome → Auth → (Subscription for new users) → Home
  */
 async function checkAccess(path) {
-  const isNative = Capacitor.isNativePlatform?.() ?? false;
-  
-  // Web mode: allow all access (dev/testing)
+  let isNative = false;
+  try {
+    isNative = Capacitor?.isNativePlatform?.() ?? false;
+  } catch (e) {
+    // Capacitor not available (e.g. web build) – allow access
+  }
   if (!isNative) {
     return { allowed: true };
   }
@@ -215,18 +221,11 @@ async function checkAccess(path) {
  * Initialize router
  */
 export function init() {
-  console.log('Router: Initializing...');
-  console.log('Router: Available routes:', Object.keys(routes));
-  
-  // Handle initial load
   const hash = window.location.hash.substring(1) || '/';
-  console.log('Router: Loading initial route:', hash);
   loadRoute(hash);
 
-  // Handle hash changes
   window.addEventListener('hashchange', () => {
     const hash = window.location.hash.substring(1) || '/';
-    console.log('Router: Hash changed to:', hash);
     if (hash !== currentRoute) {
       loadRoute(hash);
     }

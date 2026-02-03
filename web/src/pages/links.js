@@ -4,11 +4,10 @@
 
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
-import { createYachtHeader } from '../components/header.js';
-import { getLinks, createLink, updateLink, deleteLink, isBoatArchived } from '../lib/dataService.js';
+import { createYachtHeader, createBackButton } from '../components/header.js';
+import { getLinks, deleteLink, isBoatArchived } from '../lib/dataService.js';
 import { boatsStorage, linksStorage } from '../lib/storage.js';
 
-let editingId = null;
 let currentBoatId = null;
 let isArchived = false;
 let currentLinksList = [];
@@ -18,11 +17,12 @@ function render(params = {}) {
 
   const wrapper = document.createElement('div');
 
-  const yachtHeader = createYachtHeader('Web Links', true, () => window.history.back());
+  const yachtHeader = createYachtHeader('Web Links');
   wrapper.appendChild(yachtHeader);
 
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content card-color-links';
+  pageContent.appendChild(createBackButton());
 
   const container = document.createElement('div');
   container.className = 'container';
@@ -31,7 +31,7 @@ function render(params = {}) {
   addBtn.className = 'btn-primary';
   addBtn.id = 'links-add-btn';
   addBtn.innerHTML = `${renderIcon('plus')} Add Link`;
-  addBtn.onclick = () => showLinkForm();
+  addBtn.onclick = () => navigate(`/boat/${currentBoatId}/links/new`);
 
   const listContainer = document.createElement('div');
   listContainer.id = 'links-list';
@@ -92,17 +92,16 @@ async function loadLinks() {
   }
 
   listContainer.innerHTML = links.map((link) => `
-    <div class="card">
-      <div class="card-header">
-        <div>
+    <div class="card link-card" data-link-id="${link.id}" onclick="linksPageOpen('${link.id}')">
+      <div class="card-header link-card-header">
+        <div class="link-card-content">
           <h3 class="card-title">${link.name}</h3>
           <p class="text-muted">${link.url}</p>
         </div>
-        <div>
-          <button class="btn-primary" onclick="linksPageOpen('${link.id}')">Open</button>
+        <div class="link-card-actions">
           ${!isArchived ? `
-            <button class="btn-link" onclick="linksPageEdit('${link.id}')">${renderIcon('edit')}</button>
-            ${!String(link.id || '').startsWith('link_') ? `<button class="btn-link btn-danger" onclick="linksPageDelete('${link.id}')">${renderIcon('trash')}</button>` : ''}
+            <a href="#/boat/${currentBoatId}/links/${link.id}" class="btn-link" onclick="event.preventDefault(); event.stopPropagation(); window.navigate('/boat/${currentBoatId}/links/${link.id}')">${renderIcon('edit')}</a>
+            ${!String(link.id || '').startsWith('link_') ? `<button type="button" class="btn-link btn-danger" onclick="event.stopPropagation(); linksPageDelete('${link.id}')">${renderIcon('trash')}</button>` : ''}
           ` : ''}
         </div>
       </div>
@@ -113,6 +112,7 @@ async function loadLinks() {
 }
 
 function attachHandlers() {
+  window.navigate = navigate;
   window.linksPageOpen = (id) => {
     const link = currentLinksList.find((l) => l.id === id) || linksStorage.get(id);
     if (!link) return;
@@ -122,12 +122,6 @@ function attachHandlers() {
       url = `https://${url}`;
     }
     window.open(url, '_blank');
-  };
-
-  window.linksPageEdit = (id) => {
-    if (isArchived) return;
-    editingId = id;
-    showLinkForm();
   };
 
   window.linksPageDelete = async (id) => {
@@ -140,68 +134,6 @@ function attachHandlers() {
     }
     loadLinks();
   };
-}
-
-function showLinkForm() {
-  if (isArchived) return;
-
-  const link = editingId ? (currentLinksList.find((l) => l.id === editingId) || linksStorage.get(editingId)) : null;
-
-  const formHtml = `
-    <div class="card" id="link-form-card">
-      <h3>${editingId ? 'Edit Link' : 'Add Link'}</h3>
-      <form id="link-form">
-        <div class="form-group">
-          <label for="link_name">Name *</label>
-          <input type="text" id="link_name" required value="${link?.name || ''}">
-        </div>
-        <div class="form-group">
-          <label for="link_url">URL *</label>
-          <input type="url" id="link_url" required value="${link?.url || ''}" placeholder="https://example.com">
-        </div>
-        <div class="form-actions">
-          <button type="button" class="btn-secondary" onclick="linksPageCancelForm()">Cancel</button>
-          <button type="submit" class="btn-primary">Save</button>
-        </div>
-      </form>
-    </div>
-  `;
-
-  const listContainer = document.getElementById('links-list');
-  listContainer.insertAdjacentHTML('afterbegin', formHtml);
-
-  const form = document.getElementById('link-form');
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    saveLink();
-  });
-
-  window.linksPageCancelForm = () => {
-    const card = document.getElementById('link-form-card');
-    if (card) card.remove();
-    editingId = null;
-  };
-}
-
-async function saveLink() {
-  const name = document.getElementById('link_name').value;
-  const url = document.getElementById('link_url').value;
-
-  if (currentBoatId) {
-    if (editingId) {
-      await updateLink(editingId, currentBoatId, { name, url });
-    } else {
-      await createLink(currentBoatId, { name, url });
-    }
-  } else {
-    const link = { id: editingId, name, url };
-    linksStorage.save(link);
-  }
-
-  const card = document.getElementById('link-form-card');
-  if (card) card.remove();
-  editingId = null;
-  loadLinks();
 }
 
 export default {

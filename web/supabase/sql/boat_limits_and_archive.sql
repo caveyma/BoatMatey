@@ -62,7 +62,7 @@ create or replace function public.archive_boat(p_boat_id uuid)
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $$
 declare
   v_owner_id uuid;
@@ -101,7 +101,7 @@ create or replace function public.reactivate_boat(p_boat_id uuid)
 returns void
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $$
 declare
   v_owner_id uuid;

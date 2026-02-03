@@ -17,7 +17,8 @@ import {
   hasActiveSubscription,
   refreshSubscriptionStatus 
 } from '../lib/subscription.js';
-import { hasPendingSignup, completeAccountCreation } from './auth.js';
+import { hasPendingSignup, getPendingSignupEmail, completeAccountCreation } from './auth.js';
+import { logInWithAppUserId } from '../services/revenuecat.js';
 import { Capacitor } from '@capacitor/core';
 
 function render() {
@@ -109,8 +110,8 @@ function render() {
         ✓ Check Purchase Status
       </button>
 
-      <button type="button" class="btn-link" id="cancel-btn" style="width: 100%; padding: 0.75rem; color: var(--color-text-light);">
-        ← Cancel
+      <button type="button" class="btn-link page-body-back-btn" id="cancel-btn" style="width: 100%; padding: 0.75rem; color: var(--color-text-light); font-size: 0.8rem;">
+        Back
       </button>
     ` : `
       <div style="background: #f0f8ff; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
@@ -226,6 +227,17 @@ async function onMount() {
       setLoading(true, 'Processing...');
 
       try {
+        // Like PetHub+: identify RevenueCat with user before purchase so purchase is tied to them
+        const pendingEmail = getPendingSignupEmail();
+        if (pendingEmail) {
+          try {
+            await logInWithAppUserId(`pending_${pendingEmail}`);
+            console.log('[Subscription Page] RevenueCat logged in as pending_', pendingEmail);
+          } catch (rcErr) {
+            console.warn('[Subscription Page] RevenueCat logIn before purchase failed (continuing):', rcErr);
+          }
+        }
+
         const status = await purchaseSubscription();
         
         console.log('[Subscription Page] Purchase result:', status);
@@ -323,10 +335,10 @@ async function onMount() {
     });
   }
 
-  // Cancel button - go back to auth
+  // Back button - go back one screen (e.g. to auth)
   if (cancelBtn) {
     cancelBtn.addEventListener('click', () => {
-      navigate('/auth');
+      window.history.back();
     });
   }
 }

@@ -4,11 +4,10 @@
 
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
-import { createYachtHeader } from '../components/header.js';
-import { isBoatArchived, getEquipment, createEquipment, updateEquipment, deleteEquipment } from '../lib/dataService.js';
+import { createYachtHeader, createBackButton } from '../components/header.js';
+import { isBoatArchived, getEquipment, deleteEquipment } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
 
-let editingId = null;
 let currentBoatId = null;
 let safetyFileInput = null;
 let currentSafetyItemIdForUpload = null;
@@ -24,12 +23,12 @@ function render(params = {}) {
 
   const wrapper = document.createElement('div');
 
-  // Yacht header with back arrow using browser history
-  const yachtHeader = createYachtHeader('Safety Equipment', true, () => window.history.back());
+  const yachtHeader = createYachtHeader('Safety Equipment');
   wrapper.appendChild(yachtHeader);
 
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content card-color-safety';
+  pageContent.appendChild(createBackButton());
 
   const container = document.createElement('div');
   container.className = 'container';
@@ -38,7 +37,7 @@ function render(params = {}) {
   addBtn.className = 'btn-primary';
   addBtn.id = 'safety-add-btn';
   addBtn.innerHTML = `${renderIcon('plus')} Add Equipment`;
-  addBtn.onclick = () => showSafetyForm();
+  addBtn.onclick = () => navigate(`/boat/${currentBoatId}/safety/new`);
 
   const listContainer = document.createElement('div');
   listContainer.id = 'safety-list';
@@ -156,7 +155,7 @@ async function loadSafetyEquipment() {
           ${expiryDate ? `<span class="badge ${isExpired ? 'badge-error' : isExpiringSoon ? 'badge-warning' : 'badge-success'}">
             ${isExpired ? 'Expired' : isExpiringSoon ? 'Expiring Soon' : 'Valid'}
           </span>` : ''}
-          ${!safetyArchived ? `<button class="btn-link" onclick="safetyPageEdit('${item.id}')">${renderIcon('edit')}</button>
+          ${!safetyArchived ? `<a href="#/boat/${currentBoatId}/safety/${item.id}" class="btn-link" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/safety/${item.id}')">${renderIcon('edit')}</a>
           <button class="btn-link btn-danger" onclick="safetyPageDelete('${item.id}')">${renderIcon('trash')}</button>` : ''}
         </div>
       </div>
@@ -182,11 +181,7 @@ async function loadSafetyEquipment() {
 }
 
 function attachHandlers() {
-  window.safetyPageEdit = (id) => {
-    editingId = id;
-    showSafetyForm();
-  };
-
+  window.navigate = navigate;
   window.safetyPageDelete = async (id) => {
     if (confirm('Delete this equipment?')) {
       await deleteEquipment(id, 'safety');
@@ -273,246 +268,6 @@ function attachSafetyAttachmentHandlers() {
       }
     });
   });
-}
-
-async function showSafetyForm() {
-  const items = currentBoatId ? await getEquipment(currentBoatId, 'safety') : [];
-  const existingItem = editingId ? items.find((i) => i.id === editingId) : null;
-  if (!editingId) {
-    editingId = `safety_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-  const item = existingItem;
-  const types = ['Liferaft', 'EPIRB', 'Fire Extinguisher', 'Flares', 'First Aid Kit', 'Life Jacket', 'Other'];
-
-  const formHtml = `
-    <div class="card" id="safety-form-card">
-      <h3>${editingId ? 'Edit Equipment' : 'Add Equipment'}</h3>
-      <form id="safety-form">
-        <div class="form-group">
-          <label for="safety_name">Name *</label>
-          <input type="text" id="safety_name" required value="${item?.name || ''}">
-        </div>
-        <div class="form-group">
-          <label for="safety_type">Type</label>
-          <select id="safety_type">
-            <option value="">Select...</option>
-            ${types.map(t => `<option value="${t}" ${item?.type === t ? 'selected' : ''}>${t}</option>`).join('')}
-          </select>
-          <input type="text" id="safety_type_custom" placeholder="Or enter custom type" value="${item?.type && !types.includes(item.type) ? item.type : ''}" style="margin-top: 0.5rem;">
-        </div>
-        <div class="form-group">
-          <label for="safety_serial">Serial Number</label>
-          <input type="text" id="safety_serial" value="${item?.serial_number || ''}">
-        </div>
-        <div class="form-group">
-          <label for="safety_expiry">Expiry Date</label>
-          <input type="date" id="safety_expiry" value="${item?.expiry_date || ''}">
-        </div>
-        <div class="form-group">
-          <label for="safety_service_interval">Service Interval (e.g., "Annually", "Every 2 years")</label>
-          <input type="text" id="safety_service_interval" value="${item?.service_interval || ''}">
-        </div>
-        <div class="form-group">
-          <label for="safety_notes">Notes</label>
-          <textarea id="safety_notes" rows="4">${item?.notes || ''}</textarea>
-        </div>
-        <div class="card" id="safety-attachments-card" style="margin-top: 1rem;">
-          <h4>Attachments & Links</h4>
-          <p class="text-muted">Upload up to ${LIMITED_UPLOADS_PER_ENTITY} files (max 2 MB each), or add links for this safety item.</p>
-          <div class="attachment-list" id="safety-attachments-list-form"></div>
-          <input type="file" id="safety-file-input-form" multiple accept=".pdf,.jpg,.jpeg,.png" style="display: none;">
-          <button type="button" class="btn-secondary" id="safety-add-file-btn" style="margin-top: 0.5rem;">
-            ${renderIcon('plus')} Add File
-          </button>
-          <div class="form-group" style="margin-top: 0.75rem;">
-            <label>Links</label>
-            <input type="text" id="safety-link-name" placeholder="Link name (optional)">
-            <input type="url" id="safety-link-url" placeholder="https://example.com" style="margin-top: 0.5rem;">
-            <button type="button" class="btn-secondary" id="safety-add-link-btn" style="margin-top: 0.5rem;">
-              ${renderIcon('plus')} Add Link
-            </button>
-          </div>
-        </div>
-        <div class="form-actions">
-          <button type="button" class="btn-secondary" onclick="safetyPageCancelForm()">Cancel</button>
-          <button type="submit" class="btn-primary">Save</button>
-        </div>
-      </form>
-    </div>
-  `;
-
-  const listContainer = document.getElementById('safety-list');
-  listContainer.insertAdjacentHTML('afterbegin', formHtml);
-
-  const form = document.getElementById('safety-form');
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    saveSafetyEquipment();
-  });
-
-  // Handle custom type
-  document.getElementById('safety_type').addEventListener('change', (e) => {
-    if (e.target.value) {
-      document.getElementById('safety_type_custom').value = '';
-    }
-  });
-
-  document.getElementById('safety_type_custom').addEventListener('input', (e) => {
-    if (e.target.value) {
-      document.getElementById('safety_type').value = '';
-    }
-  });
-
-  initSafetyFormAttachments(editingId);
-
-  window.safetyPageCancelForm = () => {
-    document.getElementById('safety-form-card').remove();
-    editingId = null;
-  };
-}
-
-function initSafetyFormAttachments(safetyId) {
-  const fileInput = document.getElementById('safety-file-input-form');
-  const addFileBtn = document.getElementById('safety-add-file-btn');
-  const addLinkBtn = document.getElementById('safety-add-link-btn');
-
-  if (addFileBtn && fileInput) {
-    addFileBtn.addEventListener('click', () => {
-      fileInput.click();
-    });
-
-    fileInput.addEventListener('change', async (e) => {
-      const files = Array.from(e.target.files);
-      if (!files.length || !currentBoatId) return;
-
-      const existing = getUploads('safety', safetyId, currentBoatId);
-      const remainingSlots = LIMITED_UPLOADS_PER_ENTITY - existing.length;
-
-      if (remainingSlots <= 0) {
-        alert(`You can only upload up to ${LIMITED_UPLOADS_PER_ENTITY} files for this safety item.`);
-        fileInput.value = '';
-        return;
-      }
-
-      const validFiles = [];
-      let oversizedCount = 0;
-
-      files.forEach(file => {
-        if (file.size > LIMITED_UPLOAD_SIZE_BYTES) {
-          oversizedCount++;
-        } else {
-          validFiles.push(file);
-        }
-      });
-
-      if (oversizedCount > 0) {
-        alert('Some files were larger than 2 MB and were skipped.');
-      }
-
-      if (!validFiles.length) {
-        fileInput.value = '';
-        return;
-      }
-
-      const filesToUpload = validFiles.slice(0, remainingSlots);
-      if (validFiles.length > remainingSlots) {
-        alert(`Only ${remainingSlots} more file(s) can be uploaded for this safety item (max ${LIMITED_UPLOADS_PER_ENTITY}).`);
-      }
-
-      for (const file of filesToUpload) {
-        await saveUpload(file, 'safety', safetyId, currentBoatId);
-      }
-
-      fileInput.value = '';
-      loadSafetyFormAttachments(safetyId);
-    });
-  }
-
-  if (addLinkBtn) {
-    addLinkBtn.addEventListener('click', () => {
-      const nameInput = document.getElementById('safety-link-name');
-      const urlInput = document.getElementById('safety-link-url');
-      const name = nameInput?.value.trim() || '';
-      const url = urlInput?.value.trim();
-
-      if (!url) {
-        alert('Please enter a URL.');
-        return;
-      }
-
-      saveLinkAttachment(name, url, 'safety', safetyId, currentBoatId);
-      if (nameInput) nameInput.value = '';
-      if (urlInput) urlInput.value = '';
-      loadSafetyFormAttachments(safetyId);
-    });
-  }
-
-  loadSafetyFormAttachments(safetyId);
-}
-
-function loadSafetyFormAttachments(safetyId) {
-  const attachmentsList = document.getElementById('safety-attachments-list-form');
-  if (!attachmentsList || !currentBoatId) return;
-
-  const attachments = getUploads('safety', safetyId, currentBoatId);
-  attachmentsList.innerHTML = '';
-
-  if (attachments.length === 0) {
-    attachmentsList.innerHTML = `<p class="text-muted">No files or links added yet.</p>`;
-    return;
-  }
-
-  attachments.forEach(upload => {
-    const isLink = upload.storage_type === 'link' || upload.mime_type === 'text/url' || upload.url;
-    const item = document.createElement('div');
-    item.className = 'attachment-item';
-    item.innerHTML = `
-      <div class="attachment-info">
-        <div class="attachment-icon">${renderIcon(isLink ? 'link' : 'file')}</div>
-        <div class="attachment-details">
-          <div class="attachment-name">${upload.filename}</div>
-          <div class="attachment-meta">
-            ${isLink ? (upload.url || '') : `${formatFileSize(upload.size)} • ${upload.mime_type}`}
-          </div>
-        </div>
-      </div>
-      <div>
-        <button type="button" class="btn-link safety-open-attachment-btn" data-upload-id="${upload.id}">
-          Open
-        </button>
-        <button type="button" class="btn-link btn-danger safety-delete-attachment-btn" data-upload-id="${upload.id}">
-          ${renderIcon('trash')}
-        </button>
-      </div>
-    `;
-    attachmentsList.appendChild(item);
-  });
-
-  attachSafetyAttachmentHandlers();
-}
-
-async function saveSafetyEquipment() {
-  const safetyType = document.getElementById('safety_type').value || document.getElementById('safety_type_custom').value;
-
-  const item = {
-    id: editingId,
-    name: document.getElementById('safety_name').value,
-    type: safetyType,
-    serial_number: document.getElementById('safety_serial').value,
-    expiry_date: document.getElementById('safety_expiry').value || null,
-    service_interval: document.getElementById('safety_service_interval').value,
-    notes: document.getElementById('safety_notes').value
-  };
-
-  if (editingId && !editingId.startsWith('safety_')) {
-    await updateEquipment(editingId, 'safety', item);
-  } else {
-    await createEquipment(currentBoatId, 'safety', item);
-  }
-
-  document.getElementById('safety-form-card').remove();
-  editingId = null;
-  loadSafetyEquipment();
 }
 
 export default {

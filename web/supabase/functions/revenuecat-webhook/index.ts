@@ -147,24 +147,22 @@ serve(async (req: Request) => {
 
     console.log(`[RevenueCat Webhook] Processed successfully:`, data);
 
-    // Special handling for EXPIRATION - also delete storage objects
-    if (event.type === 'EXPIRATION' && data?.success) {
+    // When we deleted the user (EXPIRATION or CANCELLATION), also delete their storage
+    const deletedUser = (event.type === 'EXPIRATION' || event.type === 'CANCELLATION') && data?.success && data?.user_id;
+    if (deletedUser) {
       try {
-        // Try to parse user_id and delete their storage folder
-        const userId = event.app_user_id;
+        const userId = data.user_id as string; // UUID from delete_user_completely
         const { error: storageError } = await supabase.storage
           .from('boatmatey-attachments')
           .remove([`${userId}/`]);
-        
+
         if (storageError) {
           console.log('[RevenueCat Webhook] Storage deletion note:', storageError.message);
-          // Not critical - continue anyway
         } else {
           console.log(`[RevenueCat Webhook] Deleted storage for user: ${userId}`);
         }
       } catch (storageErr) {
         console.log('[RevenueCat Webhook] Storage deletion skipped:', storageErr);
-        // Not critical - the main data is already deleted
       }
     }
 

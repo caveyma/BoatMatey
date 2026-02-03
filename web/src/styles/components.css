@@ -10,6 +10,35 @@
   padding: var(--spacing-md);
 }
 
+/* Home: boat on first row, then Settings + Calendar on one line */
+.home-boat-row {
+  padding-bottom: 0;
+}
+.home-settings-calendar-row {
+  grid-template-columns: repeat(2, 1fr);
+  padding-top: 0;
+}
+@media (max-width: 480px) {
+  .home-settings-calendar-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Boats page: Calendar and Settings always side by side (row is sibling of grid) */
+.boats-settings-calendar-row {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-lg);
+  margin-top: var(--spacing-lg);
+  padding: 0 var(--spacing-md);
+  width: 100%;
+  box-sizing: border-box;
+}
+.boats-settings-calendar-row .dashboard-card {
+  min-width: 0;
+  max-width: none;
+}
+
 .dashboard-card {
   background: color-mix(in srgb, var(--card-color, var(--bm-teal)) 26%, white);
   border-radius: var(--radius-xl);
@@ -119,12 +148,39 @@
 
 /* Bitmap-style icons inside dashboard badge */
 .dashboard-card-icon-badge .dashboard-card-icon-img {
-  width: 32px;
-  height: 32px;
-  object-fit: contain;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   border-radius: 50%;
   position: relative;
   z-index: 1;
+}
+
+/* Boat Details: 15% larger (78% × 1.15 ≈ 90%) */
+.dashboard-card.card-color-boat .dashboard-card-icon-img {
+  width: 90%;
+  height: 90%;
+  object-fit: contain;
+}
+
+/* Engine: whole PNG fits in circle at 78% */
+.dashboard-card.card-color-engines .dashboard-card-icon-img {
+  width: 78%;
+  height: 78%;
+  object-fit: contain;
+}
+
+/* Watermaker, Ship's Log, Web Links: 10% smaller */
+.dashboard-card.card-color-watermaker .dashboard-card-icon-img,
+.dashboard-card.card-color-log .dashboard-card-icon-img,
+.dashboard-card.card-color-links .dashboard-card-icon-img {
+  width: 90%;
+  height: 90%;
+}
+
+/* Navigation Equipment: white circle background */
+.dashboard-card.card-color-navigation .dashboard-card-icon-badge {
+  background: #ffffff;
 }
 
 .dashboard-card-title {
@@ -188,6 +244,45 @@
 
 .page-content.card-color-links .card {
   background: color-mix(in srgb, var(--card-links) 26%, #ffffff);
+}
+
+.page-content.card-color-calendar .card {
+  background: color-mix(in srgb, var(--card-calendar) 26%, #ffffff);
+}
+
+/* Web Links: clickable cards, no overflow */
+.link-card {
+  cursor: pointer;
+}
+.link-card .link-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-md);
+}
+.link-card .link-card-content {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+.link-card .link-card-content .card-title,
+.link-card .link-card-content .text-muted {
+  word-break: break-word;
+  overflow-wrap: break-word;
+  margin: 0 0 0.25rem 0;
+}
+.link-card .link-card-content .text-muted {
+  font-size: 0.875rem;
+}
+.link-card .link-card-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.link-card .link-card-actions a,
+.link-card .link-card-actions button {
+  flex-shrink: 0;
 }
 
 .page-content.card-color-boat .card {
@@ -353,6 +448,14 @@
   align-items: center;
   gap: var(--spacing-xs);
   margin-bottom: 0;
+}
+
+/* Row of radio options (DIY/Professional, Open/Closed/Mixed) – aligned and spaced */
+.radio-option-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-md) var(--spacing-lg);
 }
 
 /* DIY service checklist */
@@ -521,8 +624,8 @@
   }
 
   .dashboard-card-icon-badge .dashboard-card-icon-img {
-    width: 26px;
-    height: 26px;
+    width: 100%;
+    height: 100%;
   }
 
   .boat-card-photo,
@@ -541,4 +644,62 @@
   .form-actions button {
     width: 100%;
   }
+}
+
+/* Guide page – each section mirrors its dashboard card colour */
+.page-content.card-color-guide .guide-section-boat {
+  border-left: 4px solid var(--card-boat);
+  background: color-mix(in srgb, var(--card-boat) 18%, #ffffff);
+}
+.page-content.card-color-guide .guide-section-engines {
+  border-left: 4px solid var(--card-engines);
+  background: color-mix(in srgb, var(--card-engines) 18%, #ffffff);
+}
+.page-content.card-color-guide .guide-section-service {
+  border-left: 4px solid var(--card-service);
+  background: color-mix(in srgb, var(--card-service) 18%, #ffffff);
+}
+.page-content.card-color-guide .guide-section-watermaker {
+  border-left: 4px solid var(--card-watermaker);
+  background: color-mix(in srgb, var(--card-watermaker) 18%, #ffffff);
+}
+.page-content.card-color-guide .guide-section-haulout {
+  border-left: 4px solid var(--card-haulout);
+  background: color-mix(in srgb, var(--card-haulout) 18%, #ffffff);
+}
+.page-content.card-color-guide .guide-section-sails-rigging {
+  border-left: 4px solid var(--card-sails-rigging);
+  background: color-mix(in srgb, var(--card-sails-rigging) 18%, #ffffff);
+}
+.page-content.card-color-guide .guide-section-navigation {
+  border-left: 4px solid var(--card-navigation);
+  background: color-mix(in srgb, var(--card-navigation) 18%, #ffffff);
+}
+.page-content.card-color-guide .guide-section-safety {
+  border-left: 4px solid var(--card-safety);
+  background: color-mix(in srgb, var(--card-safety) 18%, #ffffff);
+}
+.page-content.card-color-guide .guide-section-log {
+  border-left: 4px solid var(--card-log);
+  background: color-mix(in srgb, var(--card-log) 18%, #ffffff);
+}
+.page-content.card-color-guide .guide-section-links {
+  border-left: 4px solid var(--card-links);
+  background: color-mix(in srgb, var(--card-links) 18%, #ffffff);
+}
+.page-content.card-color-guide .guide-section-calendar {
+  border-left: 4px solid var(--card-calendar);
+  background: color-mix(in srgb, var(--card-calendar) 18%, #ffffff);
+}
+.page-content.card-color-guide .guide-section-account {
+  border-left: 4px solid var(--card-account);
+  background: color-mix(in srgb, var(--card-account) 18%, #ffffff);
+}
+.page-content.card-color-guide .guide-section-guide {
+  border-left: 4px solid var(--card-guide);
+  background: color-mix(in srgb, var(--card-guide) 18%, #ffffff);
+}
+.page-content.card-color-guide .guide-section-tips {
+  border-left: 4px solid var(--card-guide);
+  background: color-mix(in srgb, var(--card-guide) 12%, #ffffff);
 }

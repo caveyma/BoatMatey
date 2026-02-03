@@ -4,7 +4,7 @@
 
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
-import { createYachtHeader } from '../components/header.js';
+import { createYachtHeader, createBackButton } from '../components/header.js';
 import { boatsStorage } from '../lib/storage.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOADS_PER_ENTITY } from '../lib/uploads.js';
 import { getBoat as getBoatFromApi, updateBoat as updateBoatApi, isBoatArchived } from '../lib/dataService.js';
@@ -26,14 +26,13 @@ function render(params = {}) {
   
   const wrapper = document.createElement('div');
   
-  // Yacht header
-  const header = createYachtHeader('Boat Details', true, () => navigate(`/boat/${currentBoatId}`));
+  const header = createYachtHeader('Boat Details');
   wrapper.appendChild(header);
-  
-  // Page content with boat color theme
+
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content card-color-boat';
-  
+  pageContent.appendChild(createBackButton());
+
   const container = document.createElement('div');
   container.className = 'container';
 
@@ -43,6 +42,14 @@ function render(params = {}) {
     <div class="form-group">
       <label for="boat_name">Boat Name *</label>
       <input type="text" id="boat_name" name="boat_name" required value="${currentBoat?.boat_name || ''}">
+    </div>
+
+    <div class="form-group">
+      <label for="boat_type">Boat Type</label>
+      <select id="boat_type" name="boat_type">
+        <option value="motor" ${(currentBoat?.boat_type || 'motor') === 'motor' ? 'selected' : ''}>Motor boat</option>
+        <option value="sailing" ${currentBoat?.boat_type === 'sailing' ? 'selected' : ''}>Sailing boat</option>
+      </select>
     </div>
 
     <div class="form-group">
@@ -83,6 +90,21 @@ function render(params = {}) {
         <option value="petrol" ${currentBoat?.fuel_type === 'petrol' ? 'selected' : ''}>Petrol</option>
         <option value="electric" ${currentBoat?.fuel_type === 'electric' ? 'selected' : ''}>Electric</option>
       </select>
+    </div>
+
+    <div class="form-group">
+      <label class="checkbox-row">
+        <input
+          type="checkbox"
+          id="watermaker_installed"
+          name="watermaker_installed"
+          ${currentBoat?.watermaker_installed ? 'checked' : ''}
+        >
+        <span>Watermaker installed</span>
+      </label>
+      <p class="text-muted" style="margin-top: 0.25rem; font-size: 0.875rem;">
+        When enabled, a Watermaker Service card appears on your boat dashboard.
+      </p>
     </div>
 
     <div class="form-group">
@@ -312,6 +334,7 @@ function saveBoat() {
   
   const boat = {
     boat_name: formData.get('boat_name'),
+    boat_type: formData.get('boat_type') || 'motor',
     make_model: formData.get('make_model'),
     year: formData.get('year') || null,
     hull_id: formData.get('hull_id'),
@@ -319,6 +342,7 @@ function saveBoat() {
     beam: formData.get('beam') ? parseFloat(formData.get('beam')) : null,
     draft: formData.get('draft') ? parseFloat(formData.get('draft')) : null,
     fuel_type: formData.get('fuel_type'),
+    watermaker_installed: formData.get('watermaker_installed') === 'on',
     home_marina: formData.get('home_marina'),
     registration_no: formData.get('registration_no'),
     insurance_provider: formData.get('insurance_provider'),
@@ -336,7 +360,7 @@ function saveBoat() {
   boatsStorage.save({ id: currentBoatId, ...boat });
 
   // Persist to Supabase in the background when available
-  updateBoatApi(currentBoatId, boat).finally(() => {
+  updateBoatApi(currentBoatId, { ...boat, boat_type: boat.boat_type }).finally(() => {
     alert('Boat details saved!');
     navigate(`/boat/${currentBoatId}`);
   });

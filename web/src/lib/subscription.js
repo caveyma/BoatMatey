@@ -7,9 +7,9 @@
  * Pricing: £24.99/year including VAT
  *
  * Expected RevenueCat configuration:
- * - Entitlement ID: "boatmatey_premium"
+ * - Entitlement identifier in dashboard (check RevenueCat project - may be "BoatMatey Premium" or "boatmatey_premium")
  * - One yearly product in each store mapped to that entitlement
- *   - Suggested product ID: "boatmatey_yearly"
+ *   - Google Play product ID: "boatmatey_premium_yearly:yearly"
  *
  * Native API keys are provided via Vite env:
  * - VITE_REVENUECAT_API_KEY_ANDROID
@@ -18,9 +18,24 @@
 
 import { Capacitor } from '@capacitor/core';
 import { Purchases, LOG_LEVEL } from '@revenuecat/purchases-capacitor';
+import { supabase } from './supabaseClient.js';
+import { getSession } from './dataService.js';
 
-const ENTITLEMENT_ID = 'boatmatey_premium';
+// RevenueCat dashboard may use "BoatMatey Premium" (with space) - check your project's Entitlements
+const ENTITLEMENT_IDS = ['BoatMatey Premium', 'boatmatey_premium'];
 const DISPLAY_PRICE = '£24.99/year';
+
+function getActiveEntitlement(customerInfo) {
+  const active = customerInfo?.entitlements?.active;
+  if (!active || typeof active !== 'object') return null;
+  for (const id of ENTITLEMENT_IDS) {
+    if (active[id]) return active[id];
+  }
+  // Fallback: use first active entitlement if only one
+  const keys = Object.keys(active);
+  if (keys.length > 0) return active[keys[0]];
+  return null;
+}
 
 let initialized = false;
 
@@ -71,8 +86,37 @@ export async function initSubscription() {
 }
 
 /**
- * Refresh subscription status from RevenueCat (native only).
- * On web, this keeps the cached "always active" state.
+ * Fetch subscription status from the user's Supabase profile (source of truth when signed in).
+ * Returns null if no session or no profile; otherwise { active, plan, expires_at }.
+ */
+async function getSubscriptionFromProfile() {
+  if (!supabase) return null;
+  const session = await getSession();
+  if (!session?.user?.id) return null;
+  try {
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('subscription_status, subscription_plan, subscription_expires_at')
+      .eq('id', session.user.id)
+      .maybeSingle();
+    if (error || !profile) return null;
+    const expiresAt = profile.subscription_expires_at ? new Date(profile.subscription_expires_at) : null;
+    const active = profile.subscription_status === 'active' && (!expiresAt || expiresAt > new Date());
+    return {
+      active,
+      plan: profile.subscription_plan || (active ? 'BoatMatey Yearly' : 'None'),
+      expires_at: profile.subscription_expires_at ?? null
+    };
+  } catch (e) {
+    console.warn('[Subscription] Failed to get profile subscription:', e);
+    return null;
+  }
+}
+
+/**
+ * Refresh subscription status from RevenueCat (native) and optionally from Supabase profile.
+ * When the user is signed in, profile is used as fallback/source of truth so Settings shows
+ * correct status even if RevenueCat app user ID is out of sync (e.g. after Google sign-in).
  */
 export async function refreshSubscriptionStatus() {
   const isNative = Capacitor.isNativePlatform?.() ?? false;
@@ -83,18 +127,46 @@ export async function refreshSubscriptionStatus() {
 
   try {
     const { customerInfo } = await Purchases.getCustomerInfo();
+    console.log('[Subscription] Raw customerInfo.entitlements:', JSON.stringify(customerInfo?.entitlements, null, 2));
 
-    const entitlement = customerInfo.entitlements?.active?.[ENTITLEMENT_ID] ?? null;
-    const active = !!entitlement;
+    const entitlement = getActiveEntitlement(customerInfo);
+    const rcActive = !!entitlement;
+    console.log('[Subscription] Active entitlement:', entitlement ? 'yes' : 'no', entitlement ? '(expires: ' + (entitlement.expirationDate || 'n/a') + ')' : '');
 
     subscriptionState = {
-      active,
-      plan: active ? 'BoatMatey Yearly' : 'None',
+      active: rcActive,
+      plan: rcActive ? 'BoatMatey Yearly' : 'None',
       price: DISPLAY_PRICE,
       expires_at: entitlement?.expirationDate ?? null
     };
+
+    // When signed in, use Supabase profile as fallback: if profile says active and not expired, trust it
+    const profileSub = await getSubscriptionFromProfile();
+    if (profileSub && (profileSub.active || subscriptionState.active)) {
+      const useProfile = profileSub.active;
+      if (useProfile) {
+        subscriptionState = {
+          active: true,
+          plan: profileSub.plan || 'BoatMatey Yearly',
+          price: DISPLAY_PRICE,
+          expires_at: profileSub.expires_at ?? subscriptionState.expires_at
+        };
+        console.log('[Subscription] Using profile subscription (active, expires:', subscriptionState.expires_at, ')');
+      }
+    }
   } catch (error) {
     console.error('[Subscription] Failed to refresh customer info from RevenueCat:', error);
+    // Still try profile as fallback when RevenueCat fails
+    const profileSub = await getSubscriptionFromProfile();
+    if (profileSub?.active) {
+      subscriptionState = {
+        active: true,
+        plan: profileSub.plan || 'BoatMatey Yearly',
+        price: DISPLAY_PRICE,
+        expires_at: profileSub.expires_at ?? null
+      };
+      console.log('[Subscription] Using profile subscription after RevenueCat failure');
+    }
   }
 
   return subscriptionState;

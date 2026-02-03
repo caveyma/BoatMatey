@@ -17,6 +17,7 @@ import {
   getSubscriptionStatus,
   refreshSubscriptionStatus 
 } from '../lib/subscription.js';
+import { logInWithAppUserId } from '../services/revenuecat.js';
 import { Capacitor } from '@capacitor/core';
 
 // Store pending signup data (cleared after use)
@@ -43,6 +44,13 @@ export function getPendingSignup() {
  */
 export function hasPendingSignup() {
   return pendingSignup !== null;
+}
+
+/**
+ * Get pending signup email without clearing (for RevenueCat logIn before purchase)
+ */
+export function getPendingSignupEmail() {
+  return pendingSignup?.email ?? null;
 }
 
 /**
@@ -111,6 +119,13 @@ export async function completeAccountCreation() {
 
     if (data.user) {
       await createProfileWithSubscription(data.user.id, signup.email);
+      // Like PetHub+: transfer RevenueCat customer to real user ID so webhook/profile stay in sync
+      try {
+        await logInWithAppUserId(data.user.id);
+        await refreshSubscriptionStatus();
+      } catch (rcErr) {
+        console.warn('[Auth] RevenueCat logIn after account creation failed (non-blocking):', rcErr);
+      }
       return { success: true, user: data.user };
     }
 
@@ -188,6 +203,18 @@ function render() {
       <button type="submit" class="btn-primary" id="signin-btn" style="width: 100%; padding: 0.875rem; font-size: 1rem; margin-bottom: 0.75rem;">
         Sign in
       </button>
+
+      <div id="oauth-buttons" style="display: none; margin-top: 1rem;">
+        <p class="text-muted" style="text-align: center; margin-bottom: 0.75rem; font-size: 0.9rem;">or sign in with</p>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+          <button type="button" class="btn-secondary" id="google-signin-btn" style="width: 100%; padding: 0.75rem; font-size: 1rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+            <span aria-hidden="true">G</span> Sign in with Google
+          </button>
+          <button type="button" class="btn-secondary" id="apple-signin-btn" style="width: 100%; padding: 0.75rem; font-size: 1rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+            Sign in with Apple
+          </button>
+        </div>
+      </div>
 
       ${isNative ? `
         <button type="button" class="btn-secondary" id="create-account-btn" style="width: 100%; padding: 0.875rem; font-size: 1rem;">
@@ -282,6 +309,58 @@ async function onMount() {
   const forgotPasswordBtn = document.getElementById('forgot-password-btn');
   const applyPromoBtn = document.getElementById('apply-promo-btn');
   const backBtn = document.getElementById('back-btn');
+  const oauthButtons = document.getElementById('oauth-buttons');
+  const googleSigninBtn = document.getElementById('google-signin-btn');
+  const appleSigninBtn = document.getElementById('apple-signin-btn');
+
+  if (oauthButtons && supabase) {
+    oauthButtons.style.display = 'block';
+  }
+
+  async function handleOAuthSignIn(provider) {
+    if (!supabase) {
+      showMessage('Cloud sync is not configured.', true);
+      return;
+    }
+    const btn = provider === 'google' ? googleSigninBtn : appleSigninBtn;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = provider === 'google' ? 'Opening Google…' : 'Opening Apple…';
+    }
+    try {
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}${window.location.pathname}#/`
+        }
+      });
+      if (error) {
+        console.error(`${provider} sign-in error:`, error);
+        showMessage(error.message || `Unable to sign in with ${provider}.`, true);
+        return;
+      }
+      if (data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+      showMessage(`Sign-in with ${provider} could not be started.`, true);
+    } catch (err) {
+      console.error(`${provider} OAuth error:`, err);
+      showMessage('Something went wrong. Please try again.', true);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = provider === 'google' ? 'Sign in with Google' : 'Sign in with Apple';
+      }
+    }
+  }
+
+  if (googleSigninBtn) {
+    googleSigninBtn.addEventListener('click', () => handleOAuthSignIn('google'));
+  }
+  if (appleSigninBtn) {
+    appleSigninBtn.addEventListener('click', () => handleOAuthSignIn('apple'));
+  }
 
   // Sign In form submission
   if (authForm) {
@@ -417,10 +496,10 @@ async function onMount() {
     });
   }
 
-  // Back button
+  // Back button - go back one screen (e.g. to welcome or subscription)
   if (backBtn) {
     backBtn.addEventListener('click', () => {
-      navigate('/welcome');
+      window.history.back();
     });
   }
 }

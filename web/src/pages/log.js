@@ -4,11 +4,10 @@
 
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
-import { createYachtHeader } from '../components/header.js';
-import { isBoatArchived, getLogbook, createLogEntry, updateLogEntry, deleteLogEntry } from '../lib/dataService.js';
+import { createYachtHeader, createBackButton } from '../components/header.js';
+import { isBoatArchived, getLogbook, deleteLogEntry } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOADS_PER_ENTITY } from '../lib/uploads.js';
 
-let editingId = null;
 let currentBoatId = null;
 let logFileInput = null;
 let logArchived = false;
@@ -24,12 +23,12 @@ function render(params = {}) {
 
   const wrapper = document.createElement('div');
 
-  // Yacht header with back arrow using browser history
-  const yachtHeader = createYachtHeader("Ship's Log", true, () => window.history.back());
+  const yachtHeader = createYachtHeader("Ship's Log");
   wrapper.appendChild(yachtHeader);
 
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content card-color-log';
+  pageContent.appendChild(createBackButton());
 
   const container = document.createElement('div');
   container.className = 'container';
@@ -38,7 +37,7 @@ function render(params = {}) {
   addBtn.className = 'btn-primary';
   addBtn.id = 'log-add-btn';
   addBtn.innerHTML = `${renderIcon('plus')} Add Trip`;
-  addBtn.onclick = () => showLogForm();
+  addBtn.onclick = () => navigate(`/boat/${currentBoatId}/log/new`);
 
   const attachmentsCard = document.createElement('div');
   attachmentsCard.className = 'card';
@@ -207,9 +206,9 @@ function attachLogAttachmentHandlers() {
   });
 }
 
-function loadLogs() {
+async function loadLogs() {
   const listContainer = document.getElementById('log-list');
-  const entries = shipsLogStorage.getAll();
+  const entries = currentBoatId ? await getLogbook(currentBoatId) : [];
 
   if (entries.length === 0) {
     listContainer.innerHTML = `
@@ -236,7 +235,7 @@ function loadLogs() {
           <p class="text-muted">${entry.departure || 'N/A'} → ${entry.arrival || 'N/A'}</p>
         </div>
         <div>
-          ${!logArchived ? `<button class="btn-link" onclick="logPageEdit('${entry.id}')">${renderIcon('edit')}</button>
+          ${!logArchived ? `<a href="#/boat/${currentBoatId}/log/${entry.id}" class="btn-link" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/log/${entry.id}')">${renderIcon('edit')}</a>
           <button class="btn-link btn-danger" onclick="logPageDelete('${entry.id}')">${renderIcon('trash')}</button>` : ''}
         </div>
       </div>
@@ -253,112 +252,12 @@ function loadLogs() {
 }
 
 function attachHandlers() {
-  window.logPageEdit = (id) => {
-    editingId = id;
-    showLogForm();
-  };
-
   window.logPageDelete = async (id) => {
     if (confirm('Delete this trip entry?')) {
       await deleteLogEntry(id);
       loadLogs();
     }
   };
-}
-
-async function showLogForm() {
-  const entries = currentBoatId ? await getLogbook(currentBoatId) : [];
-  const entry = editingId ? entries.find((e) => e.id === editingId) : null;
-
-  const formHtml = `
-    <div class="card" id="log-form-card">
-      <h3>${editingId ? 'Edit Trip' : 'Add Trip'}</h3>
-      <form id="log-form">
-        <div class="form-group">
-          <label for="log_date">Date *</label>
-          <input type="date" id="log_date" required value="${entry?.date || new Date().toISOString().split('T')[0]}">
-        </div>
-        <div class="form-group">
-          <label for="log_departure">Departure Location</label>
-          <input type="text" id="log_departure" value="${entry?.departure || ''}">
-        </div>
-        <div class="form-group">
-          <label for="log_arrival">Arrival Location</label>
-          <input type="text" id="log_arrival" value="${entry?.arrival || ''}">
-        </div>
-        <div class="form-group">
-          <label for="log_hours_start">Engine Hours (Start)</label>
-          <input type="number" id="log_hours_start" step="0.1" value="${entry?.engine_hours_start || ''}">
-        </div>
-        <div class="form-group">
-          <label for="log_hours_end">Engine Hours (End)</label>
-          <input type="number" id="log_hours_end" step="0.1" value="${entry?.engine_hours_end || ''}">
-        </div>
-        <div class="form-group">
-          <label for="log_distance">Distance (nautical miles)</label>
-          <input type="number" id="log_distance" step="0.1" value="${entry?.distance_nm || ''}">
-        </div>
-        <div class="form-group">
-          <label for="log_notes">Notes</label>
-          <textarea id="log_notes" rows="4">${entry?.notes || ''}</textarea>
-        </div>
-        <div class="form-actions">
-          <button type="button" class="btn-secondary" onclick="logPageCancelForm()">Cancel</button>
-          <button type="submit" class="btn-primary">Save</button>
-        </div>
-      </form>
-    </div>
-  `;
-
-  const listContainer = document.getElementById('log-list');
-  listContainer.insertAdjacentHTML('afterbegin', formHtml);
-
-  const form = document.getElementById('log-form');
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    saveLog();
-  });
-
-  window.logPageCancelForm = () => {
-    document.getElementById('log-form-card').remove();
-    editingId = null;
-  };
-}
-
-async function saveLog() {
-  const date = document.getElementById('log_date').value;
-  const departure = document.getElementById('log_departure').value;
-  const arrival = document.getElementById('log_arrival').value;
-  const hoursStart = document.getElementById('log_hours_start').value ? parseFloat(document.getElementById('log_hours_start').value) : null;
-  const hoursEnd = document.getElementById('log_hours_end').value ? parseFloat(document.getElementById('log_hours_end').value) : null;
-  const distanceNm = document.getElementById('log_distance').value ? parseFloat(document.getElementById('log_distance').value) : null;
-  const notes = document.getElementById('log_notes').value;
-
-  const notesPayload = { raw: notes };
-  if (hoursStart != null || hoursEnd != null) {
-    notesPayload.engine_hours_start = hoursStart;
-    notesPayload.engine_hours_end = hoursEnd;
-  }
-  if (distanceNm != null) notesPayload.distance_nm = distanceNm;
-
-  const payload = {
-    date,
-    title: 'Trip',
-    from_location: departure,
-    to_location: arrival,
-    hours: hoursEnd ?? hoursStart,
-    notes: Object.keys(notesPayload).length > 1 || notesPayload.raw ? JSON.stringify(notesPayload) : null
-  };
-
-  if (editingId && String(editingId).includes('-')) {
-    await updateLogEntry(editingId, payload);
-  } else {
-    await createLogEntry(currentBoatId, payload);
-  }
-
-  document.getElementById('log-form-card').remove();
-  editingId = null;
-  loadLogs();
 }
 
 export default {

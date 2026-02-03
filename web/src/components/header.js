@@ -1,28 +1,38 @@
 /**
  * Yacht Header Component
  * Premium navy header bar for all pages
+ * Back button is rendered in the main body via createBackButton()
  */
 
 import { navigate } from '../router.js';
 
-export function createYachtHeader(title, showBack = false, backAction = null) {
+/**
+ * Back button for the top-left of the main body. Always goes back one screen (history.back()).
+ * Use same font size as Home/Settings (0.8rem). No arrow.
+ */
+export function createBackButton() {
+  const row = document.createElement('div');
+  row.className = 'page-body-back';
+  const backBtn = document.createElement('button');
+  backBtn.className = 'btn-link page-body-back-btn';
+  backBtn.type = 'button';
+  backBtn.textContent = 'Back';
+  backBtn.onclick = (e) => {
+    e.preventDefault();
+    window.history.back();
+  };
+  row.appendChild(backBtn);
+  return row;
+}
+
+export function createYachtHeader(title) {
   const header = document.createElement('div');
   header.className = 'yacht-header compass-watermark';
 
   const logoSection = document.createElement('div');
   logoSection.className = 'yacht-header-logo';
 
-  if (showBack && backAction) {
-    const backBtn = document.createElement('button');
-    backBtn.className = 'btn-link';
-    backBtn.style.color = '#0B3C5D';
-    backBtn.style.padding = 'var(--spacing-xs)';
-    backBtn.innerHTML = `←`;
-    backBtn.onclick = (e) => { e.preventDefault(); backAction(); };
-    logoSection.appendChild(backBtn);
-  }
-
-    // Header-safe logo image
+  // Header-safe logo image
     const logoWrap = document.createElement('div');
     logoWrap.className = 'header-logo-wrap';
 
@@ -49,7 +59,7 @@ export function createYachtHeader(title, showBack = false, backAction = null) {
   header.appendChild(logoSection);
   header.appendChild(centerSection);
 
-  // Right-hand side actions: Settings + Home (Sign out is under Settings page)
+  // Right-hand side actions: Home
   const actionsSection = document.createElement('div');
   actionsSection.className = 'yacht-header-actions';
   actionsSection.style.marginLeft = 'auto';
@@ -67,14 +77,6 @@ export function createYachtHeader(title, showBack = false, backAction = null) {
     btn.style.padding = '0';
   };
 
-  const settingsBtn = document.createElement('button');
-  settingsBtn.textContent = 'Settings';
-  baseButtonStyles(settingsBtn);
-  settingsBtn.onclick = (e) => {
-    e.preventDefault();
-    navigate('/account');
-  };
-
   const homeBtn = document.createElement('button');
   homeBtn.textContent = 'Home';
   baseButtonStyles(homeBtn);
@@ -83,7 +85,6 @@ export function createYachtHeader(title, showBack = false, backAction = null) {
     navigate('/');
   };
 
-  actionsSection.appendChild(settingsBtn);
   actionsSection.appendChild(homeBtn);
 
   header.appendChild(actionsSection);

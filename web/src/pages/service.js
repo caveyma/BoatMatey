@@ -4,8 +4,9 @@
 
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
-import { createYachtHeader } from '../components/header.js';
+import { createYachtHeader, createBackButton } from '../components/header.js';
 import { isBoatArchived, getServiceEntries, createServiceEntry, updateServiceEntry, deleteServiceEntry, getEngines } from '../lib/dataService.js';
+import { enginesStorage } from '../lib/storage.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
 
 let editingId = null;
@@ -14,6 +15,8 @@ let filterEngineId = null;
 let currentBoatId = null;
 let serviceFileInput = null;
 let currentServiceIdForUpload = null;
+/** Engines used when building the service form; fallback for checklist when storage is empty or out of sync */
+let serviceFormEngines = [];
 
 // DIY checklist definition – grouped by section
 // Each item will become a checkbox the user can tick
@@ -136,6 +139,20 @@ const DIY_CHECKLIST_SECTIONS = [
     ]
   },
   {
+    id: 'drive_system_saildrive_sterndrive_pods',
+    title: 'Drive system – saildrive / sterndrive / pods',
+    items: [
+      { id: 'drive_type_identified', label: 'Drive type confirmed (saildrive, sterndrive, pod)' },
+      { id: 'drive_gear_oil_level_checked', label: 'Drive gear oil level checked' },
+      { id: 'drive_gear_oil_replaced_if_due', label: 'Drive gear oil replaced if due' },
+      { id: 'bellows_or_seals_inspected', label: 'Bellows / seals inspected for cracking or wear' },
+      { id: 'bellows_or_seals_replaced_if_due', label: 'Bellows / seals replaced if due' },
+      { id: 'drive_anodes_inspected', label: 'Drive anodes inspected' },
+      { id: 'drive_anodes_replaced_if_required', label: 'Drive anodes replaced if required' },
+      { id: 'propeller_and_legs_cleaned', label: 'Propeller and drive leg cleaned and inspected' }
+    ]
+  },
+  {
     id: 'exhaust_system',
     title: 'Exhaust system',
     items: [
@@ -154,6 +171,38 @@ const DIY_CHECKLIST_SECTIONS = [
       { id: 'anodes_replaced_if_required', label: 'Anodes replaced if required' },
       { id: 'bonding_cables_checked', label: 'Bonding cables checked' },
       { id: 'no_excessive_corrosion_present', label: 'No excessive corrosion present' }
+    ]
+  },
+  {
+    id: 'diesel_engine_specific',
+    title: 'Diesel engine – specific checks',
+    items: [
+      { id: 'glow_plugs_checked', label: 'Glow plugs and wiring checked (if fitted)' },
+      { id: 'injector_pipes_inspected', label: 'Injector pipes and leak-off lines inspected' },
+      { id: 'diesel_bug_treatment_considered', label: 'Diesel bug treatment considered / applied if needed' },
+      { id: 'fuel_return_lines_secure', label: 'Fuel return lines secure and leak-free' }
+    ]
+  },
+  {
+    id: 'petrol_engine_specific',
+    title: 'Petrol engine – specific checks',
+    items: [
+      { id: 'spark_plugs_inspected_or_replaced', label: 'Spark plugs inspected or replaced' },
+      { id: 'ignition_leads_and_coils_checked', label: 'Ignition leads, coils / distributor checked' },
+      { id: 'flame_arrestor_cleaned', label: 'Flame arrestor / air intake flame trap cleaned' },
+      { id: 'engine_space_ventilation_checked', label: 'Engine space ventilation and blower operation checked' },
+      { id: 'fuel_vapour_detector_tested', label: 'Fuel vapour detector tested (if fitted)' }
+    ]
+  },
+  {
+    id: 'electric_drive_specific',
+    title: 'Electric drive – specific checks',
+    items: [
+      { id: 'high_voltage_cabling_inspected', label: 'High-voltage cabling inspected and secured' },
+      { id: 'cooling_system_for_motor_and_controller', label: 'Cooling system for motor / controller checked (if fitted)' },
+      { id: 'battery_management_system_status', label: 'Battery management system status checked' },
+      { id: 'isolation_switches_tested', label: 'Main isolation / emergency switches tested' },
+      { id: 'no_signs_of_overheating_or_arcing', label: 'No signs of overheating or arcing at terminals' }
     ]
   },
   {
@@ -211,10 +260,89 @@ const DIY_CHECKLIST_SECTIONS = [
   }
 ];
 
-// Map service type -> which checklist sections should be shown.
-// If a type is not listed here (or mapped to null), behaviour is:
-// - "Annual Service"  -> all sections
-// - Anything else     -> no checklist (notes only)
+// Sails & Rigging checklist (boat-level; no engine). Used when service type is 'Sails & Rigging'.
+const SAILS_RIGGING_CHECKLIST_SECTIONS = [
+  {
+    id: 'sails_mainsail',
+    title: 'Mainsail',
+    items: [
+      { id: 'mainsail_condition_inspected', label: 'Mainsail condition inspected (cloth, stitching, UV damage)' },
+      { id: 'reefing_system_checked', label: 'Reefing system checked (points, lines, slugs)' },
+      { id: 'battens_inspected', label: 'Battens inspected and secure' },
+      { id: 'sail_cover_condition', label: 'Sail cover / stack pack condition checked' },
+      { id: 'mainsheet_traveler_operational', label: 'Mainsheet and traveler operational' }
+    ]
+  },
+  {
+    id: 'sails_headsails',
+    title: 'Headsails (genoa, jib)',
+    items: [
+      { id: 'headsail_condition_inspected', label: 'Headsail(s) condition inspected' },
+      { id: 'furling_system_checked', label: 'Furling system checked (foil, drum, line)' },
+      { id: 'headsail_sheets_checked', label: 'Headsail sheets and cars checked' }
+    ]
+  },
+  {
+    id: 'rigging_mast_spar',
+    title: 'Mast & spar',
+    items: [
+      { id: 'mast_inspection_visual', label: 'Mast visual inspection (corrosion, cracks, fittings)' },
+      { id: 'spreaders_and_fittings_checked', label: 'Spreaders and fittings checked' },
+      { id: 'boom_gooseneck_kicking_strap', label: 'Boom, gooseneck and kicking strap checked' },
+      { id: 'mast_boot_seal_checked', label: 'Mast boot / deck seal checked' }
+    ]
+  },
+  {
+    id: 'rigging_standing',
+    title: 'Standing rigging',
+    items: [
+      { id: 'shrouds_stay_inspection', label: 'Shrouds and stay(s) inspected (wire/rod, terminals)' },
+      { id: 'turnbuckles_lubricated_tight', label: 'Turnbuckles lubricated and secure' },
+      { id: 'swage_terminals_cracks', label: 'Swage/terminals checked for cracks or wear' },
+      { id: 'forestay_backstay_checked', label: 'Forestay and backstay checked' }
+    ]
+  },
+  {
+    id: 'rigging_running',
+    title: 'Running rigging',
+    items: [
+      { id: 'halyards_inspected', label: 'Halyards inspected (wear, UV, splices)' },
+      { id: 'sheets_inspected', label: 'Sheets inspected' },
+      { id: 'blocks_clutches_checked', label: 'Blocks, clutches and fairleads checked' },
+      { id: 'control_lines_checked', label: 'Control lines (vang, cunningham, outhaul) checked' }
+    ]
+  },
+  {
+    id: 'winches_sails',
+    title: 'Winches',
+    items: [
+      { id: 'winches_serviced_lubricated', label: 'Winches serviced and lubricated' },
+      { id: 'winch_pawls_springs_checked', label: 'Pawls and springs checked' },
+      { id: 'winch_mountings_secure', label: 'Winch mountings secure' }
+    ]
+  },
+  {
+    id: 'final_checks_sails',
+    title: 'Final checks (sails & rigging)',
+    items: [
+      { id: 'all_pins_split_rings_secure', label: 'All pins and split rings secure' },
+      { id: 'no_frayed_or_chafed_lines', label: 'No frayed or chafed lines left in use' },
+      { id: 'service_notes_recorded_sails', label: 'Service notes recorded' }
+    ]
+  },
+  {
+    id: 'service_notes_advisories_sails',
+    title: 'Service notes & advisories',
+    items: [
+      { id: 'items_requiring_future_attention_noted_sails', label: 'Items requiring future attention noted' },
+      { id: 'parts_replaced_listed_sails', label: 'Parts replaced listed' },
+      { id: 'next_service_due_recorded_sails', label: 'Next service due recorded' }
+    ]
+  }
+];
+
+// Map service type -> which checklist sections should be shown (section IDs).
+// Actual sections shown are then filtered by selected engine fuel type + drive type.
 const SERVICE_TYPE_SECTION_MAP = {
   'Oil Change': [
     'engine_oil_lubrication',
@@ -237,15 +365,105 @@ const SERVICE_TYPE_SECTION_MAP = {
     'anodes_corrosion',
     'final_checks',
     'service_notes_advisories'
-  ]
+  ],
+  'Sails & Rigging': SAILS_RIGGING_CHECKLIST_SECTIONS.map(s => s.id)
 };
+
+// Which fuel types and drive types each section applies to.
+// Only sections matching the selected engine's fuel_type AND drive_type are shown.
+const ALL_FUEL = ['diesel', 'petrol', 'electric'];
+const ALL_DRIVE = ['shaft', 'saildrive', 'sterndrive', 'ips_pod', 'jet', 'other'];
+const SECTION_APPLICABILITY = {
+  engine_oil_lubrication: { fuelTypes: ['diesel', 'petrol'], driveTypes: ALL_DRIVE },
+  fuel_system: { fuelTypes: ['diesel', 'petrol'], driveTypes: ALL_DRIVE },
+  cooling_raw_water: { fuelTypes: ALL_FUEL, driveTypes: ALL_DRIVE },
+  cooling_fresh_water: { fuelTypes: ALL_FUEL, driveTypes: ALL_DRIVE },
+  belts_pulleys: { fuelTypes: ['diesel', 'petrol'], driveTypes: ALL_DRIVE },
+  air_intake: { fuelTypes: ['diesel', 'petrol'], driveTypes: ALL_DRIVE },
+  electrical_charging: { fuelTypes: ALL_FUEL, driveTypes: ALL_DRIVE },
+  engine_mounts_alignment: { fuelTypes: ALL_FUEL, driveTypes: ALL_DRIVE },
+  gearbox_transmission: { fuelTypes: ['diesel', 'petrol'], driveTypes: ['shaft', 'saildrive', 'sterndrive', 'ips_pod'] },
+  shaft_seal_stern_gear: { fuelTypes: ['diesel', 'petrol'], driveTypes: ['shaft'] },
+  drive_system_saildrive_sterndrive_pods: { fuelTypes: ['diesel', 'petrol'], driveTypes: ['saildrive', 'sterndrive', 'ips_pod'] },
+  exhaust_system: { fuelTypes: ['diesel', 'petrol'], driveTypes: ALL_DRIVE },
+  anodes_corrosion: { fuelTypes: ALL_FUEL, driveTypes: ALL_DRIVE },
+  diesel_engine_specific: { fuelTypes: ['diesel'], driveTypes: ALL_DRIVE },
+  petrol_engine_specific: { fuelTypes: ['petrol'], driveTypes: ALL_DRIVE },
+  electric_drive_specific: { fuelTypes: ['electric'], driveTypes: ALL_DRIVE },
+  controls_safety: { fuelTypes: ALL_FUEL, driveTypes: ALL_DRIVE },
+  engine_run_operational: { fuelTypes: ['diesel', 'petrol'], driveTypes: ALL_DRIVE },
+  sea_trial: { fuelTypes: ALL_FUEL, driveTypes: ALL_DRIVE },
+  final_checks: { fuelTypes: ALL_FUEL, driveTypes: ALL_DRIVE },
+  service_notes_advisories: { fuelTypes: ALL_FUEL, driveTypes: ALL_DRIVE }
+};
+
+function normaliseFuelType(value) {
+  if (!value || typeof value !== 'string') return '';
+  const v = value.toLowerCase().replace('gasoline', 'petrol').trim();
+  if (v === 'diesel' || v === 'petrol' || v === 'electric') return v;
+  return v;
+}
+
+function normaliseDriveType(value) {
+  if (!value || typeof value !== 'string') return '';
+  const v = value.toLowerCase().trim();
+  if (v === 'shaft' || v === 'saildrive' || v === 'sterndrive' || v === 'ips_pod' || v === 'jet' || v === 'other') return v;
+  if (v === 'pod') return 'ips_pod';
+  if (v.includes('shaft')) return 'shaft';
+  if (v.includes('sail')) return 'saildrive';
+  if (v.includes('stern')) return 'sterndrive';
+  if (v.includes('pod') || v.includes('ips')) return 'ips_pod';
+  if (v.includes('jet')) return 'jet';
+  return v;
+}
+
+function formatFuelTypeForDisplay(canonicalValue) {
+  if (!canonicalValue) return '';
+  switch (String(canonicalValue).toLowerCase()) {
+    case 'diesel': return 'Diesel';
+    case 'petrol': return 'Petrol';
+    case 'electric': return 'Electric';
+    default: return canonicalValue;
+  }
+}
+
+function formatDriveTypeForDisplay(canonicalValue) {
+  if (!canonicalValue) return '';
+  switch (String(canonicalValue).toLowerCase()) {
+    case 'shaft': return 'Shaft Drive';
+    case 'saildrive': return 'Saildrive';
+    case 'sterndrive': return 'Sterndrive';
+    case 'ips_pod': return 'IPS Pod / Pod Drive';
+    case 'jet': return 'Jet Drive';
+    case 'other': return 'Other';
+    default: return canonicalValue;
+  }
+}
+
+function sectionAppliesToEngine(sectionId, engine) {
+  const app = SECTION_APPLICABILITY[sectionId];
+  if (!app) return true;
+
+  const fuel = normaliseFuelType(engine?.fuel_type);
+  const drive = normaliseDriveType(engine?.drive_type);
+
+  const fuelMatch = fuel ? app.fuelTypes.includes(fuel) : (app.fuelTypes.length === ALL_FUEL.length);
+  const driveMatch = drive ? app.driveTypes.includes(drive) : (app.driveTypes.length === ALL_DRIVE.length);
+
+  return fuelMatch && driveMatch;
+}
 
 function getDIYChecklistStats(entry) {
   const checklist = entry?.diy_checklist || {};
   let total = 0;
   let completed = 0;
 
-  DIY_CHECKLIST_SECTIONS.forEach(section => {
+  const activeSections = entry?.service_type === 'Sails & Rigging'
+    ? SAILS_RIGGING_CHECKLIST_SECTIONS
+    : getActiveChecklistSectionsForServiceType(entry.service_type, enginesStorage.getAll(currentBoatId).find(e => e.id === entry.engine_id));
+  const sectionsToCount = activeSections.length ? activeSections : DIY_CHECKLIST_SECTIONS;
+
+  sectionsToCount.forEach(section => {
     section.items.forEach(item => {
       const key = `${section.id}.${item.id}`;
       total += 1;
@@ -257,8 +475,10 @@ function getDIYChecklistStats(entry) {
 }
 
 function render(params = {}) {
-  // Get boat ID from route params
   currentBoatId = params?.id || window.routeParams?.id;
+  const entryId = params?.entryId || window.routeParams?.entryId;
+  const isEditPage = !!entryId;
+
   if (!currentBoatId) {
     const wrapperError = document.createElement('div');
     wrapperError.innerHTML = '<div class="page-content"><div class="container"><h1>Error</h1><p>Boat ID required</p></div></div>';
@@ -267,16 +487,24 @@ function render(params = {}) {
 
   const wrapper = document.createElement('div');
 
-  // Yacht header with back arrow that uses browser history
-  const yachtHeader = createYachtHeader('Service History', true, () => window.history.back());
+  const yachtHeader = createYachtHeader(
+    isEditPage ? (entryId === 'new' ? 'Add Service Entry' : 'Edit Service Entry') : 'Service History'
+  );
   wrapper.appendChild(yachtHeader);
 
-  // Page content with service color theme
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content card-color-service';
+  pageContent.appendChild(createBackButton());
 
   const container = document.createElement('div');
   container.className = 'container';
+
+  if (isEditPage) {
+    container.id = 'service-list';
+    pageContent.appendChild(container);
+    wrapper.appendChild(pageContent);
+    return wrapper;
+  }
 
   const filterContainer = document.createElement('div');
   filterContainer.className = 'page-actions';
@@ -286,7 +514,7 @@ function render(params = {}) {
   addBtn.className = 'btn-primary';
   addBtn.id = 'service-add-btn';
   addBtn.innerHTML = `${renderIcon('plus')} Add Service Entry`;
-  addBtn.onclick = () => showServiceForm();
+  addBtn.onclick = () => navigate(`/boat/${currentBoatId}/service/new`);
 
   const listContainer = document.createElement('div');
   listContainer.id = 'service-list';
@@ -312,15 +540,23 @@ function render(params = {}) {
 
 async function onMount(params = {}) {
   const boatId = params?.id || window.routeParams?.id;
+  const entryId = params?.entryId || window.routeParams?.entryId;
   if (boatId) {
     currentBoatId = boatId;
   }
 
+  window.navigate = navigate;
+
   serviceArchived = currentBoatId ? await isBoatArchived(currentBoatId) : false;
+
+  if (entryId) {
+    editingId = entryId === 'new' ? `service_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` : entryId;
+    await showServiceForm();
+    return;
+  }
+
   const addBtn = document.getElementById('service-add-btn');
   if (addBtn && serviceArchived) addBtn.style.display = 'none';
-
-  window.navigate = navigate;
 
   serviceFileInput = document.getElementById('service-file-input');
 
@@ -441,7 +677,7 @@ async function loadServices() {
           <p class="text-muted">${enginesLabel} • ${service.service_type || 'Service'} • ${modeLabel}</p>
         </div>
         <div>
-          ${!serviceArchived ? `<button class="btn-link" onclick="servicePageEdit('${service.id}')">${renderIcon('edit')}</button>
+          ${!serviceArchived ? `<a href="#/boat/${currentBoatId}/service/${service.id}" class="btn-link" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/service/${service.id}')">${renderIcon('edit')}</a>
           <button class="btn-link btn-danger" onclick="servicePageDelete('${service.id}')">${renderIcon('trash')}</button>` : ''}
         </div>
       </div>
@@ -466,11 +702,6 @@ async function loadServices() {
 }
 
 function attachHandlers() {
-  window.servicePageEdit = (id) => {
-    editingId = id;
-    showServiceForm();
-  };
-
   window.servicePageDelete = async (id) => {
     if (confirm('Delete this service entry?')) {
       await deleteServiceEntry(id);
@@ -560,6 +791,7 @@ function attachServiceAttachmentHandlers() {
 }
 
 async function showServiceForm() {
+  if (document.getElementById('service-form-card')) return;
   const services = currentBoatId ? await getServiceEntries(currentBoatId) : [];
   const existingEntry = editingId ? services.find((s) => s.id === editingId) : null;
   if (!editingId) {
@@ -568,7 +800,8 @@ async function showServiceForm() {
   const entry = existingEntry;
   const mode = entry?.mode || 'Professional';
   const engines = currentBoatId ? await getEngines(currentBoatId) : [];
-  const serviceTypes = ['Oil Change', 'Filter Change', 'Annual Service', 'Winterization', 'Other'];
+  serviceFormEngines = engines;
+  const serviceTypes = ['Oil Change', 'Filter Change', 'Annual Service', 'Winterization', 'Sails & Rigging', 'Other'];
 
   const selectedEngine = entry?.engine_id ? engines.find(e => e.id === entry.engine_id) : null;
 
@@ -578,8 +811,8 @@ async function showServiceForm() {
       <form id="service-form">
         <div class="form-group">
           <label>Service carried out by</label>
-          <div>
-            <label class="inline-choice" style="margin-right: 1rem;">
+          <div class="radio-option-row">
+            <label class="inline-choice">
               <input type="radio" name="service_mode" value="DIY" ${mode === 'DIY' ? 'checked' : ''}>
               DIY / Self service
             </label>
@@ -594,11 +827,19 @@ async function showServiceForm() {
           <input type="date" id="service_date" required value="${entry?.date || new Date().toISOString().split('T')[0]}">
         </div>
         <div class="form-group">
-          <label for="service_engine">Engine *</label>
-          <select id="service_engine" required>
-            <option value="">Select engine...</option>
-            ${engines.map(e => `<option value="${e.id}" ${entry?.engine_id === e.id ? 'selected' : ''}>${e.label || 'Unnamed'}</option>`).join('')}
+          <label for="service_engine">Engine</label>
+          <select id="service_engine">
+            <option value="" data-fuel-type="" data-drive-type="" ${entry?.service_type === 'Sails & Rigging' && !entry?.engine_id ? ' selected' : ''}>N/A – Sails & Rigging (boat-level)</option>
+            ${engines.map(e => {
+              const attrs = getEngineFuelAndDrive(e);
+              const fuel = normaliseFuelType(attrs.fuel_type);
+              const drive = normaliseDriveType(attrs.drive_type);
+              const sel = entry?.engine_id === e.id ? ' selected' : '';
+              const label = (e.label || 'Unnamed').replace(/&/g, '&amp;').replace(/</g, '&lt;');
+              return `<option value="${String(e.id)}" data-fuel-type="${(fuel || '').replace(/"/g, '&quot;')}" data-drive-type="${(drive || '').replace(/"/g, '&quot;')}"${sel}>${label}</option>`;
+            }).join('')}
           </select>
+          <p class="text-muted" style="margin-top: 0.25rem; font-size: 0.875rem;">Use &quot;N/A – Sails & Rigging&quot; for sail and rigging service (no engine).</p>
         </div>
         <div class="form-group">
           <label for="service_type">Service Type</label>
@@ -612,7 +853,7 @@ async function showServiceForm() {
           <label for="service_hours">Engine Hours</label>
           <input type="number" id="service_hours" step="0.1" value="${entry?.engine_hours || ''}">
         </div>
-        <div class="card" id="service-diy-card" style="margin-top: 1rem; ${mode === 'DIY' ? '' : 'display: none;'}">
+        <div class="card" id="service-diy-card" style="margin-top: 1rem; ${mode === 'DIY' ? 'display: block;' : 'display: none;'}">
           <h4>DIY Boat Engine & Gearbox Service Checklist</h4>
           <p class="text-muted">Tick each item as you complete it.</p>
           <div class="form-group">
@@ -642,6 +883,9 @@ async function showServiceForm() {
               readonly
             >
           </div>
+          <div class="form-group" id="service-engine-fuel-drive-wrap">
+            <p id="service-engine-fuel-drive-display" class="text-muted" style="margin-top: 0.25rem; margin-bottom: 0;">Select an engine above to see fuel type and drive type. The checklist below is filtered by these.</p>
+          </div>
           <div class="form-group">
             <label for="diy_person_carrying_out_service">Person carrying out service</label>
             <input type="text" id="diy_person_carrying_out_service" value="${entry?.diy_meta?.person_carrying_out_service || ''}">
@@ -651,12 +895,12 @@ async function showServiceForm() {
 
           <div class="form-group" style="margin-top: 1rem;">
             <label>Seacocks left in correct position</label>
-            <div>
-              <label class="inline-choice" style="margin-right: 1rem;">
+            <div class="radio-option-row">
+              <label class="inline-choice">
                 <input type="radio" name="diy_seacocks_position" value="Open" ${entry?.seacocks_position === 'Open' ? 'checked' : ''}>
                 Open
               </label>
-              <label class="inline-choice" style="margin-right: 1rem;">
+              <label class="inline-choice">
                 <input type="radio" name="diy_seacocks_position" value="Closed" ${entry?.seacocks_position === 'Closed' ? 'checked' : ''}>
                 Closed
               </label>
@@ -679,9 +923,23 @@ async function showServiceForm() {
             <label for="diy_next_service_due">Next service due</label>
             <input type="date" id="diy_next_service_due" value="${entry?.next_service_due || ''}">
           </div>
+          <div class="form-group">
+            <label for="diy_next_service_reminder">Reminder</label>
+            <select id="diy_next_service_reminder">
+              <option value="0" ${(entry?.next_service_reminder_minutes ?? 1440) === 0 ? 'selected' : ''}>None</option>
+              <option value="5" ${entry?.next_service_reminder_minutes === 5 ? 'selected' : ''}>5 minutes before</option>
+              <option value="15" ${entry?.next_service_reminder_minutes === 15 ? 'selected' : ''}>15 minutes before</option>
+              <option value="30" ${entry?.next_service_reminder_minutes === 30 ? 'selected' : ''}>30 minutes before</option>
+              <option value="60" ${entry?.next_service_reminder_minutes === 60 ? 'selected' : ''}>1 hour before</option>
+              <option value="120" ${entry?.next_service_reminder_minutes === 120 ? 'selected' : ''}>2 hours before</option>
+              <option value="1440" ${(entry?.next_service_reminder_minutes ?? 1440) === 1440 ? 'selected' : ''}>1 day before</option>
+              <option value="2880" ${entry?.next_service_reminder_minutes === 2880 ? 'selected' : ''}>2 days before</option>
+              <option value="10080" ${entry?.next_service_reminder_minutes === 10080 ? 'selected' : ''}>1 week before</option>
+            </select>
+          </div>
         </div>
 
-        <div class="card" id="service-pro-card" style="margin-top: 1rem; ${mode === 'DIY' ? 'display: none;' : ''}">
+        <div class="card" id="service-pro-card" style="margin-top: 1rem; ${mode === 'DIY' ? 'display: none;' : 'display: block;'}">
           <h4>Professional / Mechanic Details</h4>
           <div class="form-group">
             <label for="pro_workshop_name">Workshop / company name</label>
@@ -739,7 +997,7 @@ async function showServiceForm() {
     saveService();
   });
 
-  // Mode toggle – show/hide DIY vs Professional sections
+  // Mode toggle – show/hide DIY vs Professional sections; when switching to DIY, show checklist for current engine + service type
   const modeRadios = document.querySelectorAll('input[name="service_mode"]');
   const diyCard = document.getElementById('service-diy-card');
   const proCard = document.getElementById('service-pro-card');
@@ -748,21 +1006,22 @@ async function showServiceForm() {
     radio.addEventListener('change', () => {
       const selected = document.querySelector('input[name="service_mode"]:checked')?.value;
       if (selected === 'DIY') {
-        if (diyCard) diyCard.style.display = '';
+        if (diyCard) diyCard.style.display = 'block';
         if (proCard) proCard.style.display = 'none';
+        renderDIYChecklist(entry);
       } else {
         if (diyCard) diyCard.style.display = 'none';
-        if (proCard) proCard.style.display = '';
+        if (proCard) proCard.style.display = 'block';
       }
     });
   });
 
-  // When engine selection changes, refresh DIY engine info from engine record
+  // When engine selection changes, refresh DIY engine info and re-render checklist for that engine's fuel/drive type
   const engineSelect = document.getElementById('service_engine');
   if (engineSelect) {
     engineSelect.addEventListener('change', (e) => {
       const engineId = e.target.value;
-      const enginesAll = enginesStorage.getAll();
+      const enginesAll = enginesStorage.getAll(currentBoatId);
       const eng = enginesAll.find(en => en.id === engineId);
       const makeModelInput = document.getElementById('diy_engine_make_model');
       const serialInput = document.getElementById('diy_engine_serial_number');
@@ -777,6 +1036,7 @@ async function showServiceForm() {
       if (eng && gearboxInput) {
         gearboxInput.value = `${(eng.gearbox_manufacturer || '')} ${(eng.gearbox_model || '')}`.trim();
       }
+      renderDIYChecklist(entry);
     });
   }
 
@@ -787,6 +1047,10 @@ async function showServiceForm() {
   document.getElementById('service_type').addEventListener('change', (e) => {
     if (e.target.value) {
       document.getElementById('service_type_custom').value = '';
+    }
+    if (e.target.value === 'Sails & Rigging') {
+      const engineSelect = document.getElementById('service_engine');
+      if (engineSelect) engineSelect.value = '';
     }
     renderDIYChecklist(entry);
   });
@@ -802,9 +1066,31 @@ async function showServiceForm() {
   initServiceFormAttachments(editingId);
 
   window.servicePageCancelForm = () => {
-    document.getElementById('service-form-card').remove();
+    const card = document.getElementById('service-form-card');
+    if (card) card.remove();
     editingId = null;
+    const hash = window.location.hash || '';
+    if (hash.includes('/service/') && !hash.endsWith('/service')) {
+      navigate(`/boat/${currentBoatId}/service`);
+    }
   };
+}
+
+function getEngineFuelAndDrive(engine) {
+  if (!engine) return { fuel_type: '', drive_type: '' };
+  let fuel = engine.fuel_type;
+  let drive = engine.drive_type;
+  try {
+    const raw = engine.notes;
+    if (raw != null) {
+      const parsed = typeof raw === 'string' ? (raw.trim().startsWith('{') ? JSON.parse(raw) : null) : raw;
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.fuel_type != null && parsed.fuel_type !== '') fuel = parsed.fuel_type;
+        if (parsed.drive_type != null && parsed.drive_type !== '') drive = parsed.drive_type;
+      }
+    }
+  } catch (_) {}
+  return { fuel_type: fuel ?? '', drive_type: drive ?? '' };
 }
 
 function renderDIYChecklist(entry) {
@@ -813,18 +1099,50 @@ function renderDIYChecklist(entry) {
 
   const existingChecklist = entry?.diy_checklist || {};
   const currentServiceType = getCurrentServiceTypeFromForm();
-  const activeSections = getActiveChecklistSectionsForServiceType(currentServiceType);
+
+  const engineSelectEl = document.getElementById('service_engine');
+  const selectedOption = engineSelectEl?.options[engineSelectEl.selectedIndex];
+  const selectedEngineId = (engineSelectEl?.value || entry?.engine_id || '').toString().trim();
+
+  // Fuel and drive type come from the selected option's data attributes (set when the dropdown was built from engine cards)
+  const fuelFromOption = (selectedOption?.getAttribute('data-fuel-type') || '').trim();
+  const driveFromOption = (selectedOption?.getAttribute('data-drive-type') || '').trim();
+
+  const displayEl = document.getElementById('service-engine-fuel-drive-display');
+  if (displayEl) {
+    if (currentServiceType === 'Sails & Rigging') {
+      displayEl.textContent = 'Sails & rigging service – use the checklist below.';
+    } else if (selectedEngineId && (fuelFromOption || driveFromOption)) {
+      const fuelLabel = formatFuelTypeForDisplay(fuelFromOption) || '—';
+      const driveLabel = formatDriveTypeForDisplay(driveFromOption) || '—';
+      displayEl.textContent = `Fuel type: ${fuelLabel} • Drive type: ${driveLabel}. Checklist below shows only items for this combination.`;
+    } else {
+      displayEl.textContent = 'Select an engine above to see fuel type and drive type. The checklist below is filtered by these.';
+    }
+  }
+
+  // Use only fuel/drive from the dropdown (single source of truth) for filtering
+  const engineAttrs = selectedEngineId
+    ? { fuel_type: fuelFromOption, drive_type: driveFromOption }
+    : null;
+
+  const activeSections = getActiveChecklistSectionsForServiceType(currentServiceType, engineAttrs);
 
   if (!activeSections.length) {
     container.innerHTML = `
       <p class="text-muted" style="margin-top: 0;">
-        No checklist items for this service type. Please record details in the notes fields below.
+        No checklist for this service type. Select a service type above, or record details in the notes below.
       </p>
     `;
     return;
   }
 
-  container.innerHTML = activeSections.map(section => {
+  const noEngineSelected = !selectedEngineId || (!fuelFromOption && !driveFromOption);
+  const tailorNote = noEngineSelected
+    ? '<p class="text-muted" style="margin-top: 0; margin-bottom: 0.75rem;">Select an engine above to tailor this checklist to your engine (fuel & drive type).</p>'
+    : '';
+
+  container.innerHTML = tailorNote + activeSections.map(section => {
     const itemsHtml = section.items.map(item => {
       const key = `${section.id}.${item.id}`;
       const checked = existingChecklist[key] ? 'checked' : '';
@@ -848,20 +1166,38 @@ function renderDIYChecklist(entry) {
   }).join('');
 }
 
-function getActiveChecklistSectionsForServiceType(serviceType) {
+function getActiveChecklistSectionsForServiceType(serviceType, engineOrAttrs) {
+  return getActiveChecklistSectionsForServiceTypeInternal(serviceType, engineOrAttrs ?? null);
+}
+
+function getActiveChecklistSectionsForServiceTypeInternal(serviceType, engine) {
   if (!serviceType) return [];
+
+  // Sails & Rigging is boat-level; use sailing checklist only (no engine filter).
+  if (serviceType === 'Sails & Rigging') {
+    return SAILS_RIGGING_CHECKLIST_SECTIONS;
+  }
+
+  let baseSectionIds;
   if (serviceType === 'Annual Service') {
-    // Annual service uses the full checklist
-    return DIY_CHECKLIST_SECTIONS;
+    baseSectionIds = DIY_CHECKLIST_SECTIONS.map(s => s.id);
+  } else {
+    const mapped = SERVICE_TYPE_SECTION_MAP[serviceType];
+    if (!mapped || !Array.isArray(mapped)) {
+      return [];
+    }
+    baseSectionIds = mapped;
   }
 
-  const mapped = SERVICE_TYPE_SECTION_MAP[serviceType];
-  if (!mapped || !Array.isArray(mapped)) {
-    // For "Other" or any custom types, show no checklist – user can use notes only
-    return [];
+  const baseSections = DIY_CHECKLIST_SECTIONS.filter(section => baseSectionIds.includes(section.id));
+
+  // If no engine selected, show full checklist for this service type so the user always sees items.
+  // If engine is selected, filter to sections that match its fuel and drive type.
+  if (!engine) {
+    return baseSections;
   }
 
-  return DIY_CHECKLIST_SECTIONS.filter(section => mapped.includes(section.id));
+  return baseSections.filter(section => sectionAppliesToEngine(section.id, engine));
 }
 
 function getCurrentServiceTypeFromForm() {
@@ -1005,7 +1341,8 @@ async function saveService() {
 
   if (serviceMode === 'DIY') {
     diyChecklist = {};
-    DIY_CHECKLIST_SECTIONS.forEach(section => {
+    const sectionsToSave = serviceType === 'Sails & Rigging' ? SAILS_RIGGING_CHECKLIST_SECTIONS : DIY_CHECKLIST_SECTIONS;
+    sectionsToSave.forEach(section => {
       section.items.forEach(item => {
         const key = `${section.id}.${item.id}`;
         const inputId = `diy_${section.id}_${item.id}`;
@@ -1035,11 +1372,16 @@ async function saveService() {
   }
 
   const serviceType = document.getElementById('service_type').value || document.getElementById('service_type_custom').value;
-  
+  const engineIdRaw = document.getElementById('service_engine').value;
+  if (serviceType !== 'Sails & Rigging' && !engineIdRaw) {
+    alert('Please select an engine for this service type.');
+    return;
+  }
+
   const entry = {
     id: editingId,
     date: document.getElementById('service_date').value,
-    engine_id: document.getElementById('service_engine').value,
+    engine_id: engineIdRaw || null,
     service_type: serviceType,
     engine_hours: document.getElementById('service_hours').value ? parseFloat(document.getElementById('service_hours').value) : null,
     notes: document.getElementById('service_notes').value,
@@ -1050,6 +1392,7 @@ async function saveService() {
     future_items_notes: futureItemsNotes,
     parts_replaced_notes: partsReplacedNotes,
     next_service_due: nextServiceDue,
+    next_service_reminder_minutes: parseInt(document.getElementById('diy_next_service_reminder')?.value || '1440', 10) || null,
     pro_meta: proMeta
   };
 
@@ -1066,9 +1409,15 @@ async function saveService() {
   } else {
     await createServiceEntry(currentBoatId, payload);
   }
-  document.getElementById('service-form-card').remove();
+  const card = document.getElementById('service-form-card');
+  if (card) card.remove();
   editingId = null;
-  loadServices();
+  const hash = window.location.hash || '';
+  if (hash.includes('/service/') && !hash.endsWith('/service')) {
+    navigate(`/boat/${currentBoatId}/service`);
+  } else {
+    loadServices();
+  }
 }
 
 export default {

@@ -4,11 +4,10 @@
 
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
-import { createYachtHeader } from '../components/header.js';
-import { isBoatArchived, getEngines, createEngine, updateEngine, deleteEngine } from '../lib/dataService.js';
+import { createYachtHeader, createBackButton } from '../components/header.js';
+import { isBoatArchived, getEngines, deleteEngine } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOADS_PER_ENTITY } from '../lib/uploads.js';
 
-let editingId = null;
 let currentBoatId = null;
 let enginesFileInput = null;
 let enginesArchived = false;
@@ -24,14 +23,13 @@ function render(params = {}) {
 
   const wrapper = document.createElement('div');
   
-  // Yacht header
-  const header = createYachtHeader('Engines', true, () => navigate(`/boat/${currentBoatId}`));
+  const header = createYachtHeader('Engines');
   wrapper.appendChild(header);
-  
-  // Page content with engines color theme
+
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content card-color-engines';
-  
+  pageContent.appendChild(createBackButton());
+
   const container = document.createElement('div');
   container.className = 'container';
 
@@ -52,9 +50,10 @@ function render(params = {}) {
   listContainer.id = 'engines-list';
 
   const addBtn = document.createElement('button');
+  addBtn.id = 'engines-add-btn';
   addBtn.className = 'btn-primary';
   addBtn.innerHTML = `${renderIcon('plus')} Add Engine`;
-  addBtn.onclick = () => showEngineForm();
+  addBtn.onclick = () => navigate(`/boat/${currentBoatId}/engines/new`);
   addBtn.style.marginBottom = 'var(--spacing-lg)';
 
   container.appendChild(attachmentsCard);
@@ -164,7 +163,7 @@ async function loadEngines() {
           <p class="text-muted">${engine.manufacturer || ''} ${engine.model || ''}</p>
         </div>
         <div>
-          ${!enginesArchived ? `<button class="btn-link" onclick="enginesPageEdit('${engine.id}')">${renderIcon('edit')}</button>
+          ${!enginesArchived ? `<a href="#/boat/${currentBoatId}/engines/${engine.id}" class="btn-link" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/engines/${engine.id}')">${renderIcon('edit')}</a>
           <button class="btn-link btn-danger" onclick="enginesPageDelete('${engine.id}')">${renderIcon('trash')}</button>` : ''}
         </div>
       </div>
@@ -172,6 +171,7 @@ async function loadEngines() {
         <p><strong>Serial Number:</strong> ${engine.serial_number || 'N/A'}</p>
         <p><strong>Horsepower:</strong> ${engine.horsepower || 'N/A'}</p>
         <p><strong>Fuel Type:</strong> ${engine.fuel_type || 'N/A'}</p>
+        <p><strong>Drive Type:</strong> ${engine.drive_type ? formatDriveType(engine.drive_type) : 'N/A'}</p>
         ${engine.install_date ? `<p><strong>Install Date:</strong> ${new Date(engine.install_date).toLocaleDateString()}</p>` : ''}
         ${engine.warranty_expiry_date ? `<p><strong>Warranty Expiry:</strong> ${new Date(engine.warranty_expiry_date).toLocaleDateString()}</p>` : ''}
         <div class="card-subsection">
@@ -187,6 +187,26 @@ async function loadEngines() {
     </div>
   `).join('');
   attachHandlers();
+  window.navigate = navigate;
+}
+
+function formatDriveType(value) {
+  switch (value) {
+    case 'shaft':
+      return 'Shaft Drive';
+    case 'saildrive':
+      return 'Saildrive';
+    case 'sterndrive':
+      return 'Sterndrive';
+    case 'ips_pod':
+      return 'IPS Pod / Pod Drive';
+    case 'jet':
+      return 'Jet Drive';
+    case 'other':
+      return 'Other';
+    default:
+      return value;
+  }
 }
 
 function loadEnginesAttachments() {
@@ -261,162 +281,12 @@ function attachEnginesAttachmentHandlers() {
 }
 
 function attachHandlers() {
-  window.enginesPageEdit = (id) => {
-    editingId = id;
-    showEngineForm();
-  };
-
   window.enginesPageDelete = async (id) => {
     if (confirm('Delete this engine?')) {
       await deleteEngine(id);
       loadEngines();
     }
   };
-}
-
-async function showEngineForm() {
-  const engines = currentBoatId ? await getEngines(currentBoatId) : [];
-  const engine = editingId ? engines.find((e) => e.id === editingId) : null;
-
-  const formHtml = `
-    <div class="card" id="engine-form-card">
-      <h3>${editingId ? 'Edit Engine' : 'Add Engine'}</h3>
-      <form id="engine-form">
-        <div class="form-group">
-          <label for="engine_label">Label * (e.g., Port, Starboard, Generator)</label>
-          <input type="text" id="engine_label" required value="${engine?.label || ''}">
-        </div>
-        <div class="form-group">
-          <label for="engine_manufacturer">Manufacturer</label>
-          <input type="text" id="engine_manufacturer" value="${engine?.manufacturer || ''}">
-        </div>
-        <div class="form-group">
-          <label for="engine_model">Model</label>
-          <input type="text" id="engine_model" value="${engine?.model || ''}">
-        </div>
-        <div class="form-group">
-          <label for="engine_serial">Serial Number</label>
-          <input type="text" id="engine_serial" value="${engine?.serial_number || ''}">
-        </div>
-        <div class="form-group">
-          <label for="engine_hp">Horsepower</label>
-          <input type="number" id="engine_hp" value="${engine?.horsepower || ''}">
-        </div>
-        <div class="form-group">
-          <label for="engine_fuel_type">Fuel Type</label>
-          <select id="engine_fuel_type">
-            <option value="">Select...</option>
-            <option value="diesel" ${engine?.fuel_type === 'diesel' ? 'selected' : ''}>Diesel</option>
-            <option value="petrol" ${engine?.fuel_type === 'petrol' ? 'selected' : ''}>Petrol</option>
-            <option value="electric" ${engine?.fuel_type === 'electric' ? 'selected' : ''}>Electric</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="engine_install_date">Install Date</label>
-          <input type="date" id="engine_install_date" value="${engine?.install_date || ''}">
-        </div>
-        <div class="form-group">
-          <label for="engine_warranty_expiry">Warranty Expiry Date</label>
-          <input type="date" id="engine_warranty_expiry" value="${engine?.warranty_expiry_date || ''}">
-        </div>
-        <hr />
-        <h4>Gearbox</h4>
-        <p class="text-muted">Capture gearbox details linked to this engine.</p>
-        <div class="form-group">
-          <label for="gearbox_manufacturer">Gearbox Manufacturer</label>
-          <input type="text" id="gearbox_manufacturer" value="${engine?.gearbox_manufacturer || ''}">
-        </div>
-        <div class="form-group">
-          <label for="gearbox_model">Gearbox Model</label>
-          <input type="text" id="gearbox_model" value="${engine?.gearbox_model || ''}">
-        </div>
-        <div class="form-group">
-          <label for="gearbox_serial_number">Gearbox Serial Number</label>
-          <input type="text" id="gearbox_serial_number" value="${engine?.gearbox_serial_number || ''}">
-        </div>
-        <div class="form-group">
-          <label for="gearbox_ratio">Gearbox Ratio</label>
-          <input type="text" id="gearbox_ratio" value="${engine?.gearbox_ratio || ''}">
-        </div>
-        <div class="form-group">
-          <label for="gearbox_type">Gearbox Type</label>
-          <input type="text" id="gearbox_type" value="${engine?.gearbox_type || ''}">
-        </div>
-        <div class="form-group">
-          <label for="gearbox_notes">Gearbox Notes</label>
-          <textarea id="gearbox_notes" rows="3">${engine?.gearbox_notes || ''}</textarea>
-        </div>
-        <div class="form-actions">
-          <button type="button" class="btn-secondary" onclick="enginesPageCancelForm()">Cancel</button>
-          <button type="submit" class="btn-primary">Save</button>
-        </div>
-      </form>
-    </div>
-  `;
-
-  const listContainer = document.getElementById('engines-list');
-  listContainer.insertAdjacentHTML('afterbegin', formHtml);
-
-  const form = document.getElementById('engine-form');
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    saveEngine();
-  });
-
-  window.enginesPageCancelForm = () => {
-    document.getElementById('engine-form-card').remove();
-    editingId = null;
-  };
-}
-
-async function saveEngine() {
-  const engine = {
-    id: editingId,
-    label: document.getElementById('engine_label').value,
-    manufacturer: document.getElementById('engine_manufacturer').value,
-    model: document.getElementById('engine_model').value,
-    serial_number: document.getElementById('engine_serial').value,
-    horsepower: document.getElementById('engine_hp').value ? parseInt(document.getElementById('engine_hp').value) : null,
-    fuel_type: document.getElementById('engine_fuel_type').value,
-    install_date: document.getElementById('engine_install_date').value || null,
-    warranty_expiry_date: document.getElementById('engine_warranty_expiry').value || null,
-    gearbox_manufacturer: document.getElementById('gearbox_manufacturer').value,
-    gearbox_model: document.getElementById('gearbox_model').value,
-    gearbox_serial_number: document.getElementById('gearbox_serial_number').value,
-    gearbox_ratio: document.getElementById('gearbox_ratio').value,
-    gearbox_type: document.getElementById('gearbox_type').value,
-    gearbox_notes: document.getElementById('gearbox_notes').value
-  };
-
-  const payload = {
-    position: engine.label,
-    manufacturer: engine.manufacturer,
-    model: engine.model,
-    serial_number: engine.serial_number,
-    horsepower: engine.horsepower,
-    notes: JSON.stringify({
-      label: engine.label,
-      fuel_type: engine.fuel_type,
-      install_date: engine.install_date,
-      warranty_expiry_date: engine.warranty_expiry_date,
-      gearbox_manufacturer: engine.gearbox_manufacturer,
-      gearbox_model: engine.gearbox_model,
-      gearbox_serial_number: engine.gearbox_serial_number,
-      gearbox_ratio: engine.gearbox_ratio,
-      gearbox_type: engine.gearbox_type,
-      gearbox_notes: engine.gearbox_notes
-    })
-  };
-
-  if (editingId && String(editingId).includes('-')) {
-    await updateEngine(editingId, payload);
-  } else {
-    await createEngine(currentBoatId, payload);
-  }
-
-  document.getElementById('engine-form-card').remove();
-  editingId = null;
-  loadEngines();
 }
 
 export default {

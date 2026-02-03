@@ -4,7 +4,8 @@
 
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
-import { boatStorage, enginesStorage, serviceHistoryStorage, navEquipmentStorage, safetyEquipmentStorage, shipsLogStorage, linksStorage } from '../lib/storage.js';
+import { boatStorage, boatsStorage, enginesStorage, serviceHistoryStorage, navEquipmentStorage, safetyEquipmentStorage, shipsLogStorage, linksStorage } from '../lib/storage.js';
+import { getBoats, getEngines, getServiceEntries, getEquipment, getLogbook, getLinks } from '../lib/dataService.js';
 
 const serviceIconUrl = new URL('../assets/service-wrench.png', import.meta.url).href;
 const boatIconUrl = new URL('../assets/boat-generic.png', import.meta.url).href;
@@ -14,11 +15,13 @@ const logIconUrl = new URL('../assets/log-book.png', import.meta.url).href;
 const linksIconUrl = new URL('../assets/links-globe.png', import.meta.url).href;
 const navigationIconUrl = new URL('../assets/navigation-compass.png', import.meta.url).href;
 const adminIconUrl = new URL('../assets/account-admin.png', import.meta.url).href;
+const calendarIconUrl = new URL('../assets/calendar-card.png', import.meta.url).href;
 
 function getStatusText(cardId) {
   switch (cardId) {
     case 'boat':
-      const boat = boatStorage.get();
+      const boats = boatsStorage.getAll();
+      const boat = boats.length > 0 ? boats[0] : boatStorage.get();
       return boat ? boat.boat_name || 'Configured' : 'Not configured';
     
     case 'engines':
@@ -47,7 +50,9 @@ function getStatusText(cardId) {
     
     case 'account':
       return 'Settings';
-    
+    case 'calendar':
+      return 'Reminders & appointments';
+
     default:
       return '';
   }
@@ -62,7 +67,7 @@ function createCard(id, title, iconName, route) {
     navigate(route);
   };
 
-  const useBitmapImage = id === 'boat' || id === 'service' || id === 'engines' || id === 'navigation' || id === 'safety' || id === 'log' || id === 'links' || id === 'account';
+  const useBitmapImage = id === 'boat' || id === 'service' || id === 'engines' || id === 'navigation' || id === 'safety' || id === 'log' || id === 'links' || id === 'account' || id === 'calendar';
   const badgeClass = useBitmapImage
     ? 'dashboard-card-icon-badge dashboard-card-icon-bitmap'
     : 'dashboard-card-icon-badge';
@@ -84,6 +89,8 @@ function createCard(id, title, iconName, route) {
     iconHtml = `<img src="${linksIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else if (id === 'account') {
     iconHtml = `<img src="${adminIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
+  } else if (id === 'calendar') {
+    iconHtml = `<img src="${calendarIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else {
     iconHtml = renderIcon(iconName);
   }
@@ -108,18 +115,28 @@ function render() {
     <p class="text-muted">Your boat maintenance & logbook</p>
   `;
 
+  // Boat on its own row
+  const boatRow = document.createElement('div');
+  boatRow.className = 'dashboard-grid home-boat-row';
+  boatRow.appendChild(createCard('boat', 'Boat Details', 'boat', '/boat'));
+
+  // Settings and Calendar on the same line below the boat
+  const settingsCalendarRow = document.createElement('div');
+  settingsCalendarRow.className = 'dashboard-grid home-settings-calendar-row';
+  settingsCalendarRow.appendChild(createCard('account', 'Settings', 'user', '/account'));
+  settingsCalendarRow.appendChild(createCard('calendar', 'Calendar', 'calendar', '/calendar'));
+
+  // Rest of dashboard cards
   const grid = document.createElement('div');
   grid.className = 'dashboard-grid';
 
   const cards = [
-    { id: 'boat', title: 'Boat Details', icon: 'boat', route: '/boat' },
     { id: 'engines', title: 'Engines', icon: 'engine', route: '/engines' },
     { id: 'service', title: 'Service History', icon: 'wrench', route: '/service' },
     { id: 'navigation', title: 'Navigation Equipment', icon: 'compass', route: '/navigation' },
     { id: 'safety', title: 'Safety Equipment', icon: 'shield', route: '/safety' },
     { id: 'log', title: "Ship's Log", icon: 'book', route: '/log' },
-    { id: 'links', title: 'Web Links', icon: 'link', route: '/links' },
-    { id: 'account', title: 'Settings', icon: 'user', route: '/account' }
+    { id: 'links', title: 'Web Links', icon: 'link', route: '/links' }
   ];
 
   cards.forEach(card => {
@@ -127,21 +144,35 @@ function render() {
   });
 
   container.appendChild(header);
+  container.appendChild(boatRow);
+  container.appendChild(settingsCalendarRow);
   container.appendChild(grid);
 
   return container;
 }
 
-function onMount() {
-  // Refresh status text when page loads
+async function onMount() {
+  // Sync all boat data so card counts are correct (e.g. when using Supabase)
+  const boats = await getBoats();
+  for (const boat of boats) {
+    await Promise.all([
+      getEngines(boat.id),
+      getServiceEntries(boat.id),
+      getEquipment(boat.id, 'navigation'),
+      getEquipment(boat.id, 'safety'),
+      getLogbook(boat.id),
+      getLinks(boat.id)
+    ]);
+  }
+  // Refresh status text when page loads (order: boat, account, calendar, then rest)
   const statusElements = document.querySelectorAll('.dashboard-card-status');
+  const cardIds = [
+    'boat', 'account', 'calendar', 'engines', 'service', 'navigation',
+    'safety', 'log', 'links'
+  ];
   statusElements.forEach((el, index) => {
-    const cards = [
-      'boat', 'engines', 'service', 'navigation', 
-      'safety', 'log', 'links', 'account'
-    ];
-    if (cards[index]) {
-      el.textContent = getStatusText(cards[index]);
+    if (cardIds[index]) {
+      el.textContent = getStatusText(cardIds[index]);
     }
   });
 }

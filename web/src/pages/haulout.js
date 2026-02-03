@@ -7,7 +7,7 @@
 
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
-import { createYachtHeader } from '../components/header.js';
+import { createYachtHeader, createBackButton } from '../components/header.js';
 import { isBoatArchived, getHaulouts, createHaulout, updateHaulout, deleteHaulout } from '../lib/dataService.js';
 import {
   getUploads,
@@ -27,8 +27,11 @@ let currentHauloutIdForUpload = null;
 let hauloutArchived = false;
 
 function render(params = {}) {
-  // Get boat ID from route params
+  // Get boat ID and optional entryId from route params
   currentBoatId = params?.id || window.routeParams?.id;
+  const entryId = params?.entryId || window.routeParams?.entryId;
+  const isEditPage = !!entryId;
+
   if (!currentBoatId) {
     const wrapperError = document.createElement('div');
     wrapperError.innerHTML =
@@ -38,22 +41,30 @@ function render(params = {}) {
 
   const wrapper = document.createElement('div');
 
-  // Yacht header with back arrow that uses browser history
-  const yachtHeader = createYachtHeader('Haul-Out Maintenance', true, () => window.history.back());
+  const yachtHeader = createYachtHeader(
+    isEditPage ? (entryId === 'new' ? 'Add Haul-Out' : 'Edit Haul-Out') : 'Haul-Out Maintenance'
+  );
   wrapper.appendChild(yachtHeader);
 
-  // Page content with haul-out color theme (shares service tone)
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content card-color-haulout';
+  pageContent.appendChild(createBackButton());
 
   const container = document.createElement('div');
   container.className = 'container';
+
+  if (isEditPage) {
+    container.id = 'haulout-list';
+    pageContent.appendChild(container);
+    wrapper.appendChild(pageContent);
+    return wrapper;
+  }
 
   const addBtn = document.createElement('button');
   addBtn.className = 'btn-primary';
   addBtn.id = 'haulout-add-btn';
   addBtn.innerHTML = `${renderIcon('plus')} Add Haul-Out Record`;
-  addBtn.onclick = () => showHauloutForm();
+  addBtn.onclick = () => navigate(`/boat/${currentBoatId}/haulout/new`);
 
   const listContainer = document.createElement('div');
   listContainer.id = 'haulout-list';
@@ -78,15 +89,23 @@ function render(params = {}) {
 
 async function onMount(params = {}) {
   const boatId = params?.id || window.routeParams?.id;
+  const entryId = params?.entryId || window.routeParams?.entryId;
   if (boatId) {
     currentBoatId = boatId;
   }
 
+  window.navigate = navigate;
+
   hauloutArchived = currentBoatId ? await isBoatArchived(currentBoatId) : false;
+
+  if (entryId) {
+    editingId = entryId === 'new' ? `haulout_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` : entryId;
+    await showHauloutForm();
+    return;
+  }
+
   const addBtn = document.getElementById('haulout-add-btn');
   if (addBtn && hauloutArchived) addBtn.style.display = 'none';
-
-  window.navigate = navigate;
 
   hauloutFileInput = document.getElementById('haulout-file-input');
 
@@ -172,7 +191,7 @@ async function loadHaulouts() {
             <p class="text-muted">${yard} • ${reason}</p>
           </div>
           <div>
-            ${!hauloutArchived ? `<button class="btn-link" onclick="hauloutPageEdit('${entry.id}')">${renderIcon('edit')}</button>
+            ${!hauloutArchived ? `<a href="#/boat/${currentBoatId}/haulout/${entry.id}" class="btn-link" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/haulout/${entry.id}')">${renderIcon('edit')}</a>
             <button class="btn-link btn-danger" onclick="hauloutPageDelete('${entry.id}')">${renderIcon('trash')}</button>` : ''}
           </div>
         </div>
@@ -214,11 +233,6 @@ async function loadHaulouts() {
 }
 
 function attachListHandlers() {
-  window.hauloutPageEdit = (id) => {
-    editingId = id;
-    showHauloutForm();
-  };
-
   window.hauloutPageDelete = async (id) => {
     if (confirm('Delete this haul-out record?')) {
       await deleteHaulout(id);
@@ -670,11 +684,25 @@ async function showHauloutForm() {
           <h4>Next Haul-Out Reminder</h4>
           <p class="text-muted">
             Optionally set a suggested date for the next haul-out. This will appear on the
-            Calendar card so you can create a reminder in your phone or tablet calendar.
+            Calendar on the home page for reminders and appointments.
           </p>
           <div class="form-group">
             <label for="next_haulout_due">Next haul-out due</label>
             <input type="date" id="next_haulout_due" value="${entry?.next_haulout_due || ''}">
+          </div>
+          <div class="form-group">
+            <label for="next_haulout_reminder">Reminder</label>
+            <select id="next_haulout_reminder">
+              <option value="0" ${(entry?.next_haulout_reminder_minutes ?? 1440) === 0 ? 'selected' : ''}>None</option>
+              <option value="5" ${entry?.next_haulout_reminder_minutes === 5 ? 'selected' : ''}>5 minutes before</option>
+              <option value="15" ${entry?.next_haulout_reminder_minutes === 15 ? 'selected' : ''}>15 minutes before</option>
+              <option value="30" ${entry?.next_haulout_reminder_minutes === 30 ? 'selected' : ''}>30 minutes before</option>
+              <option value="60" ${entry?.next_haulout_reminder_minutes === 60 ? 'selected' : ''}>1 hour before</option>
+              <option value="120" ${entry?.next_haulout_reminder_minutes === 120 ? 'selected' : ''}>2 hours before</option>
+              <option value="1440" ${(entry?.next_haulout_reminder_minutes ?? 1440) === 1440 ? 'selected' : ''}>1 day before</option>
+              <option value="2880" ${entry?.next_haulout_reminder_minutes === 2880 ? 'selected' : ''}>2 days before</option>
+              <option value="10080" ${entry?.next_haulout_reminder_minutes === 10080 ? 'selected' : ''}>1 week before</option>
+            </select>
           </div>
         </div>
 
@@ -727,8 +755,13 @@ async function showHauloutForm() {
   initHauloutFormAttachments(editingId);
 
   window.hauloutPageCancelForm = () => {
-    document.getElementById('haulout-form-card').remove();
+    const card = document.getElementById('haulout-form-card');
+    if (card) card.remove();
     editingId = null;
+    const hash = window.location.hash || '';
+    if (hash.includes('/haulout/') && !hash.endsWith('/haulout')) {
+      navigate(`/boat/${currentBoatId}/haulout`);
+    }
   };
 }
 
@@ -946,7 +979,8 @@ async function saveHaulout() {
 
     general_notes: document.getElementById('general_notes').value || '',
     recommendations_next_haulout: document.getElementById('recommendations_next_haulout').value || '',
-    next_haulout_due: document.getElementById('next_haulout_due').value || null
+    next_haulout_due: document.getElementById('next_haulout_due').value || null,
+    next_haulout_reminder_minutes: parseInt(document.getElementById('next_haulout_reminder')?.value || '1440', 10) || null
   };
 
   if (editingId && String(editingId).includes('-')) {
@@ -955,9 +989,15 @@ async function saveHaulout() {
     const created = await createHaulout(currentBoatId, entry);
     if (created?.id) editingId = created.id;
   }
-  document.getElementById('haulout-form-card').remove();
+  const card = document.getElementById('haulout-form-card');
+  if (card) card.remove();
   editingId = null;
-  loadHaulouts();
+  const hash = window.location.hash || '';
+  if (hash.includes('/haulout/') && !hash.endsWith('/haulout')) {
+    navigate(`/boat/${currentBoatId}/haulout`);
+  } else {
+    loadHaulouts();
+  }
 }
 
 export default {

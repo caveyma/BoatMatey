@@ -13,9 +13,11 @@
   --card-safety: #EA7D7D;      /* Coral */
   --card-log: #F2B24A;         /* Gold */
   --card-links: #46BFBF;       /* Cyan */
-  --card-calendar: #5BB95B;    /* Fresh green – distinct from engines/links */
+  --card-calendar: #A8C8E0;    /* Light pale blue – subtle, does not stand out */
   --card-account: #93A6B7;     /* Slate */
   --card-guide: #7F8C99;       /* Soft slate for help/guide */
+  --card-sails-rigging: #5A9B8E; /* Teal-green – distinct from boat blue */
+  --card-watermaker: #4CB3E5;    /* Fresh water blue */
 }
 
 /* Card color classes */
@@ -30,6 +32,8 @@
 .card-color-calendar { --card-color: var(--card-calendar); }
 .card-color-account { --card-color: var(--card-account); }
 .card-color-guide { --card-color: var(--card-guide); }
+.card-color-sails-rigging { --card-color: var(--card-sails-rigging); }
+.card-color-watermaker { --card-color: var(--card-watermaker); }
 
 
 /* Inner page background colours (solid soft pastel) */
@@ -44,3 +48,5 @@ body.page-color-links { --page-bg: color-mix(in srgb, var(--card-links) 30%, whi
 body.page-color-calendar { --page-bg: color-mix(in srgb, var(--card-calendar) 30%, white); }
 body.page-color-account { --page-bg: color-mix(in srgb, var(--card-account) 30%, white); }
 body.page-color-guide { --page-bg: color-mix(in srgb, var(--card-guide) 30%, white); }
+body.page-color-sails-rigging { --page-bg: color-mix(in srgb, var(--card-sails-rigging) 30%, white); }
+body.page-color-watermaker { --page-bg: color-mix(in srgb, var(--card-watermaker) 30%, white); }
