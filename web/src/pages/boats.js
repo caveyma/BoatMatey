@@ -9,6 +9,7 @@ import { renderLogo } from '../components/logo.js';
 
 const calendarIconUrl = new URL('../assets/calendar-card.png', import.meta.url).href;
 const settingsIconUrl = new URL('../assets/account-admin.png', import.meta.url).href;
+const userGuideIconUrl = new URL('../assets/user-guide.png', import.meta.url).href;
 import { boatsStorage } from '../lib/storage.js';
 import {
   getBoats as getBoatsFromApi,
@@ -137,6 +138,24 @@ function createSettingsCard() {
   return card;
 }
 
+function createUserGuideCard() {
+  const card = document.createElement('a');
+  card.href = '#/guide';
+  card.className = 'dashboard-card card-color-guide user-guide-home-card';
+  card.innerHTML = `
+    <div class="dashboard-card-icon-badge dashboard-card-icon-bitmap">
+      <img src="${userGuideIconUrl}" alt="User Guide" class="dashboard-card-icon-img">
+    </div>
+    <div class="dashboard-card-title">User Guide</div>
+    <div class="dashboard-card-status text-muted">How to use BoatMatey</div>
+  `;
+  card.onclick = (e) => {
+    e.preventDefault();
+    navigate('/guide');
+  };
+  return card;
+}
+
 async function onMount() {
   await loadBoats();
 }
@@ -173,6 +192,7 @@ async function loadBoats() {
     settingsCalendarRow.className = 'boats-settings-calendar-row';
     settingsCalendarRow.appendChild(createCalendarCard());
     settingsCalendarRow.appendChild(createSettingsCard());
+    settingsCalendarRow.appendChild(createUserGuideCard());
     container.appendChild(settingsCalendarRow);
     updateAddBoatButton([]);
     attachHandlers();
@@ -235,6 +255,7 @@ async function loadBoats() {
   settingsCalendarRow.className = 'boats-settings-calendar-row';
   settingsCalendarRow.appendChild(createCalendarCard());
   settingsCalendarRow.appendChild(createSettingsCard());
+  settingsCalendarRow.appendChild(createUserGuideCard());
   container.appendChild(settingsCalendarRow);
 
   updateAddBoatButton(boats);

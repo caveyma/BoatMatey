@@ -46,6 +46,7 @@ export async function init() {
     route('/subscription', subscriptionPage); // Subscription paywall
     route('/auth', authPage); // Auth page (sign in / create account)
     route('/', boatsPage); // Boats list (home)
+    route('/guide', guidePage); // User guide (no boat – from home)
     route('/calendar', calendarPage); // App-wide calendar
     route('/boat/:id', boatDashboardPage); // Boat dashboard
     route('/boat/:id/details', boatDetailsPage); // Boat details

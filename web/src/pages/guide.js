@@ -11,14 +11,8 @@ let currentBoatId = null;
 
 export function render(params = {}) {
   currentBoatId = params?.id || window.routeParams?.id;
-  if (!currentBoatId) {
-    const wrapperError = document.createElement('div');
-    wrapperError.innerHTML =
-      '<div class="page-content"><div class="container"><h1>Error</h1><p>Boat ID required</p></div></div>';
-    return wrapperError;
-  }
-
-  const boat = boatsStorage.get(currentBoatId) || {};
+  const boat = currentBoatId ? boatsStorage.get(currentBoatId) || {} : null;
+  const fromHome = !currentBoatId;
 
   const wrapper = document.createElement('div');
 
@@ -34,11 +28,20 @@ export function render(params = {}) {
 
   const headerBlock = document.createElement('div');
   headerBlock.className = 'page-header';
-  headerBlock.innerHTML = `
+  headerBlock.innerHTML = fromHome
+    ? `
+    <h2>BoatMatey user guide</h2>
+    <p class="text-muted">
+      This page explains what each section of BoatMatey does. From the home screen you can open
+      Calendar &amp; Alerts, Settings, or tap a boat to see its dashboard. You can open this guide
+      anytime from the &quot;User Guide&quot; card on the home page or from a boat&apos;s dashboard.
+    </p>
+  `
+    : `
     <h2>Boat dashboard guide</h2>
     <p class="text-muted">
       This page explains what each tile on your boat dashboard does and when you might use it.
-      You can always come back here by tapping the "User Guide" card.
+      You can always come back here by tapping the &quot;User Guide&quot; card.
     </p>
   `;
 

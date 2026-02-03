@@ -24,15 +24,20 @@
   }
 }
 
-/* Boats page: Calendar and Settings always side by side (row is sibling of grid) */
+/* Boats page: Calendar, Settings and User Guide in one row (sibling of grid) */
 .boats-settings-calendar-row {
   display: grid !important;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: var(--spacing-lg);
   margin-top: var(--spacing-lg);
   padding: 0 var(--spacing-md);
   width: 100%;
   box-sizing: border-box;
+}
+@media (max-width: 640px) {
+  .boats-settings-calendar-row {
+    grid-template-columns: 1fr;
+  }
 }
 .boats-settings-calendar-row .dashboard-card {
   min-width: 0;
