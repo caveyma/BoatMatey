@@ -16,6 +16,8 @@ Same folder structure as PetHub+: **web/** (develop here), **android/** (Android
 - **Sync to native** when you want a new Android/iOS build: from repo root run `npm run cap:android` or `npm run cap:ios` (builds web then copies into android/ or ios/).
 - **Git**: push and pull from the **repo root** (BoatMatey). Your commits include `web/`, `android/`, and `ios/`; after pull on the other machine, run sync again if you need a fresh native build there.
 
+**Important:** The built web app (`web/dist` and `ios/App/App/public`) is **not** in Git (gitignored). So after every pull on the Mac you **must** run `npm run cap:ios` from the repo root to build the web app and copy it into the iOS project. Otherwise the Mac will still be serving an old build.
+
 ---
 
 ## On Windows (this machine)
@@ -68,20 +70,20 @@ Then run/build the app as you normally do. When you want a native build: from re
 
 ## On Mac Mini (already cloned – pull)
 
+**Do this every time** so the app build is up to date (the built app is not in Git):
+
 ```bash
 cd /path/to/BoatMatey
 git pull origin main
 npm install
-cd web && npm install
-```
-
-If you need a fresh Android or iOS build after pull, from repo root run:
-
-```bash
-npm run cap:android
-# or
+cd web && npm install && cd ..
+# Required: build web and copy into iOS (otherwise you'll see an old build)
 npm run cap:ios
 ```
+
+Then in Xcode: **Product → Clean Build Folder** (Shift+Cmd+K), then build/run. If the app still looks old on device/simulator, delete the app and reinstall.
+
+**Or run the script** (after pulling at least once so the script exists): from repo root run `bash scripts/mac-pull-and-build.sh` — it does pull, install, and `cap:ios` for you.
 
 ---
 
@@ -94,6 +96,6 @@ npm run cap:ios
 | Sync to Android  | From root: `npm run cap:android` |
 | Sync to iOS      | From root: `npm run cap:ios` |
 | Send changes     | From root: `git add -A` → `git commit -m "..."` → `git push origin main` |
-| Get changes      | From root: `git pull origin main` then `npm install` (and `cd web && npm install` if needed) |
+| Get changes (Mac) | From root: `git pull origin main` → `npm install` → `cd web && npm install` → **`npm run cap:ios`** (required; built app not in Git) |
 
 Remote: **https://github.com/caveyma/BoatMatey.git**
