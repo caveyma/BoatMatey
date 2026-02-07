@@ -33,6 +33,8 @@ function render() {
 
   const status = getSubscriptionStatus();
   const isActive = hasActiveSubscription();
+  const isNative = Capacitor.isNativePlatform?.() ?? false;
+  const showSubscribeAndRestore = isNative && !isActive;
 
   const content = document.createElement('div');
   content.innerHTML = `
@@ -84,12 +86,14 @@ function render() {
       </div>
       <p class="text-muted">BoatMatey subscription includes 2 active boats, 5 archived boats, unlimited engines, service entries, and uploads.</p>
       <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.75rem;">
-        <button class="btn-primary" id="subscribe-btn" style="width: 100%;">
-          ${renderIcon('star')} Subscribe for £24.99/year
-        </button>
-        <button class="btn-secondary" id="restore-purchases-btn" style="width: 100%;">
-          Restore Purchases
-        </button>
+        <div id="account-subscribe-restore-buttons" style="${showSubscribeAndRestore ? '' : 'display: none;'}">
+          <button class="btn-primary" id="subscribe-btn" style="width: 100%;">
+            ${renderIcon('star')} Subscribe for £24.99/year
+          </button>
+          <button class="btn-secondary" id="restore-purchases-btn" style="width: 100%;">
+            Restore Purchases
+          </button>
+        </div>
         <button class="btn-secondary" id="manage-subscription-btn" style="width: 100%;">
           Manage Subscription
         </button>
@@ -182,33 +186,35 @@ async function onMount() {
   if (serviceEl) serviceEl.textContent = serviceHistoryStorage.getAll().length;
   if (uploadsEl) uploadsEl.textContent = uploadsStorage.count();
 
-  // Refresh subscription status on mount
+  // Refresh subscription status on mount (native: RevenueCat; web: profile for renewal date)
   const isNative = Capacitor.isNativePlatform?.() ?? false;
-  if (isNative) {
-    refreshSubscriptionStatus().then(() => {
-      // Update subscription display after refresh (RevenueCat + Supabase profile fallback)
-      const status = getSubscriptionStatus();
-      const isActive = hasActiveSubscription();
+  refreshSubscriptionStatus().then(() => {
+    const status = getSubscriptionStatus();
+    const isActive = hasActiveSubscription();
 
-      const statusBadge = document.getElementById('account-subscription-badge');
-      if (statusBadge) {
-        statusBadge.textContent = isActive ? 'Active' : 'Not Active';
-        statusBadge.className = `badge ${isActive ? 'badge-success' : 'badge-warning'}`;
+    const statusBadge = document.getElementById('account-subscription-badge');
+    if (statusBadge) {
+      statusBadge.textContent = isActive ? 'Active' : 'Not Active';
+      statusBadge.className = `badge ${isActive ? 'badge-success' : 'badge-warning'}`;
+    }
+    const planEl = document.getElementById('account-subscription-plan');
+    if (planEl) planEl.textContent = status.plan;
+    const renewEl = document.getElementById('account-subscription-renew');
+    const renewDateEl = document.getElementById('account-subscription-renew-date');
+    if (renewEl && renewDateEl) {
+      if (status.expires_at) {
+        renewEl.style.display = '';
+        renewDateEl.textContent = new Date(status.expires_at).toLocaleDateString();
+      } else {
+        renewEl.style.display = 'none';
       }
-      const planEl = document.getElementById('account-subscription-plan');
-      if (planEl) planEl.textContent = status.plan;
-      const renewEl = document.getElementById('account-subscription-renew');
-      const renewDateEl = document.getElementById('account-subscription-renew-date');
-      if (renewEl && renewDateEl) {
-        if (status.expires_at) {
-          renewEl.style.display = '';
-          renewDateEl.textContent = new Date(status.expires_at).toLocaleDateString();
-        } else {
-          renewEl.style.display = 'none';
-        }
-      }
-    });
-  }
+    }
+    // Show Subscribe/Restore only on native when not active
+    const subscribeRestoreDiv = document.getElementById('account-subscribe-restore-buttons');
+    if (subscribeRestoreDiv) {
+      subscribeRestoreDiv.style.display = isNative && !isActive ? '' : 'none';
+    }
+  });
 
   // Show/hide sign-in details and first card based on session
   (async () => {

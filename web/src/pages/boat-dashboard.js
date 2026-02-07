@@ -25,8 +25,6 @@ const watermakerIconUrl = new URL('../assets/watermaker.png', import.meta.url).h
 // Haul-out maintenance uses a tools/hoist themed icon.
 // Ensure the provided icon image is copied to `src/assets/haulout-hook.png`.
 const hauloutIconUrl = new URL('../assets/haulout-hook.png', import.meta.url).href;
-// User Guide card – place your icon at: web/src/assets/user-guide.png
-const userGuideIconUrl = new URL('../assets/user-guide.png', import.meta.url).href;
 let currentBoatId = null;
 let currentBoat = null;
 
@@ -69,10 +67,7 @@ function getStatusText(cardId, boatId) {
 
     case 'sails-rigging':
       return 'Sails & rigging';
-    
-    case 'guide':
-      return 'How each card works';
-    
+
     default:
       return '';
   }
@@ -87,7 +82,7 @@ function createCard(id, title, iconName, route, boatId) {
     navigate(route);
   };
 
-  const useBitmapImage = id === 'boat' || id === 'service' || id === 'haulout' || id === 'engines' || id === 'navigation' || id === 'safety' || id === 'log' || id === 'links' || id === 'watermaker' || id === 'sails-rigging' || id === 'guide';
+  const useBitmapImage = id === 'boat' || id === 'service' || id === 'haulout' || id === 'engines' || id === 'navigation' || id === 'safety' || id === 'log' || id === 'links' || id === 'watermaker' || id === 'sails-rigging';
   const badgeClass = useBitmapImage
     ? 'dashboard-card-icon-badge dashboard-card-icon-bitmap'
     : 'dashboard-card-icon-badge';
@@ -114,8 +109,6 @@ function createCard(id, title, iconName, route, boatId) {
     iconHtml = `<img src="${linksIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else if (id === 'watermaker') {
     iconHtml = `<img src="${watermakerIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
-  } else if (id === 'guide') {
-    iconHtml = `<img src="${userGuideIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else {
     iconHtml = renderIcon(iconName);
   }
@@ -201,8 +194,7 @@ function render() {
     { id: 'navigation', title: 'Navigation Equipment', icon: 'chart', route: `/boat/${currentBoatId}/navigation` },
     { id: 'safety', title: 'Safety Equipment', icon: 'shield', route: `/boat/${currentBoatId}/safety` },
     { id: 'log', title: "Ship's Log", icon: 'book', route: `/boat/${currentBoatId}/log` },
-    { id: 'links', title: 'Web Links', icon: 'link', route: `/boat/${currentBoatId}/links` },
-    { id: 'guide', title: 'User Guide', icon: 'file', route: `/boat/${currentBoatId}/guide` }
+    { id: 'links', title: 'Web Links', icon: 'link', route: `/boat/${currentBoatId}/links` }
   ];
 
   cards.forEach(card => {
@@ -249,8 +241,7 @@ async function onMount() {
       'navigation',
       'safety',
       'log',
-      'links',
-      'guide'
+      'links'
     ];
     statusElements.forEach((el, index) => {
       if (cardIds[index]) {

@@ -11,6 +11,7 @@ import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUp
 let currentBoatId = null;
 let safetyFileInput = null;
 let currentSafetyItemIdForUpload = null;
+let safetyArchived = false;
 
 function render(params = {}) {
   // Get boat ID from route params

@@ -121,7 +121,14 @@ async function getSubscriptionFromProfile() {
 export async function refreshSubscriptionStatus() {
   const isNative = Capacitor.isNativePlatform?.() ?? false;
   if (!isNative) {
-    // Web: nothing to refresh – we already report active.
+    // Web: no RevenueCat; keep always-active but load renewal date from profile when signed in
+    const profileSub = await getSubscriptionFromProfile();
+    if (profileSub?.expires_at) {
+      subscriptionState = {
+        ...subscriptionState,
+        expires_at: profileSub.expires_at
+      };
+    }
     return subscriptionState;
   }
 
