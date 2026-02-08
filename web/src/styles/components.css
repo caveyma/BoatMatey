@@ -708,3 +708,18 @@
   border-left: 4px solid var(--card-guide);
   background: color-mix(in srgb, var(--card-guide) 12%, #ffffff);
 }
+.page-content.card-color-guide .guide-section-faq {
+  border-left: 4px solid var(--card-guide);
+  background: color-mix(in srgb, var(--card-guide) 12%, #ffffff);
+}
+.page-content.card-color-guide .guide-section-faq h4 {
+  font-size: var(--font-size-base);
+  margin-top: var(--spacing-md);
+  margin-bottom: var(--spacing-xs);
+}
+.page-content.card-color-guide .guide-section-faq h4:first-of-type {
+  margin-top: 0;
+}
+.page-content.card-color-guide .guide-section-faq p {
+  margin-bottom: var(--spacing-md);
+}
