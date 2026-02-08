@@ -26,6 +26,8 @@ const watermakerIconUrl = new URL('../assets/watermaker.png', import.meta.url).h
 // Ensure the provided icon image is copied to `src/assets/haulout-hook.png`.
 const hauloutIconUrl = new URL('../assets/haulout-hook.png', import.meta.url).href;
 const maydayIconUrl = new URL('../assets/mayday.png', import.meta.url).href;
+const fuelPerformanceIconUrl = new URL('../assets/fuel-performance.png', import.meta.url).href;
+const electricalBatteryIconUrl = new URL('../assets/electrical-battery.png', import.meta.url).href;
 let currentBoatId = null;
 let currentBoat = null;
 
@@ -92,7 +94,7 @@ function createCard(id, title, iconName, route, boatId) {
     navigate(route);
   };
 
-  const useBitmapImage = id === 'boat' || id === 'service' || id === 'haulout' || id === 'engines' || id === 'navigation' || id === 'safety' || id === 'log' || id === 'links' || id === 'watermaker' || id === 'sails-rigging' || id === 'mayday';
+  const useBitmapImage = id === 'boat' || id === 'service' || id === 'haulout' || id === 'engines' || id === 'navigation' || id === 'safety' || id === 'log' || id === 'links' || id === 'watermaker' || id === 'sails-rigging' || id === 'mayday' || id === 'fuel' || id === 'electrical';
   const badgeClass = useBitmapImage
     ? 'dashboard-card-icon-badge dashboard-card-icon-bitmap'
     : 'dashboard-card-icon-badge';
@@ -101,9 +103,9 @@ function createCard(id, title, iconName, route, boatId) {
   if (id === 'mayday') {
     iconHtml = `<img src="${maydayIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else if (id === 'fuel') {
-    iconHtml = renderIcon('fuel');
+    iconHtml = `<img src="${fuelPerformanceIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else if (id === 'electrical') {
-    iconHtml = renderIcon('battery');
+    iconHtml = `<img src="${electricalBatteryIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else if (id === 'sails-rigging') {
     iconHtml = `<img src="${sailsRiggingIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else if (id === 'boat') {
