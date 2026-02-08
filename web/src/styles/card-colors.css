@@ -18,6 +18,9 @@
   --card-guide: #7A8895;       /* Grey */
   --card-sails-rigging: #B87333; /* Copper / brown */
   --card-watermaker: #D4586A;   /* Pink / rose */
+  --card-fuel: #E8A838;        /* Amber / fuel */
+  --card-electrical: #5B8DEE;  /* Blue / electrical */
+  --card-mayday: #C44536;      /* Red / distress */
 }
 
 /* Card color classes */
@@ -34,6 +37,9 @@
 .card-color-guide { --card-color: var(--card-guide); }
 .card-color-sails-rigging { --card-color: var(--card-sails-rigging); }
 .card-color-watermaker { --card-color: var(--card-watermaker); }
+.card-color-fuel { --card-color: var(--card-fuel); }
+.card-color-electrical { --card-color: var(--card-electrical); }
+.card-color-mayday { --card-color: var(--card-mayday); }
 
 
 /* Inner page background colours (solid soft pastel) */
@@ -50,3 +56,6 @@ body.page-color-account { --page-bg: color-mix(in srgb, var(--card-account) 30%,
 body.page-color-guide { --page-bg: color-mix(in srgb, var(--card-guide) 30%, white); }
 body.page-color-sails-rigging { --page-bg: color-mix(in srgb, var(--card-sails-rigging) 30%, white); }
 body.page-color-watermaker { --page-bg: color-mix(in srgb, var(--card-watermaker) 30%, white); }
+body.page-color-fuel { --page-bg: color-mix(in srgb, var(--card-fuel) 30%, white); }
+body.page-color-electrical { --page-bg: color-mix(in srgb, var(--card-electrical) 30%, white); }
+body.page-color-mayday { --page-bg: color-mix(in srgb, var(--card-mayday) 30%, white); }

@@ -32,7 +32,10 @@ export const icons = {
   archive: `<path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/>`,
   refresh: `<path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>`,
   sail: `<path d="M12 4L4 20h16L12 4z"/><path d="M12 4v16"/><path d="M12 12l-4 8"/><path d="M12 12l4 8"/>`,
-  calendar: `<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>`
+  calendar: `<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>`,
+  fuel: `<path d="M6 20h12v-4l-2-6H8L6 16v4z"/><path d="M8 10V6h2v4"/><path d="M14 10V6h2v4"/><circle cx="12" cy="16" r="1.5"/>`,
+  battery: `<rect x="2" y="6" width="18" height="12" rx="2" ry="2"/><path d="M6 10v4M10 10v4M14 10v4"/><path d="M22 10v4"/>`,
+  mayday: `<path d="M12 2L4 6v6c0 5.55 3.84 10.74 8 12 4.16-1.26 8-6.45 8-12V6l-8-4z"/><path d="M12 8v4"/><circle cx="12" cy="16" r="1.5" fill="currentColor"/>`
 };
 
 /**

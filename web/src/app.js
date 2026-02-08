@@ -35,6 +35,9 @@ import calendarPage from './pages/calendar.js';
 import guidePage from './pages/guide.js';
 import sailsRiggingPage from './pages/sails-rigging.js';
 import watermakerPage from './pages/watermaker.js';
+import fuelPage from './pages/fuel.js';
+import electricalPage from './pages/electrical.js';
+import maydayPage from './pages/mayday.js';
 
 /**
  * Initialize the app
@@ -59,6 +62,9 @@ export async function init() {
     route('/boat/:id/sails-rigging', sailsRiggingPage);
     route('/boat/:id/watermaker', watermakerPage);
     route('/boat/:id/watermaker/:entryId', watermakerPage);
+    route('/boat/:id/fuel', fuelPage);
+    route('/boat/:id/electrical', electricalPage);
+    route('/boat/:id/mayday', maydayPage);
     route('/boat/:id/guide', guidePage);
     route('/boat/:id/navigation', navigationPage);
     route('/boat/:id/navigation/:itemId', navigationEditPage);

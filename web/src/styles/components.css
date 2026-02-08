@@ -723,3 +723,53 @@
 .page-content.card-color-guide .guide-section-faq p {
   margin-bottom: var(--spacing-md);
 }
+
+/* Mayday / Distress page */
+.mayday-disclaimer {
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--spacing-md);
+}
+.form-section {
+  margin-bottom: var(--spacing-lg);
+  padding: 0;
+  border: none;
+}
+.form-section legend {
+  font-weight: 600;
+  margin-bottom: var(--spacing-sm);
+  padding: 0;
+}
+.script-tabs {
+  display: flex;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+}
+.script-tab {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--bm-border);
+  border-radius: var(--radius);
+  background: var(--bm-bg);
+  cursor: pointer;
+  font-weight: 500;
+}
+.script-tab.active {
+  background: var(--card-color, var(--bm-teal));
+  color: white;
+  border-color: var(--card-color, var(--bm-teal));
+}
+.script-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: var(--font-size-base);
+  margin: 0;
+  padding: var(--spacing-md);
+  background: color-mix(in srgb, var(--card-color, var(--bm-teal)) 12%, #fff);
+  border-radius: var(--radius);
+  min-height: 120px;
+}
+.script-reminder {
+  font-size: var(--font-size-sm);
+  color: var(--bm-muted);
+  margin-top: var(--spacing-sm);
+}

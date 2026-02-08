@@ -131,7 +131,15 @@ export async function getBoat(boatId) {
     created_at: data.created_at,
     updated_at: data.updated_at,
     photo_url: data.photo_url ?? local.photo_url ?? null,
-    photo_data: local.photo_data ?? null
+    photo_data: local.photo_data ?? null,
+    registration_number: data.registration_number ?? null,
+    ssr_number: data.ssr_number ?? null,
+    vhf_callsign: data.vhf_callsign ?? null,
+    vhf_mmsi: data.vhf_mmsi ?? null,
+    last_survey_date: data.last_survey_date ?? null,
+    last_surveyor: data.last_surveyor ?? null,
+    last_survey_notes: data.last_survey_notes ?? null,
+    home_port: data.home_port ?? null
   };
 }
 
@@ -252,6 +260,30 @@ export async function updateBoat(boatId, payload) {
   }
   if (payload.photo_url !== undefined) {
     updatePayload.photo_url = payload.photo_url || null;
+  }
+  if (payload.registration_number !== undefined) {
+    updatePayload.registration_number = payload.registration_number || null;
+  }
+  if (payload.ssr_number !== undefined) {
+    updatePayload.ssr_number = payload.ssr_number || null;
+  }
+  if (payload.vhf_callsign !== undefined) {
+    updatePayload.vhf_callsign = payload.vhf_callsign || null;
+  }
+  if (payload.vhf_mmsi !== undefined) {
+    updatePayload.vhf_mmsi = payload.vhf_mmsi || null;
+  }
+  if (payload.last_survey_date !== undefined) {
+    updatePayload.last_survey_date = payload.last_survey_date || null;
+  }
+  if (payload.last_surveyor !== undefined) {
+    updatePayload.last_surveyor = payload.last_surveyor || null;
+  }
+  if (payload.last_survey_notes !== undefined) {
+    updatePayload.last_survey_notes = payload.last_survey_notes || null;
+  }
+  if (payload.home_port !== undefined) {
+    updatePayload.home_port = payload.home_port || null;
   }
 
   let result = await supabase
@@ -1299,6 +1331,332 @@ export async function listAttachments(boatId) {
     return [];
   }
 
+  return data;
+}
+
+// ----------------- Fuel & Performance -----------------
+
+export async function getFuelPerformance(boatId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return null;
+  }
+  const { data, error } = await supabase
+    .from('boat_fuel_performance')
+    .select('*')
+    .eq('boat_id', boatId)
+    .maybeSingle();
+  if (error) {
+    logSupabaseFallback('boat_fuel_performance', error);
+    return null;
+  }
+  return data;
+}
+
+export async function upsertFuelPerformance(boatId, payload) {
+  if (await isBoatArchived(boatId)) return null;
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return null;
+  }
+  const row = {
+    boat_id: boatId,
+    user_id: session.user.id,
+    preferred_units: payload.preferred_units ?? 'litres',
+    typical_cruise_rpm: payload.typical_cruise_rpm ?? null,
+    typical_cruise_speed_kn: payload.typical_cruise_speed_kn ?? null,
+    typical_burn_lph: payload.typical_burn_lph ?? null,
+    fuel_tank_capacity_litres: payload.fuel_tank_capacity_litres ?? null,
+    usable_fuel_litres: payload.usable_fuel_litres ?? null,
+    notes: payload.notes ?? null
+  };
+  const { data, error } = await supabase
+    .from('boat_fuel_performance')
+    .upsert(row, { onConflict: 'boat_id' })
+    .select('*')
+    .single();
+  if (error) {
+    logSupabaseFallback('boat_fuel_performance', error);
+    return null;
+  }
+  return data;
+}
+
+export async function getFuelLogs(boatId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return [];
+  }
+  const { data, error } = await supabase
+    .from('boat_fuel_logs')
+    .select('*')
+    .eq('boat_id', boatId)
+    .order('log_date', { ascending: false });
+  if (error) {
+    logSupabaseFallback('boat_fuel_logs', error);
+    return [];
+  }
+  return data || [];
+}
+
+export async function createFuelLog(boatId, payload) {
+  if (await isBoatArchived(boatId)) return null;
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return null;
+  }
+  const { data, error } = await supabase
+    .from('boat_fuel_logs')
+    .insert({
+      boat_id: boatId,
+      user_id: session.user.id,
+      log_date: payload.log_date,
+      engine_hours: payload.engine_hours ?? null,
+      fuel_added_litres: payload.fuel_added_litres ?? null,
+      fuel_cost: payload.fuel_cost ?? null,
+      distance_nm: payload.distance_nm ?? null,
+      avg_speed_kn: payload.avg_speed_kn ?? null,
+      notes: payload.notes ?? null
+    })
+    .select('*')
+    .single();
+  if (error) {
+    logSupabaseFallback('boat_fuel_logs', error);
+    return null;
+  }
+  return data;
+}
+
+export async function updateFuelLog(logId, payload) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return null;
+  }
+  const { error } = await supabase
+    .from('boat_fuel_logs')
+    .update({
+      log_date: payload.log_date,
+      engine_hours: payload.engine_hours ?? null,
+      fuel_added_litres: payload.fuel_added_litres ?? null,
+      fuel_cost: payload.fuel_cost ?? null,
+      distance_nm: payload.distance_nm ?? null,
+      avg_speed_kn: payload.avg_speed_kn ?? null,
+      notes: payload.notes ?? null
+    })
+    .eq('id', logId);
+  if (error) {
+    logSupabaseFallback('boat_fuel_logs', error);
+  }
+}
+
+export async function deleteFuelLog(logId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return;
+  }
+  const { error } = await supabase.from('boat_fuel_logs').delete().eq('id', logId);
+  if (error) {
+    logSupabaseFallback('boat_fuel_logs', error);
+  }
+}
+
+// ----------------- Electrical & Batteries -----------------
+
+export async function getBoatElectrical(boatId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return null;
+  }
+  const { data, error } = await supabase
+    .from('boat_electrical')
+    .select('*')
+    .eq('boat_id', boatId)
+    .maybeSingle();
+  if (error) {
+    logSupabaseFallback('boat_electrical', error);
+    return null;
+  }
+  return data;
+}
+
+export async function upsertBoatElectrical(boatId, payload) {
+  if (await isBoatArchived(boatId)) return null;
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return null;
+  }
+  const row = {
+    boat_id: boatId,
+    user_id: session.user.id,
+    system_voltage: payload.system_voltage ?? null,
+    shore_power: payload.shore_power ?? null,
+    inverter: payload.inverter ?? null,
+    inverter_brand: payload.inverter_brand ?? null,
+    charger_brand: payload.charger_brand ?? null,
+    solar: payload.solar ?? null,
+    solar_watts: payload.solar_watts ?? null,
+    generator: payload.generator ?? null,
+    generator_brand: payload.generator_brand ?? null,
+    notes: payload.notes ?? null
+  };
+  const { data, error } = await supabase
+    .from('boat_electrical')
+    .upsert(row, { onConflict: 'boat_id' })
+    .select('*')
+    .single();
+  if (error) {
+    logSupabaseFallback('boat_electrical', error);
+    return null;
+  }
+  return data;
+}
+
+export async function getBatteries(boatId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return [];
+  }
+  const { data, error } = await supabase
+    .from('boat_batteries')
+    .select('*')
+    .eq('boat_id', boatId)
+    .order('created_at', { ascending: true });
+  if (error) {
+    logSupabaseFallback('boat_batteries', error);
+    return [];
+  }
+  return data || [];
+}
+
+export async function createBattery(boatId, payload) {
+  if (await isBoatArchived(boatId)) return null;
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return null;
+  }
+  const { data, error } = await supabase
+    .from('boat_batteries')
+    .insert({
+      boat_id: boatId,
+      user_id: session.user.id,
+      battery_name: payload.battery_name,
+      battery_type: payload.battery_type ?? null,
+      capacity_ah: payload.capacity_ah ?? null,
+      quantity: payload.quantity ?? 1,
+      installed_date: payload.installed_date ?? null,
+      last_test_date: payload.last_test_date ?? null,
+      last_test_notes: payload.last_test_notes ?? null,
+      replaced_date: payload.replaced_date ?? null,
+      notes: payload.notes ?? null
+    })
+    .select('*')
+    .single();
+  if (error) {
+    logSupabaseFallback('boat_batteries', error);
+    return null;
+  }
+  return data;
+}
+
+export async function updateBattery(batteryId, payload) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return;
+  }
+  const { error } = await supabase
+    .from('boat_batteries')
+    .update({
+      battery_name: payload.battery_name,
+      battery_type: payload.battery_type ?? null,
+      capacity_ah: payload.capacity_ah ?? null,
+      quantity: payload.quantity ?? 1,
+      installed_date: payload.installed_date ?? null,
+      last_test_date: payload.last_test_date ?? null,
+      last_test_notes: payload.last_test_notes ?? null,
+      replaced_date: payload.replaced_date ?? null,
+      notes: payload.notes ?? null
+    })
+    .eq('id', batteryId);
+  if (error) {
+    logSupabaseFallback('boat_batteries', error);
+  }
+}
+
+export async function deleteBattery(batteryId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return;
+  }
+  const { error } = await supabase.from('boat_batteries').delete().eq('id', batteryId);
+  if (error) {
+    logSupabaseFallback('boat_batteries', error);
+  }
+}
+
+// ----------------- Mayday / Distress Info -----------------
+
+export async function getBoatDistressInfo(boatId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return null;
+  }
+  const { data, error } = await supabase
+    .from('boat_distress_info')
+    .select('*')
+    .eq('boat_id', boatId)
+    .maybeSingle();
+  if (error) {
+    logSupabaseFallback('boat_distress_info', error);
+    return null;
+  }
+  return data;
+}
+
+export async function upsertBoatDistressInfo(boatId, payload) {
+  if (await isBoatArchived(boatId)) return null;
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return null;
+  }
+  const vesselName = (payload.vessel_name || '').trim();
+  if (!vesselName) {
+    return { error: 'vessel_name_required' };
+  }
+  const row = {
+    boat_id: boatId,
+    user_id: session.user.id,
+    vessel_name: vesselName,
+    vessel_name_phonetic: payload.vessel_name_phonetic?.trim() || null,
+    callsign: payload.callsign?.trim() || null,
+    callsign_phonetic: payload.callsign_phonetic?.trim() || null,
+    mmsi: payload.mmsi?.trim() || null,
+    persons_on_board: payload.persons_on_board != null ? parseInt(payload.persons_on_board, 10) : null,
+    skipper_name: payload.skipper_name?.trim() || null,
+    skipper_mobile: payload.skipper_mobile?.trim() || null,
+    emergency_contact_name: payload.emergency_contact_name?.trim() || null,
+    emergency_contact_phone: payload.emergency_contact_phone?.trim() || null,
+    vessel_type: payload.vessel_type?.trim() || null,
+    hull_colour: payload.hull_colour?.trim() || null,
+    length_m: payload.length_m != null ? parseFloat(payload.length_m) : null,
+    distinguishing_features: payload.distinguishing_features?.trim() || null,
+    liferaft: payload.liferaft ?? null,
+    epirb: payload.epirb ?? null,
+    epirb_hex_id: payload.epirb_hex_id?.trim() || null,
+    plb: payload.plb ?? null,
+    ais: payload.ais ?? null,
+    home_port: payload.home_port?.trim() || null,
+    usual_area: payload.usual_area?.trim() || null,
+    notes: payload.notes?.trim() || null
+  };
+  const { data, error } = await supabase
+    .from('boat_distress_info')
+    .upsert(row, { onConflict: 'boat_id' })
+    .select('*')
+    .single();
+  if (error) {
+    logSupabaseFallback('boat_distress_info', error);
+    return null;
+  }
   return data;
 }
 

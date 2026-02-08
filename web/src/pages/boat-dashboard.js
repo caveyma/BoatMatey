@@ -6,7 +6,7 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
-import { getBoat, getEngines, getServiceEntries, getHaulouts, getEquipment, getLogbook, getLinks } from '../lib/dataService.js';
+import { getBoat, getEngines, getServiceEntries, getHaulouts, getEquipment, getLogbook, getLinks, getFuelLogs, getBatteries, getBoatElectrical, getBoatDistressInfo } from '../lib/dataService.js';
 import { boatsStorage, enginesStorage, serviceHistoryStorage, hauloutStorage, navEquipmentStorage, safetyEquipmentStorage, shipsLogStorage, linksStorage } from '../lib/storage.js';
 
 const serviceIconUrl = new URL('../assets/service-wrench.png', import.meta.url).href;
@@ -25,6 +25,7 @@ const watermakerIconUrl = new URL('../assets/watermaker.png', import.meta.url).h
 // Haul-out maintenance uses a tools/hoist themed icon.
 // Ensure the provided icon image is copied to `src/assets/haulout-hook.png`.
 const hauloutIconUrl = new URL('../assets/haulout-hook.png', import.meta.url).href;
+const maydayIconUrl = new URL('../assets/mayday.png', import.meta.url).href;
 let currentBoatId = null;
 let currentBoat = null;
 
@@ -68,6 +69,15 @@ function getStatusText(cardId, boatId) {
     case 'sails-rigging':
       return 'Sails & rigging';
 
+    case 'fuel':
+      return '…';
+
+    case 'electrical':
+      return '…';
+
+    case 'mayday':
+      return '…';
+
     default:
       return '';
   }
@@ -82,13 +92,19 @@ function createCard(id, title, iconName, route, boatId) {
     navigate(route);
   };
 
-  const useBitmapImage = id === 'boat' || id === 'service' || id === 'haulout' || id === 'engines' || id === 'navigation' || id === 'safety' || id === 'log' || id === 'links' || id === 'watermaker' || id === 'sails-rigging';
+  const useBitmapImage = id === 'boat' || id === 'service' || id === 'haulout' || id === 'engines' || id === 'navigation' || id === 'safety' || id === 'log' || id === 'links' || id === 'watermaker' || id === 'sails-rigging' || id === 'mayday';
   const badgeClass = useBitmapImage
     ? 'dashboard-card-icon-badge dashboard-card-icon-bitmap'
     : 'dashboard-card-icon-badge';
 
   let iconHtml;
-  if (id === 'sails-rigging') {
+  if (id === 'mayday') {
+    iconHtml = `<img src="${maydayIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
+  } else if (id === 'fuel') {
+    iconHtml = renderIcon('fuel');
+  } else if (id === 'electrical') {
+    iconHtml = renderIcon('battery');
+  } else if (id === 'sails-rigging') {
     iconHtml = `<img src="${sailsRiggingIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else if (id === 'boat') {
     // Always use the generic boat artwork so the card matches the home screen.
@@ -113,6 +129,7 @@ function createCard(id, title, iconName, route, boatId) {
     iconHtml = renderIcon(iconName);
   }
 
+  card.setAttribute('data-card-id', id);
   card.innerHTML = `
     <div class="${badgeClass}">${iconHtml}</div>
     <div class="dashboard-card-title">${title}</div>
@@ -187,6 +204,9 @@ function render() {
     ...(currentBoat.watermaker_installed
       ? [{ id: 'watermaker', title: 'Watermaker Service', icon: 'droplet', route: `/boat/${currentBoatId}/watermaker` }]
       : []),
+    { id: 'fuel', title: 'Fuel & Performance', icon: 'fuel', route: `/boat/${currentBoatId}/fuel` },
+    { id: 'electrical', title: 'Electrical & Batteries', icon: 'battery', route: `/boat/${currentBoatId}/electrical` },
+    { id: 'mayday', title: 'Mayday / Distress Call', icon: 'mayday', route: `/boat/${currentBoatId}/mayday` },
     { id: 'haulout', title: 'Haul-Out Maintenance', icon: 'wrench', route: `/boat/${currentBoatId}/haulout` },
     ...(currentBoat.boat_type === 'sailing'
       ? [{ id: 'sails-rigging', title: 'Sails & Rigging', icon: 'sail', route: `/boat/${currentBoatId}/sails-rigging` }]
@@ -227,7 +247,10 @@ async function onMount() {
       getEquipment(boatId, 'navigation'),
       getEquipment(boatId, 'safety'),
       getLogbook(boatId),
-      getLinks(boatId)
+      getLinks(boatId),
+      getFuelLogs(boatId),
+      getBatteries(boatId),
+      getBoatElectrical(boatId)
     ]);
 
     const statusElements = document.querySelectorAll('.dashboard-card-status');
@@ -236,6 +259,9 @@ async function onMount() {
       'engines',
       'service',
       ...(currentBoat?.watermaker_installed ? ['watermaker'] : []),
+      'fuel',
+      'electrical',
+      'mayday',
       'haulout',
       ...(currentBoat?.boat_type === 'sailing' ? ['sails-rigging'] : []),
       'navigation',
@@ -248,6 +274,27 @@ async function onMount() {
         el.textContent = getStatusText(cardIds[index], boatId);
       }
     });
+
+    const fuelCardStatus = document.querySelector('.dashboard-card[data-card-id="fuel"] .dashboard-card-status');
+    const electricalCardStatus = document.querySelector('.dashboard-card[data-card-id="electrical"] .dashboard-card-status');
+    if (fuelCardStatus) {
+      const logs = await getFuelLogs(boatId);
+      fuelCardStatus.textContent = logs.length > 0
+        ? new Date(logs[0].log_date).toLocaleDateString()
+        : 'No entries';
+    }
+    if (electricalCardStatus) {
+      const batteries = await getBatteries(boatId);
+      const hasElectrical = await getBoatElectrical(boatId);
+      electricalCardStatus.textContent = batteries.length > 0
+        ? `${batteries.length} batter${batteries.length !== 1 ? 'ies' : 'y'}`
+        : 'Not set';
+    }
+    const maydayCardStatus = document.querySelector('.dashboard-card[data-card-id="mayday"] .dashboard-card-status');
+    if (maydayCardStatus) {
+      const distressInfo = await getBoatDistressInfo(boatId);
+      maydayCardStatus.textContent = distressInfo ? 'Ready' : 'Not set';
+    }
   }
 }
 

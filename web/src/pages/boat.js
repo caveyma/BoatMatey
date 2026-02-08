@@ -82,6 +82,42 @@ function render(params = {}) {
       <input type="number" id="draft" name="draft" step="0.1" value="${currentBoat?.draft || ''}">
     </div>
 
+    <div class="card">
+      <h3>Registration & Compliance</h3>
+      <div class="form-group">
+        <label for="home_port">Home Port</label>
+        <input type="text" id="home_port" name="home_port" value="${(currentBoat?.home_port ?? '').replace(/"/g, '&quot;')}">
+      </div>
+      <div class="form-group">
+        <label for="registration_number">Registration Number (Part 1 / Official No)</label>
+        <input type="text" id="registration_number" name="registration_number" value="${(currentBoat?.registration_number ?? '').replace(/"/g, '&quot;')}">
+      </div>
+      <div class="form-group">
+        <label for="ssr_number">SSR Number</label>
+        <input type="text" id="ssr_number" name="ssr_number" value="${(currentBoat?.ssr_number ?? '').replace(/"/g, '&quot;')}">
+      </div>
+      <div class="form-group">
+        <label for="vhf_callsign">VHF Callsign</label>
+        <input type="text" id="vhf_callsign" name="vhf_callsign" value="${(currentBoat?.vhf_callsign ?? '').replace(/"/g, '&quot;')}">
+      </div>
+      <div class="form-group">
+        <label for="vhf_mmsi">VHF MMSI</label>
+        <input type="text" id="vhf_mmsi" name="vhf_mmsi" value="${(currentBoat?.vhf_mmsi ?? '').replace(/"/g, '&quot;')}">
+      </div>
+      <div class="form-group">
+        <label for="last_survey_date">Last Survey Date</label>
+        <input type="date" id="last_survey_date" name="last_survey_date" value="${currentBoat?.last_survey_date || ''}">
+      </div>
+      <div class="form-group">
+        <label for="last_surveyor">Last Surveyor</label>
+        <input type="text" id="last_surveyor" name="last_surveyor" value="${(currentBoat?.last_surveyor ?? '').replace(/"/g, '&quot;')}">
+      </div>
+      <div class="form-group">
+        <label for="last_survey_notes">Last Survey Notes</label>
+        <textarea id="last_survey_notes" name="last_survey_notes" rows="3">${(currentBoat?.last_survey_notes ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
+      </div>
+    </div>
+
     <div class="form-group">
       <label for="fuel_type">Fuel Type</label>
       <select id="fuel_type" name="fuel_type">
@@ -163,6 +199,16 @@ async function onMount(params = {}) {
       if (remoteBoat) {
         currentBoat = { ...(boatsStorage.get(boatId) || {}), ...remoteBoat };
         boatsStorage.save({ id: boatId, ...currentBoat });
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
+        set('home_port', currentBoat.home_port);
+        set('registration_number', currentBoat.registration_number);
+        set('ssr_number', currentBoat.ssr_number);
+        set('vhf_callsign', currentBoat.vhf_callsign);
+        set('vhf_mmsi', currentBoat.vhf_mmsi);
+        set('last_survey_date', currentBoat.last_survey_date);
+        set('last_surveyor', currentBoat.last_surveyor);
+        const notesEl = document.getElementById('last_survey_notes');
+        if (notesEl) notesEl.value = currentBoat.last_survey_notes ?? '';
       } else {
         currentBoat = boatsStorage.get(boatId);
       }
@@ -345,6 +391,14 @@ function saveBoat() {
     watermaker_installed: formData.get('watermaker_installed') === 'on',
     home_marina: formData.get('home_marina'),
     registration_no: formData.get('registration_no'),
+    registration_number: formData.get('registration_number') || null,
+    ssr_number: formData.get('ssr_number') || null,
+    vhf_callsign: formData.get('vhf_callsign') || null,
+    vhf_mmsi: formData.get('vhf_mmsi') || null,
+    last_survey_date: formData.get('last_survey_date') || null,
+    last_surveyor: formData.get('last_surveyor') || null,
+    last_survey_notes: formData.get('last_survey_notes') || null,
+    home_port: formData.get('home_port') || null,
     insurance_provider: formData.get('insurance_provider'),
     insurance_policy_no: formData.get('insurance_policy_no'),
     purchase_date: formData.get('purchase_date') || null,

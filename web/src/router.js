@@ -23,7 +23,10 @@ const PAGE_COLOR_CLASSES = [
   'page-color-account',
   'page-color-guide',
   'page-color-sails-rigging',
-  'page-color-watermaker'
+  'page-color-watermaker',
+  'page-color-fuel',
+  'page-color-electrical',
+  'page-color-mayday'
 ];
 
 function applyPageColor(path) {
@@ -43,6 +46,9 @@ function applyPageColor(path) {
   else if (path.includes('/guide')) key = 'guide';
   else if (path.includes('/sails-rigging')) key = 'sails-rigging';
   else if (path.includes('/watermaker')) key = 'watermaker';
+  else if (path.includes('/fuel')) key = 'fuel';
+  else if (path.includes('/electrical')) key = 'electrical';
+  else if (path.includes('/mayday')) key = 'mayday';
 
   if (key) document.body.classList.add(`page-color-${key}`);
 }
