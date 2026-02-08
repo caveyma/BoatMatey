@@ -768,6 +768,29 @@
   border-radius: var(--radius);
   min-height: 120px;
 }
+.script-text-readout {
+  font-size: 1.1rem;
+  line-height: 1.6;
+  padding: var(--spacing-lg);
+}
+.script-line {
+  display: block;
+  margin-bottom: 0.35em;
+}
+.script-line-num {
+  display: inline-block;
+  min-width: 2em;
+  font-weight: 600;
+  color: var(--card-color, var(--bm-teal));
+}
+.script-instruction {
+  font-size: var(--font-size-base);
+  margin-bottom: var(--spacing-md);
+  color: var(--bm-text);
+}
+.script-actions {
+  margin-top: var(--spacing-md);
+}
 .script-reminder {
   font-size: var(--font-size-sm);
   color: var(--bm-muted);

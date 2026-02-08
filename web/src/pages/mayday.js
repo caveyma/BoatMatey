@@ -9,6 +9,12 @@ import { createYachtHeader, createBackButton } from '../components/header.js';
 import { getBoat, getBoatDistressInfo, upsertBoatDistressInfo, isBoatArchived } from '../lib/dataService.js';
 import { getVesselNamePhonetic, getCallsignPhonetic } from '../lib/phonetic.js';
 
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 const DISTRESS_NATURES = [
   { value: 'sinking', label: 'Sinking' },
   { value: 'fire', label: 'Fire' },
@@ -47,9 +53,9 @@ function buildScript(type, info, boatName, positionText, natureText, incidentNot
   const lines = [];
   const preamble = getScriptPreamble(type);
   lines.push(preamble);
-  lines.push(`This is ${info.vesselName} ${info.vesselName} ${info.vesselName}.`);
+  lines.push(`This is ${info.vesselName}, ${info.vesselName}, ${info.vesselName}.`);
   if (info.vesselPhonetic) {
-    lines.push(`Spelling: ${info.vesselPhonetic}`);
+    lines.push(`Spelling: ${info.vesselPhonetic}.`);
   }
   if (info.callsign) {
     lines.push(`Callsign: ${info.callsign}${info.callsignPhonetic ? ` – ${info.callsignPhonetic}` : ''}.`);
@@ -69,12 +75,12 @@ function buildScript(type, info, boatName, positionText, natureText, incidentNot
   const extras = [];
   if (info.vesselDesc) extras.push(info.vesselDesc);
   if (info.equipmentDesc) extras.push(info.equipmentDesc);
-  if (extras.length) lines.push(extras.join(' '));
+  if (extras.length) lines.push(extras.join('. '));
   if (incidentNotesText && incidentNotesText.trim()) {
     lines.push(incidentNotesText.trim());
   }
   lines.push('Over.');
-  return lines.filter(Boolean).join('\n');
+  return lines.filter(Boolean);
 }
 
 function getDistressInfoForScript(d) {
@@ -121,6 +127,42 @@ function render(params = {}) {
 
   container.innerHTML = `
     <p class="text-muted mayday-disclaimer">In an emergency, follow official coastguard guidance. This tool helps you read a clear message.</p>
+
+    <div class="card mayday-readout-card" id="mayday-script-card" style="display: none;">
+      <h3>Read this out</h3>
+      <p class="script-instruction">Read each line slowly and clearly over VHF Channel 16. Say the full message three times.</p>
+      <div class="script-tabs">
+        <button type="button" class="script-tab active" data-script="mayday">MAYDAY</button>
+        <button type="button" class="script-tab" data-script="panpan">PAN-PAN</button>
+        <button type="button" class="script-tab" data-script="securite">SÉCURITÉ</button>
+      </div>
+      <div class="script-content">
+        <pre id="mayday-script-text" class="script-text script-text-readout"></pre>
+      </div>
+      <div class="form-actions script-actions">
+        <button type="button" class="btn-primary" id="mayday-copy-btn-top">Copy script</button>
+      </div>
+    </div>
+
+    <div class="card" id="mayday-incident-card">
+      <h3>At the moment (for this incident)</h3>
+      <p class="text-muted">Fill in position and nature below — the script above updates as you type. Then read it out or copy it.</p>
+      <div class="form-group">
+        <label for="mayday_incident_position">Position</label>
+        <input type="text" id="mayday_incident_position" placeholder="e.g. 50°45.2N 001°12.4W or 2 nm SW of Needles">
+      </div>
+      <div class="form-group">
+        <label for="mayday_incident_nature">Nature of distress</label>
+        <select id="mayday_incident_nature">
+          <option value="">— Select —</option>
+          ${DISTRESS_NATURES.map((n) => `<option value="${n.value}">${n.label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="mayday_incident_notes">Immediate notes</label>
+        <textarea id="mayday_incident_notes" rows="2" placeholder="e.g. taking water, need pump"></textarea>
+      </div>
+    </div>
 
     <div class="card" id="mayday-setup-card">
       <h3>Vessel &amp; emergency details</h3>
@@ -230,42 +272,6 @@ function render(params = {}) {
         </div>
       </form>
     </div>
-
-    <div class="card" id="mayday-script-card" style="display: none;">
-      <h3>Quick script</h3>
-      <div class="script-tabs">
-        <button type="button" class="script-tab active" data-script="mayday">MAYDAY</button>
-        <button type="button" class="script-tab" data-script="panpan">PAN-PAN</button>
-        <button type="button" class="script-tab" data-script="securite">SÉCURITÉ</button>
-      </div>
-      <div class="script-content">
-        <pre id="mayday-script-text" class="script-text"></pre>
-      </div>
-      <p class="script-reminder">Say the message 3 times. Stay on channel 16 unless instructed otherwise.</p>
-    </div>
-
-    <div class="card" id="mayday-incident-card">
-      <h3>At the moment (for this incident)</h3>
-      <p class="text-muted">Fill in now; not saved unless you save vessel details above with the same text.</p>
-      <div class="form-group">
-        <label for="mayday_incident_position">Position</label>
-        <input type="text" id="mayday_incident_position" placeholder="e.g. 50°45.2N 001°12.4W or 2 nm SW of Needles">
-      </div>
-      <div class="form-group">
-        <label for="mayday_incident_nature">Nature of distress</label>
-        <select id="mayday_incident_nature">
-          <option value="">— Select —</option>
-          ${DISTRESS_NATURES.map((n) => `<option value="${n.value}">${n.label}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group">
-        <label for="mayday_incident_notes">Immediate notes</label>
-        <textarea id="mayday_incident_notes" rows="2" placeholder="e.g. taking water, need pump"></textarea>
-      </div>
-      <div class="form-actions">
-        <button type="button" class="btn-primary" id="mayday-copy-btn">Copy MAYDAY script</button>
-      </div>
-    </div>
   `;
 
   pageContent.appendChild(container);
@@ -325,8 +331,9 @@ function updateScriptDisplay(scriptType) {
   const natureVal = natureEl ? natureEl.value : incidentNature;
   const natureText = getNatureLabel(natureVal);
   const notesText = notesEl ? notesEl.value : incidentNotes;
-  const text = buildScript(scriptType, info, boat?.boat_name, positionText, natureText, notesText);
-  pre.textContent = text;
+  const lines = buildScript(scriptType, info, boat?.boat_name, positionText, natureText, notesText);
+  // Numbered lines so someone can read out one line at a time
+  pre.innerHTML = lines.map((line, i) => `<span class="script-line"><span class="script-line-num">${i + 1}.</span> ${escapeHtml(line)}</span>`).join('\n');
 }
 
 function setActiveTab(scriptType) {
@@ -403,9 +410,10 @@ function copyMaydayScript() {
   const positionText = positionEl ? positionEl.value : '';
   const natureText = getNatureLabel(natureEl ? natureEl.value : '');
   const notesText = notesEl ? notesEl.value : '';
-  const text = buildScript(scriptType, info, boat?.boat_name, positionText, natureText, notesText);
+  const lines = buildScript(scriptType, info, boat?.boat_name, positionText, natureText, notesText);
+  const text = lines.join('\n');
   navigator.clipboard.writeText(text).then(() => {
-    const btn = document.getElementById('mayday-copy-btn');
+    const btn = document.getElementById('mayday-copy-btn-top');
     if (btn) {
       const orig = btn.textContent;
       btn.textContent = 'Copied!';
@@ -443,7 +451,7 @@ async function onMount(params = {}) {
   if (natureEl) natureEl.addEventListener('change', () => updateScriptDisplay(document.querySelector('.script-tab.active')?.getAttribute('data-script') || 'mayday'));
   if (notesEl) notesEl.addEventListener('input', () => updateScriptDisplay(document.querySelector('.script-tab.active')?.getAttribute('data-script') || 'mayday'));
 
-  const copyBtn = document.getElementById('mayday-copy-btn');
+  const copyBtn = document.getElementById('mayday-copy-btn-top');
   if (copyBtn) copyBtn.addEventListener('click', copyMaydayScript);
 
   window.navigate = navigate;

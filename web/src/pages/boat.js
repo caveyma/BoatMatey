@@ -149,7 +149,7 @@ function render(params = {}) {
     </div>
 
     <div class="form-group">
-      <label for="registration_no">Registration Number</label>
+      <label for="registration_no">Local Registration Number</label>
       <input type="text" id="registration_no" name="registration_no" value="${currentBoat?.registration_no || ''}">
     </div>
 
@@ -200,6 +200,14 @@ async function onMount(params = {}) {
         currentBoat = { ...(boatsStorage.get(boatId) || {}), ...remoteBoat };
         boatsStorage.save({ id: boatId, ...currentBoat });
         const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
+        set('boat_name', currentBoat.boat_name);
+        set('boat_type', currentBoat.boat_type);
+        set('make_model', currentBoat.make_model);
+        set('year', currentBoat.year);
+        set('hull_id', currentBoat.hull_id);
+        set('length', currentBoat.length);
+        set('beam', currentBoat.beam);
+        set('draft', currentBoat.draft);
         set('home_port', currentBoat.home_port);
         set('registration_number', currentBoat.registration_number);
         set('ssr_number', currentBoat.ssr_number);
@@ -209,6 +217,14 @@ async function onMount(params = {}) {
         set('last_surveyor', currentBoat.last_surveyor);
         const notesEl = document.getElementById('last_survey_notes');
         if (notesEl) notesEl.value = currentBoat.last_survey_notes ?? '';
+        set('fuel_type', currentBoat.fuel_type);
+        set('home_marina', currentBoat.home_marina);
+        set('registration_no', currentBoat.registration_no);
+        set('insurance_provider', currentBoat.insurance_provider);
+        set('insurance_policy_no', currentBoat.insurance_policy_no);
+        set('purchase_date', currentBoat.purchase_date);
+        const watermakerEl = document.getElementById('watermaker_installed');
+        if (watermakerEl) watermakerEl.checked = !!currentBoat.watermaker_installed;
       } else {
         currentBoat = boatsStorage.get(boatId);
       }

@@ -123,6 +123,12 @@ alter table public.boats add column if not exists last_survey_date date null;
 alter table public.boats add column if not exists last_surveyor text null;
 alter table public.boats add column if not exists last_survey_notes text null;
 alter table public.boats add column if not exists home_port text null;
+alter table public.boats add column if not exists fuel_type text null;
+alter table public.boats add column if not exists home_marina text null;
+alter table public.boats add column if not exists registration_no text null;
+alter table public.boats add column if not exists insurance_provider text null;
+alter table public.boats add column if not exists insurance_policy_no text null;
+alter table public.boats add column if not exists purchase_date date null;
 
 -- =============================================================================
 -- RLS: Enable and policies (user_id = auth.uid() and boat ownership)

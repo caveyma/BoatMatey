@@ -139,7 +139,13 @@ export async function getBoat(boatId) {
     last_survey_date: data.last_survey_date ?? null,
     last_surveyor: data.last_surveyor ?? null,
     last_survey_notes: data.last_survey_notes ?? null,
-    home_port: data.home_port ?? null
+    home_port: data.home_port ?? null,
+    fuel_type: data.fuel_type ?? null,
+    home_marina: data.home_marina ?? null,
+    registration_no: data.registration_no ?? null,
+    insurance_provider: data.insurance_provider ?? null,
+    insurance_policy_no: data.insurance_policy_no ?? null,
+    purchase_date: data.purchase_date ?? null
   };
 }
 
@@ -284,6 +290,24 @@ export async function updateBoat(boatId, payload) {
   }
   if (payload.home_port !== undefined) {
     updatePayload.home_port = payload.home_port || null;
+  }
+  if (payload.fuel_type !== undefined) {
+    updatePayload.fuel_type = payload.fuel_type || null;
+  }
+  if (payload.home_marina !== undefined) {
+    updatePayload.home_marina = payload.home_marina || null;
+  }
+  if (payload.registration_no !== undefined) {
+    updatePayload.registration_no = payload.registration_no || null;
+  }
+  if (payload.insurance_provider !== undefined) {
+    updatePayload.insurance_provider = payload.insurance_provider || null;
+  }
+  if (payload.insurance_policy_no !== undefined) {
+    updatePayload.insurance_policy_no = payload.insurance_policy_no || null;
+  }
+  if (payload.purchase_date !== undefined) {
+    updatePayload.purchase_date = payload.purchase_date || null;
   }
 
   let result = await supabase
