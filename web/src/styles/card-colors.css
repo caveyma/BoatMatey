@@ -1,26 +1,27 @@
 /**
  * Individual Card Colors
- * Subtle colors for each dashboard card
+ * Distinct colours for each dashboard card so no two look the same.
+ * Inner page uses the same colour via body.page-color-* and --page-bg.
  */
 
 :root {
-  /* Card Colors - Subtle and Premium */
-  --card-boat: #4F8FD6;        /* Blue */
-  --card-engines: #2FA8A8;     /* Teal */
-  --card-service: #E0A25A;     /* Amber */
-  --card-haulout: #C36BD6;     /* Violet - distinct from service */
-  --card-navigation: #8D80C8;  /* Lavender */
-  --card-safety: #EA7D7D;      /* Coral */
-  --card-log: #F2B24A;         /* Gold */
-  --card-links: #46BFBF;       /* Cyan */
-  --card-calendar: #A8C8E0;    /* Light pale blue – subtle, does not stand out */
-  --card-account: #93A6B7;     /* Slate */
-  --card-guide: #7F8C99;       /* Soft slate for help/guide */
-  --card-sails-rigging: #5A9B8E; /* Teal-green – distinct from boat blue */
-  --card-watermaker: #4CB3E5;    /* Fresh water blue */
+  /* Card colours – one clear hue per card */
+  --card-boat: #3B7BC2;         /* Blue */
+  --card-engines: #1A8B8B;      /* Teal */
+  --card-service: #D4943A;      /* Amber / orange */
+  --card-haulout: #A855C2;      /* Violet */
+  --card-navigation: #5C6BC0;   /* Indigo */
+  --card-safety: #E07A6A;       /* Coral / salmon */
+  --card-log: #C9A227;          /* Gold / mustard */
+  --card-links: #2D9D78;        /* Green */
+  --card-calendar: #6BA3D4;     /* Soft blue */
+  --card-account: #6B7C8D;      /* Slate */
+  --card-guide: #7A8895;        /* Grey */
+  --card-sails-rigging: #3E9278; /* Sea green */
+  --card-watermaker: #2B9DD1;   /* Sky / aqua blue */
 }
 
-/* Card color classes */
+/* Card color classes (dashboard tiles) */
 .card-color-boat { --card-color: var(--card-boat); }
 .card-color-engines { --card-color: var(--card-engines); }
 .card-color-service { --card-color: var(--card-service); }
@@ -35,8 +36,7 @@
 .card-color-sails-rigging { --card-color: var(--card-sails-rigging); }
 .card-color-watermaker { --card-color: var(--card-watermaker); }
 
-
-/* Inner page background colours (solid soft pastel) */
+/* Inner page background – same colour as the card (soft pastel tint) */
 body.page-color-boat { --page-bg: color-mix(in srgb, var(--card-boat) 30%, white); }
 body.page-color-engines { --page-bg: color-mix(in srgb, var(--card-engines) 30%, white); }
 body.page-color-service { --page-bg: color-mix(in srgb, var(--card-service) 30%, white); }
@@ -50,3 +50,8 @@ body.page-color-account { --page-bg: color-mix(in srgb, var(--card-account) 30%,
 body.page-color-guide { --page-bg: color-mix(in srgb, var(--card-guide) 30%, white); }
 body.page-color-sails-rigging { --page-bg: color-mix(in srgb, var(--card-sails-rigging) 30%, white); }
 body.page-color-watermaker { --page-bg: color-mix(in srgb, var(--card-watermaker) 30%, white); }
+
+/* When viewing a card’s page, use the same colour for the whole page background */
+body[class*="page-color-"] {
+  background: var(--page-bg);
+}

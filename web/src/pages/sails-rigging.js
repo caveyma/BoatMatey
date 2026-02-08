@@ -43,6 +43,7 @@ function render(params = {}) {
   form.className = 'form-container';
   form.id = 'sails-rigging-form';
   form.innerHTML = `
+    <p class="text-muted" style="margin-bottom: 1rem;">To record a service for sails and rigging, use the <strong>Service</strong> card and choose &quot;N/A – Sails &amp; Rigging&quot; as the engine.</p>
     <div class="form-group">
       <label for="mainsail_details">Mainsail</label>
       <textarea id="mainsail_details" name="mainsail_details" rows="3" placeholder="Make, size, condition, reefing, battens, sail cover..."></textarea>
