@@ -255,6 +255,18 @@
   background: color-mix(in srgb, var(--card-calendar) 26%, #ffffff);
 }
 
+.page-content.card-color-fuel .card {
+  background: color-mix(in srgb, var(--card-fuel) 26%, #ffffff);
+}
+
+.page-content.card-color-electrical .card {
+  background: color-mix(in srgb, var(--card-electrical) 26%, #ffffff);
+}
+
+.page-content.card-color-mayday .card {
+  background: color-mix(in srgb, var(--card-mayday) 26%, #ffffff);
+}
+
 /* Web Links: clickable cards, no overflow */
 .link-card {
   cursor: pointer;
