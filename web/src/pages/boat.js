@@ -197,7 +197,15 @@ async function onMount(params = {}) {
     try {
       const remoteBoat = await getBoatFromApi(boatId);
       if (remoteBoat) {
-        currentBoat = { ...(boatsStorage.get(boatId) || {}), ...remoteBoat };
+        const local = boatsStorage.get(boatId) || {};
+        currentBoat = { ...local, ...remoteBoat };
+        // Keep local values for detail fields when remote has none (e.g. sync failed or migration not run)
+        const detailKeys = ['fuel_type', 'home_marina', 'registration_no', 'insurance_provider', 'insurance_policy_no', 'purchase_date'];
+        detailKeys.forEach((k) => {
+          const r = currentBoat[k];
+          const l = local[k];
+          if ((r == null || r === '') && (l != null && l !== '')) currentBoat[k] = l;
+        });
         boatsStorage.save({ id: boatId, ...currentBoat });
         const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v ?? ''; };
         set('boat_name', currentBoat.boat_name);
@@ -390,7 +398,7 @@ function loadAttachments() {
   });
 }
 
-function saveBoat() {
+async function saveBoat() {
   const form = document.querySelector('form');
   const formData = new FormData(form);
   
@@ -429,11 +437,18 @@ function saveBoat() {
 
   boatsStorage.save({ id: currentBoatId, ...boat });
 
-  // Persist to Supabase in the background when available
-  updateBoatApi(currentBoatId, { ...boat, boat_type: boat.boat_type }).finally(() => {
-    alert('Boat details saved!');
-    navigate(`/boat/${currentBoatId}`);
-  });
+  // Persist to Supabase when available; only show "saved" if sync succeeded
+  try {
+    const syncError = await updateBoatApi(currentBoatId, { ...boat, boat_type: boat.boat_type });
+    if (syncError) {
+      alert('Saved on this device, but could not sync to cloud. If Fuel type, Home marina, etc. stay blank after reopening, run the database migration that adds those columns to the boats table.');
+    } else {
+      alert('Boat details saved!');
+    }
+  } catch (e) {
+    alert('Saved on this device. Cloud sync failed — check your connection.');
+  }
+  navigate(`/boat/${currentBoatId}`);
 }
 
 

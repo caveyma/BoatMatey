@@ -315,8 +315,9 @@ export async function updateBoat(boatId, payload) {
     .update(updatePayload)
     .eq('id', boatId);
 
-  // If update fails (e.g. 400 from missing watermaker columns), retry without watermaker fields
-  // so boat name, type, etc. still save when migration boat_watermaker.sql has not been run.
+  // If update fails (e.g. 400 from missing columns), retry without optional column groups
+  // so boat name, type, etc. still save when migrations have not been run.
+  const detailColumns = ['fuel_type', 'home_marina', 'registration_no', 'insurance_provider', 'insurance_policy_no', 'purchase_date'];
   if (result.error) {
     const hasWatermaker = updatePayload.watermaker_installed !== undefined || updatePayload.watermaker_data !== undefined;
     if (hasWatermaker) {
@@ -327,9 +328,21 @@ export async function updateBoat(boatId, payload) {
         .eq('id', boatId);
     }
     if (result.error) {
+      const hasDetailCols = detailColumns.some((k) => updatePayload[k] !== undefined);
+      if (hasDetailCols) {
+        const withoutDetails = { ...updatePayload };
+        detailColumns.forEach((k) => delete withoutDetails[k]);
+        result = await supabase
+          .from('boats')
+          .update(withoutDetails)
+          .eq('id', boatId);
+      }
+    }
+    if (result.error) {
       console.error('updateBoat error:', result.error);
     }
   }
+  return result.error ? { error: result.error } : null;
 }
 
 /**

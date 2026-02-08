@@ -279,9 +279,10 @@ function render(params = {}) {
   return wrapper;
 }
 
-function fillSetupForm(d, boatName) {
-  const vesselName = document.getElementById('mayday_vessel_name');
-  if (vesselName) vesselName.value = (d && d.vessel_name) || boatName || '';
+function fillSetupForm(d, boatData) {
+  const boatName = boatData?.boat_name || '';
+  const vesselNameEl = document.getElementById('mayday_vessel_name');
+  if (vesselNameEl) vesselNameEl.value = (d && d.vessel_name) || boatName || '';
   const set = (id, val) => {
     const el = document.getElementById(id);
     if (el) el.value = val ?? '';
@@ -292,9 +293,9 @@ function fillSetupForm(d, boatName) {
   };
   if (d) {
     set('mayday_vessel_name_phonetic', d.vessel_name_phonetic);
-    set('mayday_callsign', d.callsign);
+    set('mayday_callsign', d.callsign ?? boatData?.vhf_callsign ?? '');
     set('mayday_callsign_phonetic', d.callsign_phonetic);
-    set('mayday_mmsi', d.mmsi);
+    set('mayday_mmsi', d.mmsi ?? boatData?.vhf_mmsi ?? '');
     set('mayday_persons_on_board', d.persons_on_board);
     set('mayday_skipper_name', d.skipper_name);
     set('mayday_skipper_mobile', d.skipper_mobile);
@@ -309,10 +310,40 @@ function fillSetupForm(d, boatName) {
     set('mayday_epirb_hex_id', d.epirb_hex_id);
     setCheck('mayday_plb', d.plb);
     setCheck('mayday_ais', d.ais);
-    set('mayday_home_port', d.home_port);
+    set('mayday_home_port', d.home_port ?? boatData?.home_port ?? '');
     set('mayday_usual_area', d.usual_area);
     set('mayday_notes', d.notes);
+  } else {
+    set('mayday_callsign', boatData?.vhf_callsign ?? '');
+    set('mayday_mmsi', boatData?.vhf_mmsi ?? '');
+    set('mayday_home_port', boatData?.home_port ?? '');
   }
+}
+
+/** Build a distress-info-shaped object from current form values (used when no saved data / 404). */
+function getInfoFromForm() {
+  const num = (id) => {
+    const v = document.getElementById(id)?.value;
+    return v === '' || v == null ? null : (id === 'mayday_persons_on_board' ? parseInt(v, 10) : parseFloat(v));
+  };
+  const str = (id) => document.getElementById(id)?.value?.trim() || null;
+  const chk = (id) => document.getElementById(id)?.checked ?? null;
+  return {
+    vessel_name: str('mayday_vessel_name') || '',
+    vessel_name_phonetic: str('mayday_vessel_name_phonetic'),
+    callsign: str('mayday_callsign'),
+    callsign_phonetic: str('mayday_callsign_phonetic'),
+    mmsi: str('mayday_mmsi'),
+    persons_on_board: num('mayday_persons_on_board'),
+    vessel_type: str('mayday_vessel_type'),
+    hull_colour: str('mayday_hull_colour'),
+    length_m: num('mayday_length_m'),
+    liferaft: chk('mayday_liferaft'),
+    epirb: chk('mayday_epirb'),
+    epirb_hex_id: str('mayday_epirb_hex_id'),
+    plb: chk('mayday_plb'),
+    ais: chk('mayday_ais')
+  };
 }
 
 function getNatureLabel(value) {
@@ -323,7 +354,8 @@ function getNatureLabel(value) {
 function updateScriptDisplay(scriptType) {
   const pre = document.getElementById('mayday-script-text');
   if (!pre) return;
-  const info = getDistressInfoForScript(distressInfo);
+  const dataSource = distressInfo || getInfoFromForm();
+  const info = getDistressInfoForScript(dataSource);
   const positionEl = document.getElementById('mayday_incident_position');
   const natureEl = document.getElementById('mayday_incident_nature');
   const notesEl = document.getElementById('mayday_incident_notes');
@@ -332,7 +364,6 @@ function updateScriptDisplay(scriptType) {
   const natureText = getNatureLabel(natureVal);
   const notesText = notesEl ? notesEl.value : incidentNotes;
   const lines = buildScript(scriptType, info, boat?.boat_name, positionText, natureText, notesText);
-  // Numbered lines so someone can read out one line at a time
   pre.innerHTML = lines.map((line, i) => `<span class="script-line"><span class="script-line-num">${i + 1}.</span> ${escapeHtml(line)}</span>`).join('\n');
 }
 
@@ -347,16 +378,11 @@ async function loadData() {
   if (!currentBoatId) return;
   boat = await getBoat(currentBoatId);
   distressInfo = await getBoatDistressInfo(currentBoatId);
-  const boatName = boat?.boat_name || '';
-  fillSetupForm(distressInfo, boatName);
+  fillSetupForm(distressInfo, boat);
 
   const scriptCard = document.getElementById('mayday-script-card');
-  if (scriptCard) {
-    scriptCard.style.display = distressInfo ? 'block' : 'none';
-  }
-  if (distressInfo) {
-    setActiveTab('mayday');
-  }
+  if (scriptCard) scriptCard.style.display = 'block';
+  setActiveTab('mayday');
 }
 
 async function saveSetup(e) {
@@ -397,13 +423,17 @@ async function saveSetup(e) {
     updateScriptDisplay(document.querySelector('.script-tab.active')?.getAttribute('data-script') || 'mayday');
   } else if (result?.error === 'vessel_name_required') {
     alert('Vessel name is required.');
+  } else if (!result || result.error) {
+    alert('Could not save to cloud. If the Mayday table is not set up in Supabase, run the migration (boat_distress_info). You can still use the script from the form and copy it.');
+    updateScriptDisplay(document.querySelector('.script-tab.active')?.getAttribute('data-script') || 'mayday');
   }
 }
 
 function copyMaydayScript() {
   const activeTab = document.querySelector('.script-tab.active');
   const scriptType = activeTab ? activeTab.getAttribute('data-script') : 'mayday';
-  const info = getDistressInfoForScript(distressInfo);
+  const dataSource = distressInfo || getInfoFromForm();
+  const info = getDistressInfoForScript(dataSource);
   const positionEl = document.getElementById('mayday_incident_position');
   const natureEl = document.getElementById('mayday_incident_nature');
   const notesEl = document.getElementById('mayday_incident_notes');
@@ -435,6 +465,8 @@ async function onMount(params = {}) {
   const form = document.getElementById('mayday-setup-form');
   if (form) {
     form.addEventListener('submit', (e) => saveSetup(e));
+    form.addEventListener('input', () => updateScriptDisplay(document.querySelector('.script-tab.active')?.getAttribute('data-script') || 'mayday'));
+    form.addEventListener('change', () => updateScriptDisplay(document.querySelector('.script-tab.active')?.getAttribute('data-script') || 'mayday'));
   }
 
   document.querySelectorAll('.script-tab').forEach((tab) => {
