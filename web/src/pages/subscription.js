@@ -184,6 +184,9 @@ function showMessage(text, isError = false, isSuccess = false) {
   }
   
   messageContainer.style.display = text ? 'block' : 'none';
+  if (text && messageContainer.scrollIntoView) {
+    messageContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
 }
 
 function setLoading(loading, buttonText = 'Processing...') {
@@ -294,8 +297,10 @@ async function onMount() {
   // Restore button
   if (restoreBtn) {
     restoreBtn.addEventListener('click', async () => {
+      const restoreLabel = restoreBtn.textContent;
       showMessage('');
       setLoading(true, 'Restoring...');
+      restoreBtn.textContent = 'Restoring...';
 
       try {
         const status = await restoreSubscription();
@@ -315,6 +320,7 @@ async function onMount() {
         showMessage('Failed to restore subscription. Please try again.', true);
       } finally {
         setLoading(false);
+        restoreBtn.textContent = restoreLabel;
       }
     });
   }

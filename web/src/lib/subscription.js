@@ -20,6 +20,7 @@ import { Capacitor } from '@capacitor/core';
 import { Purchases, LOG_LEVEL } from '@revenuecat/purchases-capacitor';
 import { supabase } from './supabaseClient.js';
 import { getSession } from './dataService.js';
+import { initRevenueCat } from '../services/revenuecat.js';
 
 // RevenueCat dashboard may use "BoatMatey Premium" (with space) - check your project's Entitlements
 const ENTITLEMENT_IDS = ['BoatMatey Premium', 'boatmatey_premium'];
@@ -277,6 +278,8 @@ export async function purchaseSubscription() {
   }
 }
 
+const RESTORE_TIMEOUT_MS = 20000;
+
 /**
  * Restore purchases (native).
  * Useful when reinstalling or switching devices.
@@ -289,7 +292,15 @@ export async function restoreSubscription() {
   }
 
   try {
-    await Purchases.restorePurchases();
+    // Ensure RevenueCat is configured (e.g. Android uses revenuecat.js at launch; may not be ready yet)
+    await initRevenueCat();
+
+    const restorePromise = Purchases.restorePurchases();
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Restore is taking longer than usual. Please check your connection and try again.')), RESTORE_TIMEOUT_MS);
+    });
+    await Promise.race([restorePromise, timeoutPromise]);
+
     const status = await refreshSubscriptionStatus();
     return { ...status, active: status.active, error: null };
   } catch (error) {

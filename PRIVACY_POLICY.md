@@ -1,6 +1,6 @@
 # BoatMatey Privacy Policy
 
-**Last updated:** 29 January 2025
+**Last updated:** 9 February 2025
 
 This Privacy Policy explains how **BoatMatey** ("**we**", "**us**", or "**our**") collects, uses, and shares information about you when you use our mobile and web applications and related services (the "**Services**"). BoatMatey is operated by **Donkey Labs**.
 
@@ -80,7 +80,11 @@ Where we transfer personal data outside Jersey, we will ensure appropriate safeg
 
 ## 6. Data Retention
 
-We retain your personal information only for as long as necessary to:
+You may delete your data at any time by deleting your account. Upon confirming account deletion, all data we hold for your account will be automatically and permanently deleted.
+
+**How to delete your account:** In the BoatMatey app or web app, open **Settings** (or **Account**), then use **Delete Account & Data**. You will be asked to confirm; once you confirm, your account and all associated data (including boats, logs, and any other information we hold) will be permanently deleted. This action cannot be undone. Note: Deleting your account does not cancel any active App Store or Google Play subscription; you must cancel the subscription separately in the relevant store.
+
+We also retain your personal information only for as long as necessary to:
 
 - Provide and maintain the Services;
 - Fulfil the purposes described in this Privacy Policy;

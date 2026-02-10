@@ -361,6 +361,9 @@ async function onMount() {
         } else if (!status.active && !status.error) {
           alert('No purchases to restore.');
         }
+      } catch (err) {
+        console.error('Restore error:', err);
+        alert(err?.message || 'Restore failed. Please try again.');
       } finally {
         restoreBtn.disabled = false;
         restoreBtn.textContent = originalLabel;
