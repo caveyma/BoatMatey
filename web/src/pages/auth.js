@@ -181,7 +181,7 @@ function render() {
   card.innerHTML = `
     <div class="text-center" style="margin-bottom: 1.5rem;">
       <div style="display:flex; justify-content:center; margin-bottom: 1rem;">
-        ${renderLogoFull(140)}
+        ${renderLogoFull(220)}
       </div>
       <h2 style="margin-bottom: 0.5rem;">Sign in to get started</h2>
       <p class="text-muted">Use your existing account to continue.</p>
@@ -196,25 +196,16 @@ function render() {
       
       <div class="form-group" style="margin-bottom: 1.25rem;">
         <label for="auth-password" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Password</label>
-        <input type="password" id="auth-password" required autocomplete="current-password" placeholder="••••••••"
-               style="width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+        <div style="position: relative;">
+          <input type="password" id="auth-password" required autocomplete="current-password" placeholder="••••••••"
+                 style="width: 100%; padding: 0.75rem 3.5rem 0.75rem 0.75rem; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; box-sizing: border-box;">
+          <button type="button" id="auth-password-toggle" aria-label="Show password" style="position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; padding: 0.25rem 0.5rem; font-size: 0.85rem; color: var(--color-text-light);">Show</button>
+        </div>
       </div>
 
       <button type="submit" class="btn-primary" id="signin-btn" style="width: 100%; padding: 0.875rem; font-size: 1rem; margin-bottom: 0.75rem;">
         Sign in
       </button>
-
-      <div id="oauth-buttons" style="display: none; margin-top: 1rem;">
-        <p class="text-muted" style="text-align: center; margin-bottom: 0.75rem; font-size: 0.9rem;">or sign in with</p>
-        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-          <button type="button" class="btn-secondary" id="google-signin-btn" style="width: 100%; padding: 0.75rem; font-size: 1rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
-            <span aria-hidden="true">G</span> Sign in with Google
-          </button>
-          <button type="button" class="btn-secondary" id="apple-signin-btn" style="width: 100%; padding: 0.75rem; font-size: 1rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
-            Sign in with Apple
-          </button>
-        </div>
-      </div>
 
       ${isNative ? `
         <button type="button" class="btn-secondary" id="create-account-btn" style="width: 100%; padding: 0.875rem; font-size: 1rem;">
@@ -309,57 +300,16 @@ async function onMount() {
   const forgotPasswordBtn = document.getElementById('forgot-password-btn');
   const applyPromoBtn = document.getElementById('apply-promo-btn');
   const backBtn = document.getElementById('back-btn');
-  const oauthButtons = document.getElementById('oauth-buttons');
-  const googleSigninBtn = document.getElementById('google-signin-btn');
-  const appleSigninBtn = document.getElementById('apple-signin-btn');
 
-  if (oauthButtons && supabase) {
-    oauthButtons.style.display = 'block';
-  }
-
-  async function handleOAuthSignIn(provider) {
-    if (!supabase) {
-      showMessage('Cloud sync is not configured.', true);
-      return;
-    }
-    const btn = provider === 'google' ? googleSigninBtn : appleSigninBtn;
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = provider === 'google' ? 'Opening Google…' : 'Opening Apple…';
-    }
-    try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: `${window.location.origin}${window.location.pathname}#/`
-        }
-      });
-      if (error) {
-        console.error(`${provider} sign-in error:`, error);
-        showMessage(error.message || `Unable to sign in with ${provider}.`, true);
-        return;
-      }
-      if (data?.url) {
-        window.location.href = data.url;
-        return;
-      }
-      showMessage(`Sign-in with ${provider} could not be started.`, true);
-    } catch (err) {
-      console.error(`${provider} OAuth error:`, err);
-      showMessage('Something went wrong. Please try again.', true);
-    } finally {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = provider === 'google' ? 'Sign in with Google' : 'Sign in with Apple';
-      }
-    }
-  }
-
-  if (googleSigninBtn) {
-    googleSigninBtn.addEventListener('click', () => handleOAuthSignIn('google'));
-  }
-  if (appleSigninBtn) {
-    appleSigninBtn.addEventListener('click', () => handleOAuthSignIn('apple'));
+  const passwordInput = document.getElementById('auth-password');
+  const passwordToggle = document.getElementById('auth-password-toggle');
+  if (passwordToggle && passwordInput) {
+    passwordToggle.addEventListener('click', () => {
+      const isPassword = passwordInput.type === 'password';
+      passwordInput.type = isPassword ? 'text' : 'password';
+      passwordToggle.textContent = isPassword ? 'Hide' : 'Show';
+      passwordToggle.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
+    });
   }
 
   // Sign In form submission

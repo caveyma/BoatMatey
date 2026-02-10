@@ -65,8 +65,14 @@ function render() {
         </div>
         <div>
           <label for="account-new-password" style="display: block; margin-bottom: 0.25rem; font-weight: 500;">Change password</label>
-          <input type="password" id="account-new-password" class="form-control" placeholder="New password" style="margin-bottom: 0.25rem;">
-          <input type="password" id="account-confirm-password" class="form-control" placeholder="Confirm new password" style="margin-bottom: 0.25rem;">
+          <div style="position: relative; margin-bottom: 0.25rem;">
+            <input type="password" id="account-new-password" class="form-control" placeholder="New password" style="width: 100%; padding-right: 3.5rem; box-sizing: border-box;">
+            <button type="button" class="password-toggle" data-for="account-new-password" aria-label="Show password" style="position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; padding: 0.25rem 0.5rem; font-size: 0.85rem; color: var(--color-text-light);">Show</button>
+          </div>
+          <div style="position: relative; margin-bottom: 0.25rem;">
+            <input type="password" id="account-confirm-password" class="form-control" placeholder="Confirm new password" style="width: 100%; padding-right: 3.5rem; box-sizing: border-box;">
+            <button type="button" class="password-toggle" data-for="account-confirm-password" aria-label="Show password" style="position: absolute; right: 0.5rem; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; padding: 0.25rem 0.5rem; font-size: 0.85rem; color: var(--color-text-light);">Show</button>
+          </div>
           <button type="button" class="btn-secondary" id="account-change-password-btn">Update password</button>
           <span id="account-password-message" class="text-muted" style="display: block; margin-top: 0.25rem; font-size: 0.9rem;"></span>
         </div>
@@ -264,6 +270,18 @@ async function onMount() {
       alert('You are using BoatMatey in local-only mode. Data is stored on this device only.');
     });
   }
+
+  document.querySelectorAll('.password-toggle').forEach((btn) => {
+    const inputId = btn.getAttribute('data-for');
+    const input = inputId ? document.getElementById(inputId) : null;
+    if (!input) return;
+    btn.addEventListener('click', () => {
+      const isPassword = input.type === 'password';
+      input.type = isPassword ? 'text' : 'password';
+      btn.textContent = isPassword ? 'Hide' : 'Show';
+      btn.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
+    });
+  });
 
   // Change email
   const changeEmailBtn = document.getElementById('account-change-email-btn');

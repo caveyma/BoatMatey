@@ -38,10 +38,10 @@ function render() {
   card.innerHTML = `
     <div class="text-center" style="margin-bottom: 1.25rem;">
       <div style="display:flex; justify-content:center; margin-bottom: 0.75rem;">
-        ${renderLogoFull(120)}
+        ${renderLogoFull(220)}
       </div>
       <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Choose Your Plan</h2>
-      <p class="text-muted" style="font-size: 0.95rem;">Start your free trial today</p>
+      <p class="text-muted" style="font-size: 0.95rem;">New subscribers get <strong>1 month free</strong>—no charge until your trial ends. Then £24.99/year.</p>
     </div>
 
     <div class="subscription-plan" style="
@@ -279,8 +279,18 @@ async function onMount() {
           showMessage('');
           console.log('[Subscription Page] User cancelled purchase');
         } else if (status.error) {
-          // Actual error occurred
-          showMessage(status.error, true);
+          const notConfigured = /must be configured|not configured/i.test(status.error);
+          const invalidKey = /invalid api key|credentials issue|code.*11/i.test(status.error);
+          let message = status.error;
+          if (notConfigured) {
+            const isSimulator = typeof navigator !== 'undefined' && /Simulator|iPhone Simulator/i.test(navigator.userAgent);
+            message = isSimulator
+              ? "In-app purchases aren't available in the Simulator. Run the app on a real device to subscribe."
+              : 'Subscriptions are not set up for this build. Please install the app from the App Store, or contact support if the problem continues.';
+          } else if (invalidKey) {
+            message = "Subscription setup error. Rebuild the app (npm run build, then sync and run in Xcode) so the correct key is included.";
+          }
+          showMessage(message, true);
         } else {
           // Unknown state
           showMessage('Purchase was not completed. Please try again.', true);

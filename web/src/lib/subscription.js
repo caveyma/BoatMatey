@@ -40,14 +40,19 @@ function getActiveEntitlement(customerInfo) {
 
 let initialized = false;
 
-// Internal cache of the current subscription state
-let subscriptionState = {
-  active: true,
-  // Keep previous behaviour for web: always-on, unlimited
-  plan: 'BoatMatey Yearly',
-  price: DISPLAY_PRICE,
-  expires_at: null
-};
+// Internal cache of the current subscription state.
+// Default active: true for web (no paywall). Native must not default to true or users
+// can get in without subscribing when RevenueCat isn't ready or throws.
+function getDefaultSubscriptionState() {
+  const isNative = Capacitor.isNativePlatform?.() ?? false;
+  return {
+    active: !isNative,
+    plan: isNative ? 'None' : 'BoatMatey Yearly',
+    price: DISPLAY_PRICE,
+    expires_at: null
+  };
+}
+let subscriptionState = getDefaultSubscriptionState();
 
 /**
  * Initialize RevenueCat on native platforms.
@@ -133,6 +138,16 @@ export async function refreshSubscriptionStatus() {
     return subscriptionState;
   }
 
+  // Native: assume no subscription until we get a positive result from RevenueCat or profile
+  subscriptionState = {
+    active: false,
+    plan: 'None',
+    price: DISPLAY_PRICE,
+    expires_at: null
+  };
+
+  await initRevenueCat();
+
   try {
     const { customerInfo } = await Purchases.getCustomerInfo();
     console.log('[Subscription] Raw customerInfo.entitlements:', JSON.stringify(customerInfo?.entitlements, null, 2));
@@ -189,6 +204,8 @@ export async function purchaseSubscription() {
   if (!isNative) {
     return { ...subscriptionState, cancelled: false, error: 'Web not supported' };
   }
+
+  await initRevenueCat();
 
   try {
     console.log('[Subscription] Getting offerings...');

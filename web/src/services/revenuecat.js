@@ -10,9 +10,6 @@
 import { Capacitor } from '@capacitor/core';
 import { Purchases, LOG_LEVEL } from '@revenuecat/purchases-capacitor';
 
-/** RevenueCat public API key for Android (Google Play). */
-const REVENUECAT_API_KEY_ANDROID = 'goog_hSXBDHatzzsPuTlxckgLtXZKGho';
-
 let configured = false;
 
 /**
@@ -30,15 +27,20 @@ export async function initRevenueCat() {
 
     const apiKey =
       platform === 'android'
-        ? REVENUECAT_API_KEY_ANDROID
+        ? (import.meta.env.VITE_REVENUECAT_API_KEY_ANDROID || null)
         : (import.meta.env.VITE_REVENUECAT_API_KEY_IOS || null);
 
     if (!apiKey) {
       if (platform === 'ios') {
         console.warn('[RevenueCat] iOS API key not set. Set VITE_REVENUECAT_API_KEY_IOS to enable.');
+      } else if (platform === 'android') {
+        console.warn('[RevenueCat] Android API key not set. Set VITE_REVENUECAT_API_KEY_ANDROID to enable.');
       }
       return;
     }
+
+    const keyPreview = apiKey.length >= 8 ? `${apiKey.slice(0, 8)}...${apiKey.slice(-4)}` : '(empty)';
+    console.log('[RevenueCat] Using API key', keyPreview, '(length', apiKey.length + ') – must match RevenueCat Dashboard → API keys → BoatMatey (App Store)');
 
     await Purchases.setLogLevel({ level: LOG_LEVEL.INFO });
     await Purchases.configure({

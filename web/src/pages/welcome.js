@@ -22,7 +22,7 @@ function render() {
 
   card.innerHTML = `
     <div style="margin-bottom: 2rem;">
-      ${renderLogoFull(160)}
+      ${renderLogoFull(220)}
     </div>
 
     <h1 style="font-size: 1.75rem; color: var(--color-text); margin-bottom: 0.75rem;">
