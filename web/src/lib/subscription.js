@@ -280,26 +280,22 @@ export async function purchaseSubscription() {
 /**
  * Restore purchases (native).
  * Useful when reinstalling or switching devices.
+ * Returns { active, error } so the UI can show success / "No purchases to restore" / error without alerts.
  */
 export async function restoreSubscription() {
   const isNative = Capacitor.isNativePlatform?.() ?? false;
   if (!isNative) {
-    alert('Restore purchases is only needed in the Android or iOS app.');
-    return subscriptionState;
+    return { ...subscriptionState, active: subscriptionState.active, error: 'Restore is only available in the app.' };
   }
 
   try {
     await Purchases.restorePurchases();
     const status = await refreshSubscriptionStatus();
-    alert(status.active ? 'Your subscription has been restored.' : 'No active subscription found.');
-    return status;
+    return { ...status, active: status.active, error: null };
   } catch (error) {
     console.error('[Subscription] Restore purchases failed:', error);
-    alert(
-      error?.message ||
-        'Something went wrong while restoring your purchases. Please try again later.'
-    );
-    return subscriptionState;
+    const message = error?.message || 'Something went wrong while restoring your purchases. Please try again later.';
+    return { ...subscriptionState, active: false, error: message };
   }
 }
 

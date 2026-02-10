@@ -12,6 +12,7 @@ import {
   restoreSubscription,
   refreshSubscriptionStatus
 } from '../lib/subscription.js';
+import { PRIVACY_URL, TERMS_URL, EULA_URL, openExternalUrl } from '../lib/constants.js';
 import { storage, boatStorage, boatsStorage, enginesStorage, serviceHistoryStorage, uploadsStorage } from '../lib/storage.js';
 import { getBoats, getEngines, getServiceEntries, getHaulouts, getEquipment, getLogbook, getLinks } from '../lib/dataService.js';
 import { supabase } from '../lib/supabaseClient.js';
@@ -123,11 +124,17 @@ function render() {
     </div>
 
     <div class="card">
-      <h3>Actions</h3>
+      <h3>Legal</h3>
       <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-        <a href="https://boatmatey.com/privacy.html" target="_blank" rel="noopener" class="btn-link" style="width: 100%; text-align: left; text-decoration: none; color: inherit;">
+        <button type="button" class="btn-link account-legal-link" data-url="${PRIVACY_URL}" style="width: 100%; text-align: left; text-decoration: none; color: inherit; background: none; border: none; cursor: pointer; padding: 0.25rem 0;">
           Privacy Policy
-        </a>
+        </button>
+        <button type="button" class="btn-link account-legal-link" data-url="${TERMS_URL}" style="width: 100%; text-align: left; text-decoration: none; color: inherit; background: none; border: none; cursor: pointer; padding: 0.25rem 0;">
+          Terms of Use
+        </button>
+        <button type="button" class="btn-link account-legal-link" data-url="${EULA_URL}" style="width: 100%; text-align: left; text-decoration: none; color: inherit; background: none; border: none; cursor: pointer; padding: 0.25rem 0;">
+          Apple Standard EULA
+        </button>
       </div>
     </div>
 
@@ -345,15 +352,29 @@ async function onMount() {
       restoreBtn.textContent = 'Restoring...';
 
       try {
-        await restoreSubscription();
-        // Reload subscription state
-        navigate('/account');
+        const status = await restoreSubscription();
+        if (status.active) {
+          await refreshSubscriptionStatus();
+          navigate('/account');
+        } else if (status.error && !status.error.includes('Restore is only available')) {
+          alert(status.error);
+        } else if (!status.active && !status.error) {
+          alert('No purchases to restore.');
+        }
       } finally {
         restoreBtn.disabled = false;
         restoreBtn.textContent = originalLabel;
       }
     });
   }
+
+  // Legal links (Settings) – open in system browser / new tab
+  document.querySelectorAll('.account-legal-link').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const url = btn.getAttribute('data-url');
+      if (url) openExternalUrl(url);
+    });
+  });
 
   // Manage subscription - opens native store subscription management
   const manageSubBtn = document.getElementById('manage-subscription-btn');

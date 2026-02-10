@@ -20,6 +20,7 @@ import {
 import { hasPendingSignup, getPendingSignupEmail, completeAccountCreation } from './auth.js';
 import { logInWithAppUserId } from '../services/revenuecat.js';
 import { Capacitor } from '@capacitor/core';
+import { PRIVACY_URL, TERMS_URL, EULA_URL, openExternalUrl } from '../lib/constants.js';
 
 function render() {
   const wrapper = document.createElement('div');
@@ -103,17 +104,34 @@ function render() {
       </button>
       
       <button type="button" class="btn-secondary" id="restore-btn" style="width: 100%; padding: 0.75rem; margin-bottom: 0.75rem;">
-        Restore Purchase
+        Restore Purchases
       </button>
 
       <button type="button" class="btn-secondary" id="check-status-btn" style="width: 100%; padding: 0.75rem; margin-bottom: 0.75rem; background: #f0f8ff; border-color: var(--bm-teal); color: var(--bm-teal);">
         ✓ Check Purchase Status
       </button>
 
+      <p class="text-muted" style="font-size: 0.75rem; margin: 0.5rem 0 0.25rem; line-height: 1.3;">By subscribing you agree to our:</p>
+      <div class="paywall-legal-links" style="display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; margin-bottom: 0.5rem; font-size: 0.8rem;">
+        <button type="button" class="btn-link legal-link" data-url="${PRIVACY_URL}" style="padding: 0.25rem 0; font-size: inherit; color: var(--bm-teal); text-decoration: underline; background: none; border: none; cursor: pointer;">Privacy Policy</button>
+        <span style="color: var(--color-text-light);">·</span>
+        <button type="button" class="btn-link legal-link" data-url="${TERMS_URL}" style="padding: 0.25rem 0; font-size: inherit; color: var(--bm-teal); text-decoration: underline; background: none; border: none; cursor: pointer;">Terms of Use</button>
+        <span style="color: var(--color-text-light);">·</span>
+        <button type="button" class="btn-link legal-link" data-url="${EULA_URL}" style="padding: 0.25rem 0; font-size: inherit; color: var(--bm-teal); text-decoration: underline; background: none; border: none; cursor: pointer;">Apple EULA</button>
+      </div>
+
       <button type="button" class="btn-link page-body-back-btn" id="cancel-btn" style="width: 100%; padding: 0.75rem; color: var(--color-text-light); font-size: 0.8rem;">
         Back
       </button>
     ` : `
+      <p class="text-muted" style="font-size: 0.75rem; margin: 0.5rem 0 0.25rem;">By subscribing you agree to our:</p>
+      <div class="paywall-legal-links" style="display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; margin-bottom: 0.75rem; font-size: 0.8rem;">
+        <button type="button" class="btn-link legal-link" data-url="${PRIVACY_URL}" style="padding: 0.25rem 0; font-size: inherit; color: var(--bm-teal); text-decoration: underline; background: none; border: none; cursor: pointer;">Privacy Policy</button>
+        <span style="color: var(--color-text-light);">·</span>
+        <button type="button" class="btn-link legal-link" data-url="${TERMS_URL}" style="padding: 0.25rem 0; font-size: inherit; color: var(--bm-teal); text-decoration: underline; background: none; border: none; cursor: pointer;">Terms of Use</button>
+        <span style="color: var(--color-text-light);">·</span>
+        <button type="button" class="btn-link legal-link" data-url="${EULA_URL}" style="padding: 0.25rem 0; font-size: inherit; color: var(--bm-teal); text-decoration: underline; background: none; border: none; cursor: pointer;">Apple EULA</button>
+      </div>
       <div style="background: #f0f8ff; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
         <p style="margin: 0; color: #1e5a8e; font-size: 0.9rem; text-align: center;">
           <strong>Note:</strong> Subscriptions can only be purchased from the Android or iOS app.
@@ -284,11 +302,13 @@ async function onMount() {
         
         if (status.active) {
           showMessage('Subscription restored!', false, true);
-          
-          // Restored subscription - go to auth (user should sign in, not create new account)
           setTimeout(() => navigate('/auth'), 1000);
+        } else if (status.error && status.error.includes('Restore is only available')) {
+          showMessage(status.error, false);
+        } else if (status.error) {
+          showMessage(status.error || 'Failed to restore. Please try again.', true);
         } else {
-          showMessage('No active subscription found. Please subscribe to continue.', true);
+          showMessage('No purchases to restore.', false);
         }
       } catch (error) {
         console.error('Restore error:', error);
@@ -298,6 +318,14 @@ async function onMount() {
       }
     });
   }
+
+  // Legal links (paywall) – open in system browser / new tab
+  document.querySelectorAll('.paywall-legal-links .legal-link').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const url = btn.getAttribute('data-url');
+      if (url) openExternalUrl(url);
+    });
+  });
 
   // Check Status button - manually check if purchase went through
   if (checkStatusBtn) {
