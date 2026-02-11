@@ -12,6 +12,10 @@ import { Purchases, LOG_LEVEL } from '@revenuecat/purchases-capacitor';
 
 let configured = false;
 
+// Fallback Android API key so Android works when .env.local is missing (e.g. after clone on Windows).
+// Override with VITE_REVENUECAT_API_KEY_ANDROID in web/.env.local if you use a different project.
+const DEFAULT_ANDROID_API_KEY = 'goog_hSXBDHatzzsPuTlxckgLtXZKGho';
+
 /**
  * Initialize RevenueCat Purchases on native platforms.
  * Safe to call multiple times; no-ops after first successful configure.
@@ -27,7 +31,7 @@ export async function initRevenueCat() {
 
     const apiKey =
       platform === 'android'
-        ? (import.meta.env.VITE_REVENUECAT_API_KEY_ANDROID || null)
+        ? (import.meta.env.VITE_REVENUECAT_API_KEY_ANDROID || DEFAULT_ANDROID_API_KEY)
         : (import.meta.env.VITE_REVENUECAT_API_KEY_IOS || null);
 
     if (!apiKey) {
