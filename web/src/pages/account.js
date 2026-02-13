@@ -14,7 +14,7 @@ import {
 } from '../lib/subscription.js';
 import { PRIVACY_URL, TERMS_URL, EULA_URL, openExternalUrl } from '../lib/constants.js';
 import { storage, boatStorage, boatsStorage, enginesStorage, serviceHistoryStorage, uploadsStorage } from '../lib/storage.js';
-import { getBoats, getEngines, getServiceEntries, getHaulouts, getEquipment, getLogbook, getLinks } from '../lib/dataService.js';
+import { getBoats, getEngines, getServiceEntries, getHaulouts, getEquipment, getLogbook, getLinks, listAttachments } from '../lib/dataService.js';
 import { supabase } from '../lib/supabaseClient.js';
 import { getSession } from '../lib/dataService.js';
 import { Capacitor } from '@capacitor/core';
@@ -131,13 +131,13 @@ function render() {
       </button>
     </div>
 
-    <div class="card" id="account-delete-card" style="display: none;">
+    <div class="card" id="account-delete-card">
       <h3>Delete Account</h3>
       <p class="text-muted" style="font-size: 0.9rem;">
-        Permanently delete your BoatMatey cloud account and all data stored on our servers for this account.
+        Permanently delete your BoatMatey cloud account and all data stored on our servers for this account (GDPR: we do not keep any data after deletion).
         <br><br>
-        <strong>This will not cancel your App Store or Google Play subscription.</strong>
-        To stop future charges, you must also cancel the subscription in the store.
+        <strong>Deleting your account does not cancel your App Store or Google Play subscription.</strong>
+        To stop future charges, you must cancel the subscription in the store before or after deleting your account.
       </p>
       <button class="btn-link btn-danger" id="delete-account-btn" style="width: 100%; text-align: left; margin-top: 0.5rem;">
         Delete Account &amp; Data
@@ -393,23 +393,63 @@ async function onMount() {
   if (deleteAccountBtn && supabase) {
     deleteAccountBtn.addEventListener('click', async () => {
       const isNative = Capacitor.isNativePlatform?.() ?? false;
+      const platform = Capacitor.getPlatform?.() ?? '';
 
-      // Make sure we know which user we are deleting
       const session = await getSession();
       if (!session?.user?.id) {
         alert('You must be signed in to delete your BoatMatey account.');
         return;
       }
 
+      // Step 1: On native, warn that deleting the account does NOT cancel the subscription
+      if (isNative) {
+        const storeName = platform === 'ios' ? 'App Store' : 'Google Play';
+        const openStore = confirm(
+          'Before deleting your account:\n\n' +
+          'Deleting your account does NOT cancel your ' + storeName + ' subscription. You will still be charged until you cancel it.\n\n' +
+          'Cancel your subscription in ' + storeName + ' first, then come back here to delete your account.\n\n' +
+          'Do you want to open ' + storeName + ' subscription settings now?'
+        );
+        if (openStore) {
+          if (platform === 'ios') {
+            window.open('https://apps.apple.com/account/subscriptions', '_system');
+          } else if (platform === 'android') {
+            window.open('https://play.google.com/store/account/subscriptions', '_system');
+          }
+        }
+        const confirmedStep1 = confirm(
+          'Have you cancelled your subscription (or do you not have one)?\n\n' +
+          'Next: confirm that you want to permanently delete your BoatMatey account and all data.'
+        );
+        if (!confirmedStep1) return;
+      }
+
       const confirmed = confirm(
-        'Are you sure you want to permanently delete your BoatMatey cloud account and all data stored on our servers for this account?\n\n' +
-        'This will NOT cancel your App Store or Google Play subscription. You must cancel the subscription separately in the store.\n\n' +
+        'Are you sure you want to permanently delete your BoatMatey cloud account and all data stored on our servers?\n\n' +
         'This action cannot be undone.'
       );
       if (!confirmed) return;
 
       deleteAccountBtn.disabled = true;
       try {
+        // GDPR: delete all user files from Supabase storage before removing DB rows
+        if (supabase) {
+          const boats = await getBoats();
+          const bucket = 'boatmatey-attachments';
+          for (const boat of boats) {
+            const attachments = await listAttachments(boat.id);
+            for (const a of attachments) {
+              if (a.path) {
+                try {
+                  await supabase.storage.from(a.bucket || bucket).remove([a.path]);
+                } catch (e) {
+                  console.warn('Delete account: could not remove storage object', a.path, e);
+                }
+              }
+            }
+          }
+        }
+
         const { data, error } = await supabase.rpc('delete_user_self', {
           p_user_id: session.user.id
         });
@@ -427,19 +467,8 @@ async function onMount() {
           return;
         }
 
-        // Clear local data on this device as well
         storage.clear();
-
-        // Silent success: we've already confirmed once; now just return
-        // the user to the welcome screen so there is only one dialog
-        // to acknowledge for the whole delete flow.
-        if (isNative) {
-          navigate('/welcome');
-        } else {
-          navigate('/welcome');
-        }
-
-        // Full reload to clear any in-memory state/session
+        navigate('/welcome');
         window.location.reload();
       } catch (err) {
         console.error('Error deleting account:', err);
