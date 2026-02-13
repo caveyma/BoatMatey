@@ -39,21 +39,8 @@ function render() {
 
   const content = document.createElement('div');
   content.innerHTML = `
-    <div class="card" id="account-signin-card">
+    <div class="card" id="account-signin-details-card">
       <h3>BoatMatey Account</h3>
-      <p id="account-signin-message">Sign in to sync your boats and logs to the cloud, or continue using BoatMatey locally on this device.</p>
-      <div id="account-signin-actions" style="display:flex; flex-wrap:wrap; gap: 0.5rem; margin-top: 0.75rem;">
-        <button class="btn-primary" id="account-auth-btn">
-          ${renderIcon('user')} Sign in or create account
-        </button>
-        <button class="btn-secondary" id="account-local-btn">
-          Continue without account
-        </button>
-      </div>
-    </div>
-
-    <div class="card" id="account-signin-details-card" style="display: none;">
-      <h3>Sign-in details</h3>
       <p class="text-muted">Update your email or password. Email changes may require you to confirm the new address.</p>
       <p><strong>Current email:</strong> <span id="account-current-email"></span></p>
       <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem;">
@@ -118,14 +105,6 @@ function render() {
         <p><strong>Engines:</strong> <span id="account-usage-engines">${enginesStorage.getAll().length}</span></p>
         <p><strong>Service Entries:</strong> <span id="account-usage-service">${serviceHistoryStorage.getAll().length}</span></p>
         <p><strong>Uploads:</strong> <span id="account-usage-uploads">${uploadsStorage.count()}</span></p>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3>App Information</h3>
-      <div>
-        <p><strong>Version:</strong> 1.0.0</p>
-        <p><strong>Build:</strong> ${import.meta.env.MODE === 'development' ? 'Development' : 'Production'}</p>
       </div>
     </div>
 
@@ -229,47 +208,14 @@ async function onMount() {
     }
   });
 
-  // Show/hide sign-in details and first card based on session
+  // Set current email (user is always signed in when viewing Settings)
   (async () => {
     const session = await getSession();
-    const signinDetailsCard = document.getElementById('account-signin-details-card');
-    const signinMessage = document.getElementById('account-signin-message');
-    const signinActions = document.getElementById('account-signin-actions');
     const currentEmailEl = document.getElementById('account-current-email');
-    const signOutCard = document.getElementById('account-signout-card');
-    const signOutBtn = document.getElementById('sign-out-btn');
-    const deleteAccountBtn = document.getElementById('delete-account-btn');
-    const deleteAccountCard = document.getElementById('account-delete-card');
-    if (session?.user) {
-      if (signinDetailsCard) signinDetailsCard.style.display = 'block';
-      if (currentEmailEl) currentEmailEl.textContent = session.user.email ?? '';
-      if (signinMessage) signinMessage.textContent = `You are signed in as ${session.user.email ?? 'your account'}.`;
-      if (signinActions) signinActions.style.display = 'none';
-      if (signOutCard) signOutCard.style.display = '';
-      if (deleteAccountCard) deleteAccountCard.style.display = '';
-    } else {
-      if (signinDetailsCard) signinDetailsCard.style.display = 'none';
-      if (signinMessage) signinMessage.textContent = 'Sign in to sync your boats and logs to the cloud, or continue using BoatMatey locally on this device.';
-      if (signinActions) signinActions.style.display = 'flex';
-      if (signOutCard) signOutCard.style.display = 'none';
-      if (deleteAccountCard) deleteAccountCard.style.display = 'none';
+    if (currentEmailEl && session?.user?.email) {
+      currentEmailEl.textContent = session.user.email;
     }
   })();
-
-  // Auth buttons
-  const authBtn = document.getElementById('account-auth-btn');
-  if (authBtn) {
-    authBtn.addEventListener('click', () => {
-      navigate('/auth');
-    });
-  }
-
-  const localBtn = document.getElementById('account-local-btn');
-  if (localBtn) {
-    localBtn.addEventListener('click', () => {
-      alert('You are using BoatMatey in local-only mode. Data is stored on this device only.');
-    });
-  }
 
   document.querySelectorAll('.password-toggle').forEach((btn) => {
     const inputId = btn.getAttribute('data-for');

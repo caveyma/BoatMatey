@@ -308,10 +308,16 @@ create table if not exists public.webhook_logs (
 create index if not exists idx_webhook_logs_event_type on public.webhook_logs(event_type);
 create index if not exists idx_webhook_logs_created_at on public.webhook_logs(created_at);
 
--- RLS on webhook_logs - only service_role can access
+-- RLS on webhook_logs - only service_role can access (e.g. Edge Function)
 alter table public.webhook_logs enable row level security;
 
--- No policies = only service_role can access
+-- Explicit policy: no access for anon/authenticated; service_role bypasses RLS so can still insert/select
+create policy "webhook_logs_service_only"
+  on public.webhook_logs
+  for all
+  using (false)
+  with check (false);
+
 comment on table public.webhook_logs is 'Logs of RevenueCat webhook events for audit and debugging';
 
 -- View for admin to see subscription cancellations

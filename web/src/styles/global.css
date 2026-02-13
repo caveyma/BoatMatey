@@ -26,6 +26,7 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
+  min-height: 100dvh;
   position: relative;
   overflow: hidden;
 }
@@ -50,6 +51,7 @@ body::before {
 
 #app {
   min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
   position: relative;
   z-index: 1;
