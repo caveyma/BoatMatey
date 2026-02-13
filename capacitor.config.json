@@ -1,5 +1,8 @@
 {
   "appId": "com.boatmatey.app",
   "appName": "BoatMatey",
-  "webDir": "web/dist"
+  "webDir": "web/dist",
+  "android": {
+    "adjustMarginsForEdgeToEdge": "auto"
+  }
 }
