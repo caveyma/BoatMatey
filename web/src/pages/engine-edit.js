@@ -6,6 +6,7 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getEngines, createEngine, updateEngine } from '../lib/dataService.js';
 
 function render(params = {}) {
@@ -20,12 +21,12 @@ function render(params = {}) {
   }
 
   const wrapper = document.createElement('div');
-  const header = createYachtHeader(isNew ? 'Add Engine' : 'Edit Engine');
+  const header = createYachtHeader(isNew ? 'Add Engine' : 'Edit Engine', { showSettings: true });
   wrapper.appendChild(header);
 
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content card-color-engines';
-  pageContent.appendChild(createBackButton());
+  pageContent.appendChild(createBackButton(boatId ? `/boat/${boatId}/engines` : undefined));
   const container = document.createElement('div');
   container.className = 'container';
 
@@ -177,7 +178,9 @@ async function onMount(params = {}) {
   document.getElementById('engine-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (archived) return;
-
+    const form = e.target;
+    setSaveButtonLoading(form, true);
+    try {
     const get = (id) => (document.getElementById(id)?.value || '').trim();
     const engine = {
       id: engineId,
@@ -227,6 +230,9 @@ async function onMount(params = {}) {
       await createEngine(boatId, payload);
     }
     navigate(`/boat/${boatId}/engines`);
+    } finally {
+      setSaveButtonLoading(form, false);
+    }
   });
 }
 

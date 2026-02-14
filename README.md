@@ -14,12 +14,12 @@ A mobile-first boat maintenance and logbook management app with subscription-bas
 - **Calendar**: View all maintenance and service dates in calendar format
 - **Photo Attachments**: Upload and store photos for boats, equipment, and service records
 - **Cloud Sync**: Sync your data across all devices with Supabase
-- **Subscription**: £24.99/year with 1-month free trial for new subscribers
+- **Subscription**: £29.99/year with 1-month free trial for new subscribers
 
 ## Subscription Model
 
 BoatMatey requires an active subscription to access the app:
-- **Price**: £24.99/year including VAT
+- **Price**: £29.99/year including VAT
 - **Free Trial**: 1 month for new subscribers
 - **Platforms**: Google Play Store & Apple App Store
 - **GDPR Compliant**: No data stored until subscription is active
@@ -127,7 +127,7 @@ npx cap open ios
 
 BoatMatey requires an active subscription to use the app on mobile devices (Android/iOS). Web development mode bypasses these checks for easier testing.
 
-- **Price**: £24.99/year including VAT
+- **Price**: £29.99/year including VAT
 - **Free Trial**: 1 month for new subscribers
 - **Platforms**: Google Play Store & Apple App Store
 - **Payment Processing**: RevenueCat

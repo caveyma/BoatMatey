@@ -5,12 +5,13 @@
  * User arrives here after entering email/password on auth page
  * After payment, account is created in Supabase (GDPR compliance)
  * 
- * Pricing: £24.99/year including VAT
+ * Pricing: £29.99/year including VAT
  * Trial: 1 month free for new subscribers
  */
 
 import { navigate } from '../router.js';
 import { renderLogoFull } from '../components/logo.js';
+import { showToast } from '../components/toast.js';
 import { 
   purchaseSubscription, 
   restoreSubscription,
@@ -41,7 +42,7 @@ function render() {
         ${renderLogoFull(220)}
       </div>
       <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Choose Your Plan</h2>
-      <p class="text-muted" style="font-size: 0.95rem;">New subscribers get <strong>1 month free</strong>—no charge until your trial ends. Then £24.99/year.</p>
+      <p class="text-muted" style="font-size: 0.95rem;">New subscribers get <strong>1 month free</strong>—no charge until your trial ends. Then £29.99/year.</p>
     </div>
 
     <div class="subscription-plan" style="
@@ -53,7 +54,7 @@ function render() {
       text-align: center;
     ">
       <div style="font-size: 2rem; font-weight: bold; margin-bottom: 0.25rem;">
-        £24.99/year
+        £29.99/year
       </div>
       <div style="font-size: 0.85rem; opacity: 0.9; margin-bottom: 1rem;">
         Including VAT
@@ -146,6 +147,19 @@ function render() {
     <div id="subscription-message" style="display:none; margin-top: 1rem; padding: 0.75rem; border-radius: 8px;">
       <p style="margin: 0; font-size: 0.95rem;"></p>
     </div>
+    <div id="subscription-success-cta" style="display: none; margin-top: 1rem; text-align: center;">
+      <button type="button" class="btn-primary" id="subscription-goto-boats-btn" style="width: 100%; padding: 0.875rem; font-size: 1rem;">Go to my boats</button>
+    </div>
+
+    <details class="subscription-faq" style="margin-top: 1.25rem; padding: 1rem; background: var(--bm-foam); border-radius: var(--radius-md);">
+      <summary style="font-weight: 600; cursor: pointer; list-style: none;">Frequently asked questions</summary>
+      <div style="margin-top: 0.75rem; font-size: 0.9rem;">
+        <p style="margin: 0 0 0.5rem;"><strong>When am I charged?</strong> After your 1‑month free trial. You can cancel before the trial ends and won’t be charged.</p>
+        <p style="margin: 0 0 0.5rem;"><strong>How do I cancel?</strong> Open your device Settings → Subscriptions (or App Store / Play Store subscriptions), find BoatMatey and cancel. Access continues until the end of the current period.</p>
+        <p style="margin: 0 0 0.5rem;"><strong>What if I already have an account?</strong> Tap “Restore Purchases” to link this device to your existing subscription.</p>
+        <p style="margin: 0;"><strong>What’s included?</strong> 2 active boats, 5 archived boats, unlimited engines and equipment, service history, logbook, calendar and cloud sync.</p>
+      </div>
+    </details>
 
     <div class="text-center" style="margin-top: 1rem;">
       <p class="text-muted" style="font-size: 0.8rem;">
@@ -168,7 +182,10 @@ function showMessage(text, isError = false, isSuccess = false) {
   if (!p) return;
 
   p.textContent = text;
-  
+
+  const ctaEl = document.getElementById('subscription-success-cta');
+  if (ctaEl) ctaEl.style.display = isSuccess ? 'block' : 'none';
+
   if (isError) {
     messageContainer.style.background = '#fee2e2';
     messageContainer.style.border = '1px solid #f87171';
@@ -182,11 +199,20 @@ function showMessage(text, isError = false, isSuccess = false) {
     messageContainer.style.border = '1px solid var(--color-primary)';
     p.style.color = 'var(--color-text)';
   }
-  
+
   messageContainer.style.display = text ? 'block' : 'none';
   if (text && messageContainer.scrollIntoView) {
     messageContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
+}
+
+function showSuccessNextStep(label, route) {
+  const ctaEl = document.getElementById('subscription-success-cta');
+  const btn = document.getElementById('subscription-goto-boats-btn');
+  if (!ctaEl || !btn) return;
+  btn.textContent = label;
+  btn.onclick = () => navigate(route);
+  ctaEl.style.display = 'block';
 }
 
 function setLoading(loading, buttonText = 'Processing...') {
@@ -265,14 +291,12 @@ async function onMount() {
         
         if (status.active) {
           showMessage('Subscription activated!', false, true);
-          
-          // If there's pending signup data, create the account
+          showToast("You're all set!", 'success');
           if (isPendingSignup) {
             setLoading(true, 'Creating account...');
             await handleAccountCreation();
           } else {
-            // No pending signup - just go to auth
-            setTimeout(() => navigate('/auth'), 1000);
+            showSuccessNextStep('Sign in', '/auth');
           }
         } else if (status.cancelled) {
           // User cancelled - just hide the loading, don't show error
@@ -317,7 +341,8 @@ async function onMount() {
         
         if (status.active) {
           showMessage('Subscription restored!', false, true);
-          setTimeout(() => navigate('/auth'), 1000);
+          showToast("You're all set!", 'success');
+          showSuccessNextStep('Sign in', '/auth');
         } else if (status.error && status.error.includes('Restore is only available')) {
           showMessage(status.error, false);
         } else if (status.error) {
@@ -358,14 +383,11 @@ async function onMount() {
         
         if (hasActive) {
           showMessage('✓ Active subscription found!', false, true);
-          
-          // If there's pending signup data, create the account
           if (isPendingSignup) {
             setLoading(true, 'Creating account...');
             await handleAccountCreation();
           } else {
-            // No pending signup - just go to auth
-            setTimeout(() => navigate('/auth'), 1500);
+            showSuccessNextStep('Sign in', '/auth');
           }
         } else {
           showMessage('No active subscription found. If you just purchased, please wait a moment and try again.', false);
@@ -395,12 +417,13 @@ async function handleAccountCreation() {
     const result = await completeAccountCreation();
     
     if (result.success) {
+      showToast("You're all set!", 'success');
       if (result.needsVerification) {
         showMessage('Account created! Check your email to verify, then sign in.', false, true);
-        setTimeout(() => navigate('/auth'), 2000);
+        showSuccessNextStep('Sign in', '/auth');
       } else {
         showMessage('Account created successfully!', false, true);
-        setTimeout(() => navigate('/'), 1500);
+        showSuccessNextStep('Go to my boats', '/');
       }
     } else {
       showMessage(result.error || 'Failed to create account. Please try signing up again.', true);

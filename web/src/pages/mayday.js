@@ -6,6 +6,8 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { showToast } from '../components/toast.js';
+import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { getBoat, getBoatDistressInfo, upsertBoatDistressInfo, isBoatArchived } from '../lib/dataService.js';
 import { getVesselNamePhonetic, getCallsignPhonetic } from '../lib/phonetic.js';
 
@@ -139,7 +141,8 @@ function render(params = {}) {
       <div class="script-content">
         <pre id="mayday-script-text" class="script-text script-text-readout"></pre>
       </div>
-      <div class="form-actions script-actions">
+      <div class="form-actions script-actions script-actions-sticky">
+        <button type="button" class="btn-secondary" id="mayday-read-btn">Read script</button>
         <button type="button" class="btn-primary" id="mayday-copy-btn-top">Copy script</button>
       </div>
     </div>
@@ -390,9 +393,12 @@ async function saveSetup(e) {
   if (!currentBoatId || maydayArchived) return;
   const vesselName = document.getElementById('mayday_vessel_name')?.value?.trim();
   if (!vesselName) {
-    alert('Vessel name is required.');
+    showToast('Vessel name is required.', 'error');
     return;
   }
+  const form = e.target;
+  setSaveButtonLoading(form, true);
+  try {
   const payload = {
     vessel_name: vesselName,
     vessel_name_phonetic: document.getElementById('mayday_vessel_name_phonetic')?.value || null,
@@ -422,14 +428,17 @@ async function saveSetup(e) {
     await loadData();
     updateScriptDisplay(document.querySelector('.script-tab.active')?.getAttribute('data-script') || 'mayday');
   } else if (result?.error === 'vessel_name_required') {
-    alert('Vessel name is required.');
+    showToast('Vessel name is required.', 'error');
   } else if (!result || result.error) {
-    alert('Could not save to cloud. If the Mayday table is not set up in Supabase, run the migration (boat_distress_info). You can still use the script from the form and copy it.');
+    showToast('Could not save to cloud. Run the boat_distress_info migration if needed. You can still use the script and copy it.', 'error');
     updateScriptDisplay(document.querySelector('.script-tab.active')?.getAttribute('data-script') || 'mayday');
+  }
+  } finally {
+    setSaveButtonLoading(form, false);
   }
 }
 
-function copyMaydayScript() {
+function getScriptPlainText() {
   const activeTab = document.querySelector('.script-tab.active');
   const scriptType = activeTab ? activeTab.getAttribute('data-script') : 'mayday';
   const dataSource = distressInfo || getInfoFromForm();
@@ -441,7 +450,11 @@ function copyMaydayScript() {
   const natureText = getNatureLabel(natureEl ? natureEl.value : '');
   const notesText = notesEl ? notesEl.value : '';
   const lines = buildScript(scriptType, info, boat?.boat_name, positionText, natureText, notesText);
-  const text = lines.join('\n');
+  return lines.join('\n');
+}
+
+function copyMaydayScript() {
+  const text = getScriptPlainText();
   navigator.clipboard.writeText(text).then(() => {
     const btn = document.getElementById('mayday-copy-btn-top');
     if (btn) {
@@ -449,7 +462,29 @@ function copyMaydayScript() {
       btn.textContent = 'Copied!';
       setTimeout(() => { btn.textContent = orig; }, 2000);
     }
-  }).catch(() => alert('Could not copy to clipboard.'));
+  }).catch(() => showToast('Could not copy to clipboard.', 'error'));
+}
+
+function readMaydayScript() {
+  const pre = document.getElementById('mayday-script-text');
+  if (pre) pre.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if ('speechSynthesis' in window && speechSynthesis.speaking) {
+    speechSynthesis.cancel();
+    showToast('Stopped.', 'info');
+    return;
+  }
+  const text = getScriptPlainText();
+  if (!text) return;
+  if ('speechSynthesis' in window) {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 0.85;
+    u.pitch = 1;
+    speechSynthesis.speak(u);
+    showToast('Reading script aloud. Tap Read script again to stop.', 'info');
+  } else {
+    showToast('Your device does not support reading aloud.', 'info');
+  }
 }
 
 async function onMount(params = {}) {
@@ -485,6 +520,9 @@ async function onMount(params = {}) {
 
   const copyBtn = document.getElementById('mayday-copy-btn-top');
   if (copyBtn) copyBtn.addEventListener('click', copyMaydayScript);
+
+  const readBtn = document.getElementById('mayday-read-btn');
+  if (readBtn) readBtn.addEventListener('click', readMaydayScript);
 
   window.navigate = navigate;
 }

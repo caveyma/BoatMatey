@@ -16,7 +16,7 @@ Auth Page (Sign In / Create Account / Promo Code)
 │   (existing user)  │      (new user)             │
 │        ↓           │            ↓                │
 │     Home           │    Subscription Page        │
-│                    │    (pay £24.99/year)        │
+│                    │    (pay £29.99/year)        │
 │                    │            ↓                │
 │                    │    Account Created          │
 │                    │            ↓                │

@@ -37,7 +37,7 @@
 - **Status**: "Prepare for Submission" ⚠️
 
 **What's Missing**:
-- ❌ Subscription Pricing not configured (£24.99/year)
+- ❌ Subscription Pricing not configured (£29.99/year)
 - ❌ Free trial not configured (1 month)
 - ❌ Ready for submission
 
@@ -48,7 +48,7 @@ Based on earlier screenshots:
 - Status: Active and Published ✅
 - Base Plan: Yearly (auto-renewing) ✅
 - Offer: 1-month free trial ✅
-- Price: £24.99/year ✅
+- Price: £29.99/year ✅
 - Countries: 174 regions ✅
 
 ### Code Implementation - COMPLETE ✅
@@ -74,7 +74,7 @@ Based on your screenshot, the "Subscription Prices" section shows:
 3. Click **"+"** to add pricing
 4. Set up pricing:
    - **Territory**: United Kingdom
-   - **Price**: £24.99/year
+   - **Price**: £29.99/year
    - Apple will calculate equivalent prices for other regions
 5. Click **"All Prices and Currencies"** to review
 6. **Save** changes
@@ -135,7 +135,7 @@ Per the blue banner in your screenshot:
    - Click the "+" or expand "> Current Pricing for New Subscribers"
    - Click "Add Pricing" or "Configure"
    - Select "United Kingdom" as base territory
-   - Enter £24.99 as the annual price
+   - Enter £29.99 as the annual price
    - Save
    ```
 
@@ -205,7 +205,7 @@ npm run dev
 
 ### Android (Production-Ready):
 1. User opens app
-2. Sees subscription page with £24.99/year + trial
+2. Sees subscription page with £29.99/year + trial
 3. Can purchase (sandbox or production)
 4. Creates account
 5. Full access granted ✅
@@ -249,7 +249,7 @@ Before testing:
 - [x] iOS API key in .env.local
 - [x] RevenueCat offering configured
 - [x] Both products in offering
-- [ ] **App Store pricing set to £24.99/year**
+- [ ] **App Store pricing set to £29.99/year**
 - [ ] **1-month free trial configured**
 - [ ] **Subscription added to app version**
 - [ ] **Submitted for review**
@@ -271,7 +271,7 @@ Once everything is configured:
 ```
 Open App
   ↓
-Subscription Page (£24.99/year with 1-month trial)
+Subscription Page (£29.99/year with 1-month trial)
   ↓
 [Start Free Trial] or [Restore Purchase]
   ↓

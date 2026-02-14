@@ -1,0 +1,367 @@
+/**
+ * UX enhancements: toasts, modals, loading, focus, touch targets, accessibility
+ */
+
+/* ========== Toast container (fixed, outside #app) ========== */
+.toast-container {
+  position: fixed;
+  bottom: calc(var(--spacing-lg) + env(safe-area-inset-bottom));
+  left: var(--spacing-lg);
+  right: var(--spacing-lg);
+  max-width: 400px;
+  margin: 0 auto;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  pointer-events: none;
+}
+
+.toast {
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  pointer-events: auto;
+  animation: toast-in 0.3s ease;
+}
+.toast-exit {
+  animation: toast-out 0.3s ease forwards;
+}
+.toast-success {
+  background: var(--color-success);
+  color: white;
+}
+.toast-error {
+  background: var(--color-error);
+  color: white;
+}
+.toast-info {
+  background: var(--bm-navy);
+  color: white;
+}
+.toast-retry-btn {
+  margin-left: var(--spacing-md);
+  padding: var(--spacing-xs) var(--spacing-md);
+  background: rgba(255,255,255,0.3);
+  border: 1px solid rgba(255,255,255,0.6);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.toast-retry-btn:hover {
+  background: rgba(255,255,255,0.4);
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+/* ========== Offline banner ========== */
+.offline-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 999;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--bm-navy);
+  color: white;
+  font-size: var(--font-size-sm);
+  text-align: center;
+  transform: translateY(-100%);
+  transition: transform 0.3s ease;
+  pointer-events: none;
+}
+.offline-banner.offline-banner-visible {
+  transform: translateY(0);
+}
+
+/* ========== List search/sort bar ========== */
+.list-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+  align-items: center;
+}
+.list-tools .form-control {
+  min-width: 0;
+}
+.list-tools input[type="search"] {
+  flex: 1;
+  min-width: 120px;
+}
+.list-tools select {
+  max-width: 180px;
+}
+
+.calendar-month-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+/* Days with appointments/reminders: underline + bold contrasting colour (orange vs blue/teal) */
+.calendar-date-cell.calendar-has-activity .calendar-day-number {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  color: #c2410c;
+  font-weight: 700;
+}
+.calendar-date-cell.calendar-has-activity.calendar-today .calendar-day-number,
+.calendar-date-cell.calendar-has-activity.calendar-selected .calendar-day-number {
+  color: #c2410c;
+}
+
+/* ========== Confirmation modal ========== */
+.modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+}
+.modal-root * {
+  box-sizing: border-box;
+}
+.confirm-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 42, 63, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-lg);
+  padding-bottom: calc(var(--spacing-lg) + env(safe-area-inset-bottom));
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.confirm-modal-overlay.confirm-modal-visible {
+  opacity: 1;
+}
+.confirm-modal {
+  background: var(--bm-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  padding: var(--spacing-xl);
+  max-width: 360px;
+  width: 100%;
+  animation: modal-in 0.2s ease;
+}
+.confirm-modal-exit .confirm-modal {
+  animation: modal-out 0.2s ease forwards;
+}
+.confirm-modal-title {
+  margin: 0 0 var(--spacing-md);
+  font-size: var(--font-size-xl);
+}
+.confirm-modal-message {
+  margin-bottom: var(--spacing-xl);
+  color: var(--color-text-light);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+.confirm-modal-actions {
+  display: flex;
+  gap: var(--spacing-md);
+  justify-content: flex-end;
+}
+.confirm-modal-actions .btn-secondary {
+  min-height: 44px;
+  padding: var(--spacing-md) var(--spacing-lg);
+}
+.confirm-modal-actions .btn-primary {
+  min-height: 44px;
+  padding: var(--spacing-md) var(--spacing-lg);
+}
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes modal-out {
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+/* Danger button (destructive actions) */
+.btn-danger {
+  background: var(--color-error) !important;
+  color: white !important;
+}
+.btn-danger:hover {
+  background: #dc2626 !important;
+  color: white !important;
+}
+
+/* ========== Focus styles (accessibility) ========== */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--bm-teal);
+  outline-offset: 2px;
+}
+.dashboard-card:focus-visible {
+  outline: 2px solid var(--bm-teal);
+  outline-offset: 2px;
+}
+
+/* ========== Loading indicator (router / section) ========== */
+.app-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  padding: var(--spacing-2xl);
+}
+.app-loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--bm-foam);
+  border-top-color: var(--bm-teal);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.section-loading {
+  text-align: center;
+  padding: var(--spacing-2xl);
+  color: var(--color-text-light);
+  font-size: var(--font-size-sm);
+}
+.section-loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--bm-foam);
+  border-top-color: var(--bm-teal);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto var(--spacing-md);
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ========== Touch targets (min 44px) ========== */
+.btn-primary,
+.btn-secondary,
+.dashboard-card,
+.boat-card {
+  min-height: 44px;
+}
+.dashboard-card {
+  min-height: 180px; /* already set, keep */
+}
+.page-body-back .page-body-back-btn,
+.page-body-back-btn {
+  min-height: 44px;
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+.list-item {
+  min-height: 44px;
+  padding: var(--spacing-md);
+}
+
+/* ========== Mayday card emphasis on dashboard ========== */
+.dashboard-card.card-color-mayday {
+  border-width: 2px;
+  border-color: color-mix(in srgb, var(--card-mayday) 60%, transparent);
+  box-shadow: 0 4px 20px rgba(239, 68, 68, 0.15);
+}
+.dashboard-card.card-color-mayday .dashboard-card-title {
+  font-weight: 800;
+}
+
+/* ========== Empty state (consistent) ========== */
+.empty-state {
+  text-align: center;
+  padding: var(--spacing-2xl);
+  color: var(--color-text-light);
+}
+.empty-state-icon {
+  font-size: 3rem;
+  margin-bottom: var(--spacing-md);
+  opacity: 0.5;
+}
+.empty-state-actions {
+  margin-top: var(--spacing-lg);
+}
+.empty-state-actions .btn-primary {
+  min-height: 44px;
+}
+
+/* ========== Live region for dynamic messages (accessibility) ========== */
+.aria-live-region {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Skip to main content (visible on focus) */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  z-index: 999;
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--bm-navy);
+  color: white;
+  font-weight: 600;
+  border-radius: var(--radius);
+}
+.skip-link:focus {
+  left: var(--spacing-md);
+  top: calc(var(--bm-header-total) + var(--spacing-md));
+  outline: 2px solid var(--bm-teal);
+  outline-offset: 2px;
+}
+
+/* ========== Reduced motion (accessibility) ========== */
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+  .toast-exit {
+    animation: none;
+  }
+  .offline-banner {
+    transition: none;
+  }
+  .confirm-modal-overlay {
+    transition: none;
+  }
+  .confirm-modal,
+  .confirm-modal-exit .confirm-modal {
+    animation: none;
+  }
+}

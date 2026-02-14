@@ -117,7 +117,7 @@ The orphaned account (`c244f49b-588c-4631-82d8-a66a2c7cdd52`) should be deleted 
 
 Once deleted, if this user wants to try again, they must:
 1. Download mobile app
-2. Subscribe (£24.99/year with 1-month trial)
+2. Subscribe (£29.99/year with 1-month trial)
 3. Create account after subscription is active
 4. Profile will be created WITH subscription data
 

@@ -5,6 +5,7 @@
 
 import { navigate } from '../router.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getLinks, createLink, updateLink } from '../lib/dataService.js';
 
 function render(params = {}) {
@@ -84,17 +85,24 @@ async function onMount(params = {}) {
   document.getElementById('link-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (archived) return;
-
+    const form = e.target;
+    setSaveButtonLoading(form, true);
     const name = document.getElementById('link_name').value.trim();
     const url = document.getElementById('link_url').value.trim();
-    if (!name || !url) return;
-
+    if (!name || !url) {
+      setSaveButtonLoading(form, false);
+      return;
+    }
+    try {
     if (isNew) {
       await createLink(boatId, { name, url });
     } else {
       await updateLink(linkId, boatId, { name, url });
     }
     navigate(`/boat/${boatId}/links`);
+    } finally {
+      setSaveButtonLoading(form, false);
+    }
   });
 }
 

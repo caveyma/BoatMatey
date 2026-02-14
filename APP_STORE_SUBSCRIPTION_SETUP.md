@@ -39,7 +39,7 @@ Click the **"Create"** button in the Localization section or add localization fo
   • Cloud sync across all devices
   • Photo attachments & documentation
   
-  £24.99 per year including VAT.
+  £29.99 per year including VAT.
   Cancel anytime.
   ```
 
@@ -50,7 +50,7 @@ Repeat for other languages/regions as needed.
 1. Click **Subscription Pricing** (or similar section)
 2. Set the base price:
    - **Territory**: United Kingdom
-   - **Price**: £24.99
+   - **Price**: £29.99
    - Apple will automatically calculate equivalent prices for other territories
 3. Review and confirm pricing for other regions
 
@@ -74,7 +74,7 @@ Verify:
 
 Before saving, ensure:
 - ✅ Localization is complete (at least English)
-- ✅ Pricing is set (£24.99 for UK)
+- ✅ Pricing is set (£29.99 for UK)
 - ✅ Free trial offer is configured (1 month)
 - ✅ Product ID is correct: `boatmatey_yearly`
 - ✅ Subscription group is: BoatMatey Pro
@@ -151,7 +151,7 @@ Once metadata is complete:
 ## Summary Checklist
 
 - [ ] Localization added (name + description)
-- [ ] Pricing set to £24.99/year
+- [ ] Pricing set to £29.99/year
 - [ ] 1-month free trial configured
 - [ ] Product ID verified: `boatmatey_yearly`
 - [ ] Changes saved in App Store Connect

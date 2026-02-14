@@ -5,6 +5,9 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/confirmModal.js';
+import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { boatsStorage } from '../lib/storage.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOADS_PER_ENTITY } from '../lib/uploads.js';
 import { getBoat as getBoatFromApi, updateBoat as updateBoatApi, isBoatArchived } from '../lib/dataService.js';
@@ -26,12 +29,12 @@ function render(params = {}) {
   
   const wrapper = document.createElement('div');
   
-  const header = createYachtHeader('Boat Details');
+  const header = createYachtHeader('Boat Details', { showSettings: true });
   wrapper.appendChild(header);
 
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content card-color-boat';
-  pageContent.appendChild(createBackButton());
+  pageContent.appendChild(createBackButton(currentBoatId ? `/boat/${currentBoatId}` : undefined));
 
   const container = document.createElement('div');
   container.className = 'container';
@@ -269,7 +272,7 @@ async function onMount(params = {}) {
     const remainingSlots = MAX_UPLOADS_PER_ENTITY - existing.length;
 
     if (remainingSlots <= 0) {
-      alert(`You can only upload up to ${MAX_UPLOADS_PER_ENTITY} files for Boat Details.`);
+      showToast(`You can only upload up to ${MAX_UPLOADS_PER_ENTITY} files for Boat Details.`, 'error');
       fileInput.value = '';
       return;
     }
@@ -286,7 +289,7 @@ async function onMount(params = {}) {
     });
 
     if (oversizedCount > 0) {
-      alert(`Some files were larger than 5 MB and were skipped.`);
+      showToast('Some files were larger than 5 MB and were skipped.', 'info');
     }
 
     if (!validFiles.length) {
@@ -296,7 +299,7 @@ async function onMount(params = {}) {
 
     const filesToUpload = validFiles.slice(0, remainingSlots);
     if (validFiles.length > remainingSlots) {
-      alert(`Only ${remainingSlots} more file(s) can be uploaded for Boat Details (max ${MAX_UPLOADS_PER_ENTITY}).`);
+      showToast(`Only ${remainingSlots} more file(s) can be uploaded for Boat Details (max ${MAX_UPLOADS_PER_ENTITY}).`, 'info');
     }
 
     for (const file of filesToUpload) {
@@ -351,13 +354,20 @@ function attachEventHandlers() {
   });
 
   document.querySelectorAll('.delete-attachment-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const uploadId = btn.dataset.uploadId;
-      if (confirm('Delete this attachment?')) {
-        deleteUpload(uploadId);
-        loadAttachments();
-        attachEventHandlers();
-      }
+      const ok = await confirmAction({
+        title: 'Delete this attachment?',
+        message: 'This cannot be undone.',
+        confirmLabel: 'Delete',
+        cancelLabel: 'Cancel',
+        danger: true
+      });
+      if (!ok) return;
+      deleteUpload(uploadId);
+      loadAttachments();
+      attachEventHandlers();
+      showToast('Attachment removed', 'info');
     });
   });
 }
@@ -400,8 +410,9 @@ function loadAttachments() {
 
 async function saveBoat() {
   const form = document.querySelector('form');
+  setSaveButtonLoading(form, true);
+  try {
   const formData = new FormData(form);
-  
   const boat = {
     boat_name: formData.get('boat_name'),
     boat_type: formData.get('boat_type') || 'motor',
@@ -441,16 +452,19 @@ async function saveBoat() {
   try {
     const syncError = await updateBoatApi(currentBoatId, { ...boat, boat_type: boat.boat_type });
     if (syncError) {
-      alert('Saved on this device, but could not sync to cloud. If Fuel type, Home marina, etc. stay blank after reopening, run the database migration that adds those columns to the boats table.');
+      showToast('Saved on this device, but could not sync to cloud. Run the database migration if Fuel type, Home marina, etc. stay blank.', 'error', { onRetry: () => saveBoat() });
     } else {
-      alert('Boat details saved!');
+      showToast('Boat details saved!', 'success');
     }
   } catch (e) {
-    alert('Saved on this device. Cloud sync failed — check your connection.');
+    showToast('Saved on this device. Cloud sync failed — check your connection.', 'error', { onRetry: () => saveBoat() });
   }
+  setSaveButtonLoading(form, false);
   navigate(`/boat/${currentBoatId}`);
+  } finally {
+    setSaveButtonLoading(form, false);
+  }
 }
-
 
 export default {
   render,

@@ -6,6 +6,9 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/confirmModal.js';
+import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getEquipment, createEquipment, updateEquipment } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
 
@@ -134,11 +137,12 @@ function loadSafetyFormAttachments(boatId, safetyId) {
     });
   });
   document.querySelectorAll('.safety-edit-delete-attachment').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (confirm('Delete this attachment?')) {
-        deleteUpload(btn.dataset.uploadId);
-        loadSafetyFormAttachments(boatId, safetyId);
-      }
+    btn.addEventListener('click', async () => {
+      const ok = await confirmAction({ title: 'Delete this attachment?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
+      if (!ok) return;
+      deleteUpload(btn.dataset.uploadId);
+      loadSafetyFormAttachments(boatId, safetyId);
+      showToast('Attachment removed', 'info');
     });
   });
 }
@@ -156,12 +160,12 @@ function initSafetyFormAttachments(boatId, safetyId) {
       const existing = getUploads('safety', safetyId, boatId);
       const remainingSlots = LIMITED_UPLOADS_PER_ENTITY - existing.length;
       if (remainingSlots <= 0) {
-        alert(`You can only upload up to ${LIMITED_UPLOADS_PER_ENTITY} files for this safety item.`);
+        showToast(`You can only upload up to ${LIMITED_UPLOADS_PER_ENTITY} files for this safety item.`, 'error');
         fileInput.value = '';
         return;
       }
       const validFiles = files.filter(f => f.size <= LIMITED_UPLOAD_SIZE_BYTES);
-      if (files.length !== validFiles.length) alert('Some files were larger than 2 MB and were skipped.');
+      if (files.length !== validFiles.length) showToast('Some files were larger than 2 MB and were skipped.', 'info');
       for (const file of validFiles.slice(0, remainingSlots)) {
         await saveUpload(file, 'safety', safetyId, boatId);
       }
@@ -175,7 +179,7 @@ function initSafetyFormAttachments(boatId, safetyId) {
       const nameInput = document.getElementById('safety-link-name');
       const urlInput = document.getElementById('safety-link-url');
       const url = urlInput?.value.trim();
-      if (!url) { alert('Please enter a URL.'); return; }
+      if (!url) { showToast('Please enter a URL.', 'error'); return; }
       saveLinkAttachment(nameInput?.value.trim() || '', url, 'safety', safetyId, boatId);
       if (nameInput) nameInput.value = '';
       if (urlInput) urlInput.value = '';
@@ -234,7 +238,9 @@ async function onMount(params = {}) {
   document.getElementById('safety-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (archived) return;
-
+    const form = e.target;
+    setSaveButtonLoading(form, true);
+    try {
     const safetyType = document.getElementById('safety_type').value || document.getElementById('safety_type_custom').value;
 
     const item = {
@@ -253,6 +259,9 @@ async function onMount(params = {}) {
       await updateEquipment(itemId, 'safety', item);
     }
     navigate(`/boat/${boatId}/safety`);
+    } finally {
+      setSaveButtonLoading(form, false);
+    }
   });
 }
 

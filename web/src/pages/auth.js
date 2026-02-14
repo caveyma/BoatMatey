@@ -183,8 +183,8 @@ function render() {
       <div style="display:flex; justify-content:center; margin-bottom: 1rem;">
         ${renderLogoFull(220)}
       </div>
-      <h2 style="margin-bottom: 0.5rem;">Sign in to get started</h2>
-      <p class="text-muted">Use your existing account to continue.</p>
+      <h2 style="margin-bottom: 0.5rem;">Create an account to get started</h2>
+      <p class="text-muted">Create an account to start your free trial, or sign in if you already have one.</p>
     </div>
 
     <form id="auth-form">
@@ -203,18 +203,20 @@ function render() {
         </div>
       </div>
 
-      <button type="submit" class="btn-primary" id="signin-btn" style="width: 100%; padding: 0.875rem; font-size: 1rem; margin-bottom: 0.75rem;">
-        Sign in
-      </button>
-
       ${isNative ? `
-        <button type="button" class="btn-secondary" id="create-account-btn" style="width: 100%; padding: 0.875rem; font-size: 1rem;">
+        <button type="submit" class="btn-primary" id="create-account-btn" style="width: 100%; padding: 0.875rem; font-size: 1rem; margin-bottom: 0.75rem;">
           Create account
+        </button>
+        <button type="button" class="btn-secondary" id="signin-btn" style="width: 100%; padding: 0.875rem; font-size: 1rem;">
+          Sign in
         </button>
         <p class="text-muted" style="text-align: center; margin-top: 0.75rem; font-size: 0.9rem;">
           New here? Your free trial starts when you create an account.
         </p>
       ` : `
+        <button type="submit" class="btn-primary" id="signin-btn" style="width: 100%; padding: 0.875rem; font-size: 1rem;">
+          Sign in
+        </button>
         <div style="background: #fff3cd; border: 1px solid #ffc107; padding: 1rem; border-radius: 8px; margin-top: 1rem;">
           <p style="margin: 0; color: #856404; font-size: 0.9rem;">
             <strong>New to BoatMatey?</strong><br>
@@ -262,6 +264,17 @@ function render() {
   wrapper.appendChild(container);
 
   return wrapper;
+}
+
+function friendlyAuthError(message) {
+  if (!message || typeof message !== 'string') return message;
+  const m = message.toLowerCase();
+  if (m.includes('invalid login credentials') || m.includes('invalid_credentials')) return 'Wrong email or password. Please try again.';
+  if (m.includes('email not confirmed')) return 'Please check your email and confirm your account before signing in.';
+  if (m.includes('user not found')) return 'No account found with this email.';
+  if (m.includes('password')) return 'Wrong email or password. Please try again.';
+  if (m.includes('too many requests') || m.includes('rate limit')) return 'Too many attempts. Please wait a moment and try again.';
+  return message;
 }
 
 function showMessage(text, isError = false, isSuccess = false) {
@@ -312,87 +325,103 @@ async function onMount() {
     });
   }
 
-  // Sign In form submission
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  function validateAuthFields() {
+    const emailEl = document.getElementById('auth-email');
+    const passwordEl = document.getElementById('auth-password');
+    const email = emailEl?.value?.trim() || '';
+    const password = passwordEl?.value || '';
+    if (!email) {
+      showMessage('Please enter your email address.', true);
+      emailEl?.focus?.();
+      return false;
+    }
+    if (!emailRegex.test(email)) {
+      showMessage('Please enter a valid email address.', true);
+      emailEl?.focus?.();
+      return false;
+    }
+    if (!password) {
+      showMessage('Please enter your password.', true);
+      passwordEl?.focus?.();
+      return false;
+    }
+    return true;
+  }
+
+  // Sign in action (used by Sign in button and, on web, by form submit)
+  async function doSignIn() {
+    showMessage('');
+    if (!supabase) {
+      showMessage('Cloud sync is not configured.', true);
+      return;
+    }
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    if (!validateAuthFields()) return;
+    if (signinBtn) {
+      signinBtn.disabled = true;
+      signinBtn.textContent = 'Signing in...';
+    }
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        console.error('Sign-in error:', error);
+        showMessage(friendlyAuthError(error.message) || 'Unable to sign in. Please check your credentials.', true);
+        return;
+      }
+      if (data.user && isNative) {
+        await syncSubscriptionToProfile(data.user.id);
+      }
+      showMessage('Signed in successfully!', false, true);
+      setTimeout(() => navigate('/'), 500);
+    } catch (err) {
+      console.error('Unexpected sign-in error:', err);
+      showMessage('Unexpected error. Please try again.', true);
+    } finally {
+      if (signinBtn) {
+        signinBtn.disabled = false;
+        signinBtn.textContent = 'Sign in';
+      }
+    }
+  }
+
+  // Create account action (primary on native: validate, store pending signup, go to subscription)
+  function doCreateAccount() {
+    showMessage('');
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    if (!validateAuthFields()) return;
+    if (password.length < 6) {
+      showMessage('Please enter a password of at least 6 characters.', true);
+      return;
+    }
+    setPendingSignup(email, password);
+    navigate('/subscription');
+  }
+
+  // Form submit: on native = Create account (primary CTA, like PetHub+); on web = Sign in
   if (authForm) {
     authForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      showMessage('');
-
-      if (!supabase) {
-        showMessage('Cloud sync is not configured.', true);
-        return;
-      }
-
-      const email = document.getElementById('auth-email').value.trim();
-      const password = document.getElementById('auth-password').value;
-
-      if (!email || !password) {
-        showMessage('Please enter both email and password.', true);
-        return;
-      }
-
-      if (signinBtn) {
-        signinBtn.disabled = true;
-        signinBtn.textContent = 'Signing in...';
-      }
-
-      try {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        
-        if (error) {
-          console.error('Sign-in error:', error);
-          showMessage(error.message || 'Unable to sign in. Please check your credentials.', true);
-          return;
-        }
-
-        // Sync subscription on native
-        if (data.user && isNative) {
-          await syncSubscriptionToProfile(data.user.id);
-        }
-
-        showMessage('Signed in successfully!', false, true);
-        setTimeout(() => navigate('/'), 500);
-
-      } catch (err) {
-        console.error('Unexpected sign-in error:', err);
-        showMessage('Unexpected error. Please try again.', true);
-      } finally {
-        if (signinBtn) {
-          signinBtn.disabled = false;
-          signinBtn.textContent = 'Sign in';
-        }
+      if (isNative) {
+        doCreateAccount();
+      } else {
+        await doSignIn();
       }
     });
   }
 
-  // Create Account button - goes to subscription page
+  // Sign in button (native only – secondary CTA; on web there is only submit = Sign in)
+  if (signinBtn && signinBtn.type === 'button') {
+    signinBtn.addEventListener('click', () => doSignIn());
+  }
+
+  // Create account button click (native only; primary is also form submit, so Enter triggers this flow)
   if (createAccountBtn) {
-    createAccountBtn.addEventListener('click', () => {
-      const email = document.getElementById('auth-email').value.trim();
-      const password = document.getElementById('auth-password').value;
-
-      // Validate before going to subscription
-      if (!email) {
-        showMessage('Please enter your email address.', true);
-        return;
-      }
-
-      if (!password || password.length < 6) {
-        showMessage('Please enter a password (at least 6 characters).', true);
-        return;
-      }
-
-      // Basic email validation
-      if (!email.includes('@') || !email.includes('.')) {
-        showMessage('Please enter a valid email address.', true);
-        return;
-      }
-
-      // Store credentials for after payment
-      setPendingSignup(email, password);
-      
-      // Navigate to subscription page
-      navigate('/subscription');
+    createAccountBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      doCreateAccount();
     });
   }
 

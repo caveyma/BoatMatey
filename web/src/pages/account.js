@@ -5,6 +5,8 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/confirmModal.js';
 import {
   getSubscriptionStatus,
   hasActiveSubscription,
@@ -82,7 +84,7 @@ function render() {
       <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.75rem;">
         <div id="account-subscribe-restore-buttons" style="${showSubscribeAndRestore ? '' : 'display: none;'}">
           <button class="btn-primary" id="subscribe-btn" style="width: 100%;">
-            ${renderIcon('star')} Subscribe for £24.99/year
+            ${renderIcon('star')} Subscribe for £29.99/year
           </button>
           <button class="btn-secondary" id="restore-purchases-btn" style="width: 100%;">
             Restore Purchases
@@ -321,13 +323,13 @@ async function onMount() {
           await refreshSubscriptionStatus();
           navigate('/account');
         } else if (status.error && !status.error.includes('Restore is only available')) {
-          alert(status.error);
+          showToast(status.error, 'error');
         } else if (!status.active && !status.error) {
-          alert('No purchases to restore.');
+          showToast('No purchases to restore.', 'info');
         }
       } catch (err) {
         console.error('Restore error:', err);
-        alert(err?.message || 'Restore failed. Please try again.');
+        showToast(err?.message || 'Restore failed. Please try again.', 'error');
       } finally {
         restoreBtn.disabled = false;
         restoreBtn.textContent = originalLabel;
@@ -351,7 +353,7 @@ async function onMount() {
       const platform = Capacitor.getPlatform();
       
       if (!isNative) {
-        alert('Subscription management is only available in the mobile app.');
+        showToast('Subscription management is only available in the mobile app.', 'info');
         return;
       }
 
@@ -370,11 +372,14 @@ async function onMount() {
   const signOutBtn = document.getElementById('sign-out-btn');
   if (signOutBtn) {
     signOutBtn.addEventListener('click', async () => {
-      const isNative = Capacitor.isNativePlatform?.() ?? false;
-      
-      if (!confirm('Sign out of your BoatMatey cloud account?')) {
-        return;
-      }
+      const ok = await confirmAction({
+        title: 'Sign out?',
+        message: 'You will need to sign in again to sync data.',
+        confirmLabel: 'Sign out',
+        cancelLabel: 'Cancel',
+        danger: false
+      });
+      if (!ok) return;
 
       try {
         if (supabase) {
@@ -397,19 +402,19 @@ async function onMount() {
 
       const session = await getSession();
       if (!session?.user?.id) {
-        alert('You must be signed in to delete your BoatMatey account.');
+        showToast('You must be signed in to delete your BoatMatey account.', 'error');
         return;
       }
 
-      // Step 1: On native, warn that deleting the account does NOT cancel the subscription
       if (isNative) {
         const storeName = platform === 'ios' ? 'App Store' : 'Google Play';
-        const openStore = confirm(
-          'Before deleting your account:\n\n' +
-          'Deleting your account does NOT cancel your ' + storeName + ' subscription. You will still be charged until you cancel it.\n\n' +
-          'Cancel your subscription in ' + storeName + ' first, then come back here to delete your account.\n\n' +
-          'Do you want to open ' + storeName + ' subscription settings now?'
-        );
+        const openStore = await confirmAction({
+          title: 'Before deleting your account',
+          message: 'Deleting your account does NOT cancel your ' + storeName + ' subscription. You will still be charged until you cancel it. Cancel your subscription in ' + storeName + ' first, then come back here. Open ' + storeName + ' subscription settings now?',
+          confirmLabel: 'Open ' + storeName,
+          cancelLabel: 'Not yet',
+          danger: false
+        });
         if (openStore) {
           if (platform === 'ios') {
             window.open('https://apps.apple.com/account/subscriptions', '_system');
@@ -417,17 +422,23 @@ async function onMount() {
             window.open('https://play.google.com/store/account/subscriptions', '_system');
           }
         }
-        const confirmedStep1 = confirm(
-          'Have you cancelled your subscription (or do you not have one)?\n\n' +
-          'Next: confirm that you want to permanently delete your BoatMatey account and all data.'
-        );
+        const confirmedStep1 = await confirmAction({
+          title: 'Ready to delete account?',
+          message: 'Have you cancelled your subscription (or do you not have one)? Next: confirm that you want to permanently delete your BoatMatey account and all data.',
+          confirmLabel: 'Continue',
+          cancelLabel: 'Cancel',
+          danger: false
+        });
         if (!confirmedStep1) return;
       }
 
-      const confirmed = confirm(
-        'Are you sure you want to permanently delete your BoatMatey cloud account and all data stored on our servers?\n\n' +
-        'This action cannot be undone.'
-      );
+      const confirmed = await confirmAction({
+        title: 'Permanently delete account?',
+        message: 'This will delete your BoatMatey cloud account and all data stored on our servers. This action cannot be undone.',
+        confirmLabel: 'Delete account',
+        cancelLabel: 'Cancel',
+        danger: true
+      });
       if (!confirmed) return;
 
       deleteAccountBtn.disabled = true;
@@ -456,14 +467,14 @@ async function onMount() {
 
         if (error) {
           console.error('Account deletion RPC error:', error);
-          alert(error.message || 'Sorry, something went wrong deleting your account. Please try again or contact support.');
+          showToast(error.message || 'Something went wrong deleting your account. Please try again or contact support.', 'error');
           return;
         }
 
         if (!data || data.success === false) {
           console.error('Account deletion RPC result:', data);
-          const msg = data?.error || 'Sorry, something went wrong deleting your account. Please try again or contact support.';
-          alert(msg);
+          const msg = data?.error || 'Something went wrong deleting your account. Please try again or contact support.';
+          showToast(msg, 'error');
           return;
         }
 
@@ -472,7 +483,7 @@ async function onMount() {
         window.location.reload();
       } catch (err) {
         console.error('Error deleting account:', err);
-        alert('Sorry, something went wrong deleting your account. Please try again or contact support.');
+        showToast('Something went wrong deleting your account. Please try again or contact support.', 'error');
       } finally {
         deleteAccountBtn.disabled = false;
       }

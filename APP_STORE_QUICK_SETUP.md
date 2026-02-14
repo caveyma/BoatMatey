@@ -21,7 +21,7 @@ Status: **"Prepare for Submission"** (needs pricing + trial)
 2. **Add Base Price**:
    - Click **"Add Subscription Price"** or **"+"**
    - Territory: **United Kingdom**
-   - Price: **£24.99**
+   - Price: **£29.99**
    - Duration: Should already show "1 year"
    - Click **"Add"** or **"Next"**
 
@@ -72,7 +72,7 @@ Still on the same page, scroll down or look for:
 
 After completing the above, verify:
 
-- [ ] Pricing shows £24.99/year
+- [ ] Pricing shows £29.99/year
 - [ ] 1-month free trial is listed
 - [ ] Status is not "Missing Metadata"
 - [ ] Localization still shows:
@@ -121,7 +121,7 @@ If you don't see obvious buttons, look for the section that says:
 Click the **">"** arrow to expand it, then:
 
 1. You should see an empty table or a **"+ Add Pricing"** button
-2. Click it to add your £24.99 price
+2. Click it to add your £29.99 price
 3. Follow the pricing dialog
 
 ## 💡 Common Screen Locations
@@ -169,7 +169,7 @@ Based on your current screenshot, here's where to find things:
 You'll know you're done when:
 
 1. ✅ No more "Missing Metadata" warning
-2. ✅ Pricing table shows £24.99/year
+2. ✅ Pricing table shows £29.99/year
 3. ✅ Free trial offer is listed
 4. ✅ Status shows "Ready to Submit" or similar
 5. ✅ "Save" button is active (not grayed out)
@@ -194,6 +194,6 @@ If stuck at any point:
 ---
 
 **Current Location**: You're on the right page!  
-**Next Action**: Click the "+" next to "Subscription Prices" to add £24.99  
+**Next Action**: Click the "+" next to "Subscription Prices" to add £29.99  
 **After That**: Create the 1-month free trial offer  
 **Then**: Link to your app version and submit!

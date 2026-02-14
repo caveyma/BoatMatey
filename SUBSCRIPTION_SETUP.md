@@ -4,7 +4,7 @@
 
 BoatMatey uses a subscription-based access model with the following characteristics:
 
-- **Price**: £24.99/year including VAT
+- **Price**: £29.99/year including VAT
 - **Free Trial**: 1 month for new subscribers
 - **Platforms**: Google Play Store & Apple App Store
 - **Payment Processing**: RevenueCat
@@ -36,7 +36,7 @@ BoatMatey uses a subscription-based access model with the following characterist
 - **Product ID**: `boatmatey_premium_yearly`
 - **Base Plan**: yearly (auto-renewing)
 - **Offer ID**: `trial-1-month`
-- **Price**: £24.99/year
+- **Price**: £29.99/year
 - **Trial**: 1 month free
 - **Countries**: 174 regions
 - **Status**: ✅ Active
@@ -45,7 +45,7 @@ BoatMatey uses a subscription-based access model with the following characterist
 - **Subscription Group**: BoatMatey Pro
 - **Product ID**: `boatmatey_yearly`
 - **Duration**: 1 year
-- **Price**: £24.99/year (needs to be configured in App Store Connect)
+- **Price**: £29.99/year (needs to be configured in App Store Connect)
 - **Trial**: 1 month free (needs to be configured)
 - **Status**: ⚠️ Missing Metadata - needs completion
 
@@ -135,7 +135,7 @@ No personal data is stored for users who:
 
 ### App Store Connect (iOS)
 - [ ] Complete localization for `boatmatey_yearly` product
-- [ ] Set price to £24.99/year (with regional equivalents)
+- [ ] Set price to £29.99/year (with regional equivalents)
 - [ ] Configure 1-month free trial offer
 - [ ] Submit subscription with new app version for first-time approval
 - [ ] Verify product status shows "Ready to Submit" or "Approved"

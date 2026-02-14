@@ -11,6 +11,9 @@
 
 import { navigate } from '../router.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/confirmModal.js';
+import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { boatsStorage, enginesStorage, serviceHistoryStorage, hauloutStorage, navEquipmentStorage } from '../lib/storage.js';
 import { getBoats, getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '../lib/dataService.js';
 import { ensureNotificationSetup, syncOsNotifications, scheduleBrowserNotifications } from '../lib/notifications.js';
@@ -461,18 +464,12 @@ function renderMonthView(reminders, baseEvents) {
     const activity = activityByDate[iso] || { reminders: 0, appointments: 0 };
     const isToday = iso === todayIso;
     const isSelected = iso === selectedDateStr;
-
-    const badges = [];
-    if (activity.reminders) {
-      badges.push(`<span class="calendar-badge calendar-badge-reminders">${activity.reminders}</span>`);
-    }
-    if (activity.appointments) {
-      badges.push(`<span class="calendar-badge calendar-badge-appointments">${activity.appointments}</span>`);
-    }
+    const hasActivity = (activity.reminders || 0) + (activity.appointments || 0) > 0;
 
     const classes = ['calendar-day', 'calendar-date-cell'];
     if (isToday) classes.push('calendar-today');
     if (isSelected) classes.push('calendar-selected');
+    if (hasActivity) classes.push('calendar-has-activity');
 
     cells.push(`
       <button
@@ -481,7 +478,6 @@ function renderMonthView(reminders, baseEvents) {
         data-date="${iso}"
       >
         <span class="calendar-day-number">${day}</span>
-        <span class="calendar-badges">${badges.join('')}</span>
       </button>
     `);
   }
@@ -565,7 +561,8 @@ function renderAppointmentsForSelectedDate(baseEvents) {
   listEl.querySelectorAll('.calendar-event-delete').forEach((btn) => {
     const id = btn.getAttribute('data-event-id');
     btn.addEventListener('click', async () => {
-      if (!confirm('Delete this appointment?')) return;
+      const ok = await confirmAction({ title: 'Delete this appointment?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
+      if (!ok) return;
       await deleteCalendarEvent(id);
       editingEventId = null;
       resetFormToAddMode();
@@ -635,9 +632,10 @@ export function render(params = {}) {
     <div class="card" id="calendar-month-card">
       <div class="card-header">
         <div class="calendar-month-header">
-          <button type="button" class="btn-link" id="calendar-prev-month">&lt;</button>
+          <button type="button" class="btn-link" id="calendar-prev-month" aria-label="Previous month">&lt; Prev</button>
           <h3 class="card-title" id="calendar-month-label"></h3>
-          <button type="button" class="btn-link" id="calendar-next-month">&gt;</button>
+          <button type="button" class="btn-link" id="calendar-next-month" aria-label="Next month">Next &gt;</button>
+          <button type="button" class="btn-secondary" id="calendar-today" style="margin-left: auto;">Today</button>
         </div>
       </div>
       <div
@@ -770,6 +768,17 @@ export async function onMount(params = {}) {
       renderAppointmentsForSelectedDate(refreshedBase);
     });
   }
+  const todayBtn = document.getElementById('calendar-today');
+  if (todayBtn) {
+    todayBtn.addEventListener('click', async () => {
+      const now = new Date();
+      currentMonthDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      selectedDateStr = toIsoDate(now);
+      const { baseEvents: refreshedBase, reminders: refreshedReminders } = await loadAllCalendarData();
+      renderMonthView(refreshedReminders, refreshedBase);
+      renderAppointmentsForSelectedDate(refreshedBase);
+    });
+  }
 
   const form = document.getElementById('calendar-appointment-form');
   if (form) {
@@ -777,14 +786,13 @@ export async function onMount(params = {}) {
       e.preventDefault();
       const boatId = document.getElementById('calendar-appointment-boat')?.value;
       if (!boatId && activeBoats.length > 0 && !editingEventId) {
-        alert('Please select a boat for this appointment.');
+        showToast('Please select a boat for this appointment.', 'error');
         return;
       }
       if (activeBoats.length === 0 && !editingEventId) {
-        alert('Add a boat first to create appointments.');
+        showToast('Add a boat first to create appointments.', 'error');
         return;
       }
-
       const dateValue = document.getElementById('calendar-appointment-date').value || selectedDateStr;
       const titleEl = document.getElementById('calendar-appointment-title');
       const timeEl = document.getElementById('calendar-appointment-time');
@@ -792,12 +800,13 @@ export async function onMount(params = {}) {
       const repeatUntilEl = document.getElementById('calendar-appointment-repeat-until');
       const reminderEl = document.getElementById('calendar-appointment-reminder');
       const notesEl = document.getElementById('calendar-appointment-notes');
-
       const title = titleEl.value.trim();
       if (!title) {
-        alert('Please enter a title for the appointment.');
+        showToast('Please enter a title for the appointment.', 'error');
         return;
       }
+      setSaveButtonLoading(form, true, 'Save appointment');
+      try {
 
       const reminderVal = reminderEl?.value ? parseInt(reminderEl.value, 10) : null;
 
@@ -822,8 +831,10 @@ export async function onMount(params = {}) {
       const { baseEvents: updatedBase, reminders: updatedReminders } = await loadAllCalendarData();
       renderMonthView(updatedReminders, updatedBase);
       renderAppointmentsForSelectedDate(updatedBase);
-
       syncCalendarNotifications();
+      } finally {
+        setSaveButtonLoading(form, false, 'Save appointment');
+      }
     });
   }
 

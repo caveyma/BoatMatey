@@ -6,6 +6,9 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/confirmModal.js';
+import { setSaveButtonLoading } from '../utils/saveButton.js';
 import {
   isBoatArchived,
   getBoatElectrical,
@@ -246,6 +249,9 @@ async function loadElectrical() {
 
 async function saveElectrical() {
   if (!currentBoatId) return;
+  const form = document.getElementById('electrical-system-form');
+  setSaveButtonLoading(form, true);
+  try {
   const payload = {
     system_voltage: document.getElementById('elec_system_voltage')?.value ? parseInt(document.getElementById('elec_system_voltage').value, 10) : null,
     shore_power: document.getElementById('elec_shore_power')?.checked ?? null,
@@ -260,6 +266,10 @@ async function saveElectrical() {
   };
   await upsertBoatElectrical(currentBoatId, payload);
   await loadElectrical();
+  showToast('Electrical system saved.', 'success');
+  } finally {
+    setSaveButtonLoading(form, false);
+  }
 }
 
 function openEditBattery(battery) {
@@ -278,11 +288,15 @@ function openEditBattery(battery) {
 }
 
 async function saveBatteryEntry() {
+  const form = document.getElementById('battery-form');
+  setSaveButtonLoading(form, true);
   const nameEl = document.getElementById('battery_name');
   if (!nameEl?.value?.trim()) {
-    alert('Battery name is required.');
+    showToast('Battery name is required.', 'error');
+    setSaveButtonLoading(form, false);
     return;
   }
+  try {
   const payload = {
     battery_name: nameEl.value.trim(),
     battery_type: document.getElementById('battery_type')?.value || null,
@@ -303,6 +317,9 @@ async function saveBatteryEntry() {
   document.getElementById('battery-form-wrap').style.display = 'none';
   document.getElementById('battery-add-btn').style.display = electricalArchived ? 'none' : 'block';
   await loadBatteries();
+  } finally {
+    setSaveButtonLoading(form, false);
+  }
 }
 
 async function loadBatteries() {
@@ -316,6 +333,7 @@ async function loadBatteries() {
       <div class="empty-state">
         <div class="empty-state-icon">${renderIcon('battery')}</div>
         <p>No batteries added yet</p>
+        ${!electricalArchived ? `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); document.getElementById('battery-add-btn')?.click()">${renderIcon('plus')} Add Battery</button></div>` : ''}
       </div>
     `;
     attachBatteryHandlers();
@@ -373,9 +391,17 @@ function attachBatteryHandlers() {
 
   document.querySelectorAll('.battery-delete-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Delete this battery?')) return;
+      const ok = await confirmAction({
+        title: 'Delete this battery?',
+        message: 'This cannot be undone.',
+        confirmLabel: 'Delete',
+        cancelLabel: 'Cancel',
+        danger: true
+      });
+      if (!ok) return;
       await deleteBattery(btn.dataset.batteryId);
       await loadBatteries();
+      showToast('Battery removed', 'info');
     });
   });
 }

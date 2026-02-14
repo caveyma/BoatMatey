@@ -70,6 +70,9 @@ function render() {
     <button type="button" class="btn-primary" id="get-started-btn" style="width: 100%; padding: 1rem; font-size: 1.1rem;">
       Get Started
     </button>
+    <p style="margin-top: 1rem; font-size: 0.9rem;">
+      <a href="#/auth" id="welcome-sign-in-link" style="color: var(--bm-teal); font-weight: 600;">Already have an account? Sign in</a>
+    </p>
   `;
 
   container.appendChild(card);
@@ -80,9 +83,15 @@ function render() {
 
 function onMount() {
   const getStartedBtn = document.getElementById('get-started-btn');
-  
+  const signInLink = document.getElementById('welcome-sign-in-link');
   if (getStartedBtn) {
     getStartedBtn.addEventListener('click', () => {
+      navigate('/auth');
+    });
+  }
+  if (signInLink) {
+    signInLink.addEventListener('click', (e) => {
+      e.preventDefault();
       navigate('/auth');
     });
   }

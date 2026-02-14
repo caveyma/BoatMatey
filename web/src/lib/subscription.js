@@ -4,7 +4,7 @@
  * - Native (Capacitor Android/iOS): uses RevenueCat to check entitlements
  * - Web (browser / dev): keeps the previous behaviour (always-active subscription)
  *
- * Pricing: £24.99/year including VAT
+ * Pricing: £29.99/year including VAT
  *
  * Expected RevenueCat configuration:
  * - Entitlement identifier in dashboard (check RevenueCat project - may be "BoatMatey Premium" or "boatmatey_premium")
@@ -24,7 +24,7 @@ import { initRevenueCat } from '../services/revenuecat.js';
 
 // RevenueCat dashboard may use "BoatMatey Premium" (with space) - check your project's Entitlements
 const ENTITLEMENT_IDS = ['BoatMatey Premium', 'boatmatey_premium'];
-const DISPLAY_PRICE = '£24.99/year';
+const DISPLAY_PRICE = '£29.99/year';
 
 function getActiveEntitlement(customerInfo) {
   const active = customerInfo?.entitlements?.active;

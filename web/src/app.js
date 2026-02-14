@@ -6,6 +6,7 @@ import './styles/theme.css';
 import './styles/card-colors.css';
 import './styles/global.css';
 import './styles/components.css';
+import './styles/ux.css';
 import { init as initRouter, route, navigate } from './router.js';
 import { initRevenueCat } from './services/revenuecat.js';
 import { initSubscription, refreshSubscriptionStatus } from './lib/subscription.js';
@@ -94,6 +95,7 @@ export async function init() {
     }
 
     initRouter();
+    initOfflineBanner();
 
     // Reschedule OS notifications when app comes to foreground
     try {
@@ -121,6 +123,27 @@ export async function init() {
       `;
     }
   }
+}
+
+/**
+ * Show a small banner when the app is offline; hide when back online.
+ */
+function initOfflineBanner() {
+  let banner = document.getElementById('offline-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'offline-banner';
+    banner.className = 'offline-banner';
+    banner.setAttribute('aria-live', 'polite');
+    banner.textContent = 'You\'re offline. Changes will sync when you\'re back online.';
+    document.body.appendChild(banner);
+  }
+  function update() {
+    banner.classList.toggle('offline-banner-visible', !navigator.onLine);
+  }
+  update();
+  window.addEventListener('online', update);
+  window.addEventListener('offline', update);
 }
 
 /**

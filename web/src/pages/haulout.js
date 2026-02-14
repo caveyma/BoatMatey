@@ -8,6 +8,9 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/confirmModal.js';
+import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getHaulouts, createHaulout, updateHaulout, deleteHaulout } from '../lib/dataService.js';
 import {
   getUploads,
@@ -118,7 +121,7 @@ async function onMount(params = {}) {
       const remainingSlots = LIMITED_UPLOADS_PER_ENTITY - existing.length;
 
       if (remainingSlots <= 0) {
-        alert(`You can only upload up to ${LIMITED_UPLOADS_PER_ENTITY} files for this haul-out.`);
+        showToast(`You can only upload up to ${LIMITED_UPLOADS_PER_ENTITY} files for this haul-out.`, 'error');
         hauloutFileInput.value = '';
         return;
       }
@@ -135,7 +138,7 @@ async function onMount(params = {}) {
       });
 
       if (oversizedCount > 0) {
-        alert('Some files were larger than 2 MB and were skipped.');
+        showToast('Some files were larger than 2 MB and were skipped.', 'info');
       }
 
       if (!validFiles.length) {
@@ -145,9 +148,7 @@ async function onMount(params = {}) {
 
       const filesToUpload = validFiles.slice(0, remainingSlots);
       if (validFiles.length > remainingSlots) {
-        alert(
-          `Only ${remainingSlots} more file(s) can be uploaded for this haul-out (max ${LIMITED_UPLOADS_PER_ENTITY}).`
-        );
+        showToast(`Only ${remainingSlots} more file(s) can be uploaded for this haul-out (max ${LIMITED_UPLOADS_PER_ENTITY}).`, 'info');
       }
 
       for (const file of filesToUpload) {
@@ -171,6 +172,7 @@ async function loadHaulouts() {
       <div class="empty-state">
         <div class="empty-state-icon">${renderIcon('wrench')}</div>
         <p>No haul-out records yet</p>
+        ${!hauloutArchived ? `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/haulout/new')">${renderIcon('plus')} Add Haul-out</button></div>` : ''}
       </div>
     `;
     return;
@@ -234,10 +236,11 @@ async function loadHaulouts() {
 
 function attachListHandlers() {
   window.hauloutPageDelete = async (id) => {
-    if (confirm('Delete this haul-out record?')) {
-      await deleteHaulout(id);
-      loadHaulouts();
-    }
+    const ok = await confirmAction({ title: 'Delete this haul-out record?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
+    if (!ok) return;
+    await deleteHaulout(id);
+    loadHaulouts();
+    showToast('Haul-out record removed', 'info');
   };
 
   window.hauloutPageAddAttachment = (hauloutId) => {
@@ -311,12 +314,13 @@ function attachHauloutAttachmentHandlers() {
   });
 
   document.querySelectorAll('.haulout-delete-attachment-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const uploadId = btn.dataset.uploadId;
-      if (confirm('Delete this attachment?')) {
-        deleteUpload(uploadId);
-        loadHaulouts();
-      }
+      const ok = await confirmAction({ title: 'Delete this attachment?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
+      if (!ok) return;
+      deleteUpload(uploadId);
+      loadHaulouts();
+      showToast('Attachment removed', 'info');
     });
   });
 }
@@ -782,7 +786,7 @@ function initHauloutFormAttachments(hauloutId) {
       const remainingSlots = LIMITED_UPLOADS_PER_ENTITY - existing.length;
 
       if (remainingSlots <= 0) {
-        alert(`You can only upload up to ${LIMITED_UPLOADS_PER_ENTITY} files for this haul-out.`);
+        showToast(`You can only upload up to ${LIMITED_UPLOADS_PER_ENTITY} files for this haul-out.`, 'error');
         fileInput.value = '';
         return;
       }
@@ -799,7 +803,7 @@ function initHauloutFormAttachments(hauloutId) {
       });
 
       if (oversizedCount > 0) {
-        alert('Some files were larger than 2 MB and were skipped.');
+        showToast('Some files were larger than 2 MB and were skipped.', 'info');
       }
 
       if (!validFiles.length) {
@@ -809,9 +813,7 @@ function initHauloutFormAttachments(hauloutId) {
 
       const filesToUpload = validFiles.slice(0, remainingSlots);
       if (validFiles.length > remainingSlots) {
-        alert(
-          `Only ${remainingSlots} more file(s) can be uploaded for this haul-out (max ${LIMITED_UPLOADS_PER_ENTITY}).`
-        );
+        showToast(`Only ${remainingSlots} more file(s) can be uploaded for this haul-out (max ${LIMITED_UPLOADS_PER_ENTITY}).`, 'info');
       }
 
       for (const file of filesToUpload) {
@@ -924,12 +926,15 @@ function initHauloutIssueToggles() {
 }
 
 async function saveHaulout() {
+  const form = document.getElementById('haulout-form');
+  setSaveButtonLoading(form, true);
   const hauloutDate = document.getElementById('haulout_date').value;
   if (!hauloutDate) {
-    alert('Haul-out date is required.');
+    showToast('Haul-out date is required.', 'error');
+    setSaveButtonLoading(form, false);
     return;
   }
-
+  try {
   const entry = {
     id: editingId,
     haulout_date: hauloutDate,
@@ -997,6 +1002,9 @@ async function saveHaulout() {
     navigate(`/boat/${currentBoatId}/haulout`);
   } else {
     loadHaulouts();
+  }
+  } finally {
+    setSaveButtonLoading(form, false);
   }
 }
 

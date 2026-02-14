@@ -5,6 +5,7 @@
 
 import { navigate } from '../router.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getLogbook, createLogEntry, updateLogEntry } from '../lib/dataService.js';
 
 function render(params = {}) {
@@ -112,7 +113,9 @@ async function onMount(params = {}) {
   document.getElementById('log-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (archived) return;
-
+    const form = e.target;
+    setSaveButtonLoading(form, true);
+    try {
     const date = document.getElementById('log_date').value;
     const departure = document.getElementById('log_departure').value.trim();
     const arrival = document.getElementById('log_arrival').value.trim();
@@ -141,6 +144,9 @@ async function onMount(params = {}) {
       await updateLogEntry(entryId, payload);
     }
     navigate(`/boat/${boatId}/log`);
+    } finally {
+      setSaveButtonLoading(form, false);
+    }
   });
 }
 

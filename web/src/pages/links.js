@@ -5,6 +5,8 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/confirmModal.js';
 import { getLinks, deleteLink, isBoatArchived } from '../lib/dataService.js';
 import { boatsStorage, linksStorage } from '../lib/storage.js';
 
@@ -84,7 +86,7 @@ async function loadLinks() {
       <div class="empty-state">
         <div class="empty-state-icon">${renderIcon('link')}</div>
         <p>No web links added yet</p>
-        ${isArchived ? '<p class="text-muted">Archived boats are view-only.</p>' : ''}
+        ${isArchived ? '<p class="text-muted">Archived boats are view-only.</p>' : `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/links/new')">${renderIcon('plus')} Add Link</button></div>`}
       </div>
     `;
     attachHandlers();
@@ -126,13 +128,15 @@ function attachHandlers() {
 
   window.linksPageDelete = async (id) => {
     if (isArchived) return;
-    if (!confirm('Delete this link?')) return;
+    const ok = await confirmAction({ title: 'Delete this link?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
+    if (!ok) return;
     if (currentBoatId) {
       await deleteLink(id);
     } else {
       linksStorage.delete(id);
     }
     loadLinks();
+    showToast('Link removed', 'info');
   };
 }
 

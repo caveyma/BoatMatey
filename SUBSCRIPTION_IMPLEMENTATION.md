@@ -6,7 +6,7 @@
 **File**: `web/src/pages/subscription.js`
 
 A beautiful subscription page that displays:
-- Pricing: £24.99/year including VAT
+- Pricing: £29.99/year including VAT
 - 1-month free trial badge
 - Complete feature list (unlimited boats, service history, etc.)
 - "Start Free Trial" button (native only)
@@ -206,7 +206,7 @@ The implementation ensures GDPR compliance:
 - **Product ID**: `boatmatey_premium_yearly:yearly`
 - **Base Plan**: Yearly (auto-renewing)
 - **Offer**: 1-month free trial
-- **Price**: £24.99/year
+- **Price**: £29.99/year
 - **Countries**: 174 regions
 
 ### Apple App Store ⚠️
@@ -283,7 +283,7 @@ if (authenticated) → allow access
 
 1. **App Store Connect** - Fix "Missing Metadata":
    - Add localization (name + description)
-   - Set pricing (£24.99/year)
+   - Set pricing (£29.99/year)
    - Configure 1-month free trial
    - Submit with new app version
 

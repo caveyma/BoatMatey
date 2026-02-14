@@ -2,7 +2,7 @@
 
 ## 🎯 Key Information
 
-**Price**: £24.99/year including VAT  
+**Price**: £29.99/year including VAT  
 **Trial**: 1 month free for new subscribers  
 **Platforms**: Google Play Store & Apple App Store  
 **Payment**: RevenueCat  
@@ -121,7 +121,7 @@ syncSubscriptionToProfile(userId)
 
 ### Urgent (Blocks iOS)
 - [ ] Complete App Store Connect metadata
-- [ ] Set pricing £24.99 in App Store Connect
+- [ ] Set pricing £29.99 in App Store Connect
 - [ ] Configure 1-month free trial in App Store Connect
 - [ ] Submit app with subscription for review
 

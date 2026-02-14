@@ -5,6 +5,9 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/confirmModal.js';
+import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getServiceEntries, createServiceEntry, updateServiceEntry, deleteServiceEntry, getEngines } from '../lib/dataService.js';
 import { enginesStorage } from '../lib/storage.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
@@ -13,6 +16,8 @@ let editingId = null;
 let serviceArchived = false;
 let filterEngineId = null;
 let currentBoatId = null;
+/** All service entries (before filter/sort) for list */
+let allServiceEntries = [];
 let serviceFileInput = null;
 let currentServiceIdForUpload = null;
 /** Engines used when building the service form; fallback for checklist when storage is empty or out of sync */
@@ -571,7 +576,7 @@ async function onMount(params = {}) {
       const remainingSlots = LIMITED_UPLOADS_PER_ENTITY - existing.length;
 
       if (remainingSlots <= 0) {
-        alert(`You can only upload up to ${LIMITED_UPLOADS_PER_ENTITY} files for this service entry.`);
+        showToast(`You can only upload up to ${LIMITED_UPLOADS_PER_ENTITY} files for this service entry.`, 'error');
         serviceFileInput.value = '';
         return;
       }
@@ -588,7 +593,7 @@ async function onMount(params = {}) {
       });
 
       if (oversizedCount > 0) {
-        alert('Some files were larger than 2 MB and were skipped.');
+        showToast('Some files were larger than 2 MB and were skipped.', 'info');
       }
 
       if (!validFiles.length) {
@@ -598,7 +603,7 @@ async function onMount(params = {}) {
 
       const filesToUpload = validFiles.slice(0, remainingSlots);
       if (validFiles.length > remainingSlots) {
-        alert(`Only ${remainingSlots} more file(s) can be uploaded for this service entry (max ${LIMITED_UPLOADS_PER_ENTITY}).`);
+        showToast(`Only ${remainingSlots} more file(s) can be uploaded for this service entry (max ${LIMITED_UPLOADS_PER_ENTITY}).`, 'info');
       }
 
       for (const file of filesToUpload) {
@@ -616,11 +621,16 @@ async function onMount(params = {}) {
 function loadFilters() {
   const filterContainer = document.getElementById('service-filter');
   const engines = enginesStorage.getAll(currentBoatId);
-  
+  filterContainer.className = 'page-actions list-tools';
   filterContainer.innerHTML = `
-    <select id="engine-filter" class="form-control" style="max-width: 300px;">
+    <input type="search" id="service-search" class="form-control" placeholder="Search entries..." aria-label="Search service entries">
+    <select id="engine-filter" class="form-control" style="max-width: 200px;">
       <option value="">All Engines</option>
       ${engines.map(e => `<option value="${e.id}">${e.label || 'Unnamed'}</option>`).join('')}
+    </select>
+    <select id="service-sort" class="form-control" aria-label="Sort entries">
+      <option value="newest">Newest first</option>
+      <option value="oldest">Oldest first</option>
     </select>
   `;
 
@@ -628,23 +638,39 @@ function loadFilters() {
     filterEngineId = e.target.value || null;
     loadServices();
   });
+  document.getElementById('service-search').addEventListener('input', () => loadServices());
+  document.getElementById('service-sort').addEventListener('change', () => loadServices());
 }
 
 async function loadServices() {
   const listContainer = document.getElementById('service-list');
-  let services = currentBoatId ? await getServiceEntries(currentBoatId) : [];
-
-  if (filterEngineId) {
-    services = services.filter(s => s.engine_id === filterEngineId);
-  }
+  allServiceEntries = currentBoatId ? await getServiceEntries(currentBoatId) : [];
+  const q = (document.getElementById('service-search')?.value || '').trim().toLowerCase();
+  const sortVal = document.getElementById('service-sort')?.value || 'newest';
+  let services = allServiceEntries.filter(s => {
+    if (filterEngineId && s.engine_id !== filterEngineId) return false;
+    if (!q) return true;
+    const dateStr = s.date ? new Date(s.date).toLocaleDateString().toLowerCase() : '';
+    const type = (s.service_type || '').toLowerCase();
+    const notes = (s.notes || '').toLowerCase();
+    return dateStr.includes(q) || type.includes(q) || notes.includes(q);
+  });
+  services = [...services].sort((a, b) => {
+    const dateA = a.date ? new Date(a.date).getTime() : 0;
+    const dateB = b.date ? new Date(b.date).getTime() : 0;
+    return sortVal === 'newest' ? dateB - dateA : dateA - dateB;
+  });
 
   if (services.length === 0) {
-    listContainer.innerHTML = `
+    listContainer.innerHTML = allServiceEntries.length === 0
+      ? `
       <div class="empty-state">
         <div class="empty-state-icon">${renderIcon('wrench')}</div>
         <p>No service entries yet</p>
+        ${!serviceArchived ? `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/service/new')">${renderIcon('plus')} Add Service Entry</button></div>` : ''}
       </div>
-    `;
+    `
+      : `<p class="text-muted">No service entries match your search.</p>`;
     attachHandlers();
     return;
   }
@@ -703,10 +729,11 @@ async function loadServices() {
 
 function attachHandlers() {
   window.servicePageDelete = async (id) => {
-    if (confirm('Delete this service entry?')) {
-      await deleteServiceEntry(id);
-      loadServices();
-    }
+    const ok = await confirmAction({ title: 'Delete this service entry?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
+    if (!ok) return;
+    await deleteServiceEntry(id);
+    loadServices();
+    showToast('Service entry removed', 'info');
   };
 
   window.servicePageAddAttachment = (serviceId) => {
@@ -780,12 +807,13 @@ function attachServiceAttachmentHandlers() {
   });
 
   document.querySelectorAll('.service-delete-attachment-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const uploadId = btn.dataset.uploadId;
-      if (confirm('Delete this attachment?')) {
-        deleteUpload(uploadId);
-        loadServices();
-      }
+      const ok = await confirmAction({ title: 'Delete this attachment?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
+      if (!ok) return;
+      deleteUpload(uploadId);
+      loadServices();
+      showToast('Attachment removed', 'info');
     });
   });
 }
@@ -1226,7 +1254,7 @@ function initServiceFormAttachments(serviceId) {
       const remainingSlots = LIMITED_UPLOADS_PER_ENTITY - existing.length;
 
       if (remainingSlots <= 0) {
-        alert(`You can only upload up to ${LIMITED_UPLOADS_PER_ENTITY} files for this service entry.`);
+        showToast(`You can only upload up to ${LIMITED_UPLOADS_PER_ENTITY} files for this service entry.`, 'error');
         fileInput.value = '';
         return;
       }
@@ -1243,7 +1271,7 @@ function initServiceFormAttachments(serviceId) {
       });
 
       if (oversizedCount > 0) {
-        alert('Some files were larger than 2 MB and were skipped.');
+        showToast('Some files were larger than 2 MB and were skipped.', 'info');
       }
 
       if (!validFiles.length) {
@@ -1253,7 +1281,7 @@ function initServiceFormAttachments(serviceId) {
 
       const filesToUpload = validFiles.slice(0, remainingSlots);
       if (validFiles.length > remainingSlots) {
-        alert(`Only ${remainingSlots} more file(s) can be uploaded for this service entry (max ${LIMITED_UPLOADS_PER_ENTITY}).`);
+        showToast(`Only ${remainingSlots} more file(s) can be uploaded for this service entry (max ${LIMITED_UPLOADS_PER_ENTITY}).`, 'info');
       }
 
       for (const file of filesToUpload) {
@@ -1273,7 +1301,7 @@ function initServiceFormAttachments(serviceId) {
       const url = urlInput?.value.trim();
 
       if (!url) {
-        alert('Please enter a URL.');
+        showToast('Please enter a URL.', 'error');
         return;
       }
 
@@ -1330,6 +1358,8 @@ function loadServiceFormAttachments(serviceId) {
 }
 
 async function saveService() {
+  const form = document.getElementById('service-form');
+  setSaveButtonLoading(form, true);
   const serviceMode = document.querySelector('input[name="service_mode"]:checked')?.value || 'Professional';
   let diyChecklist = null;
   let diyMeta = null;
@@ -1374,9 +1404,11 @@ async function saveService() {
   const serviceType = document.getElementById('service_type').value || document.getElementById('service_type_custom').value;
   const engineIdRaw = document.getElementById('service_engine').value;
   if (serviceType !== 'Sails & Rigging' && !engineIdRaw) {
-    alert('Please select an engine for this service type.');
+    showToast('Please select an engine for this service type.', 'error');
+    setSaveButtonLoading(form, false);
     return;
   }
+  try {
 
   const entry = {
     id: editingId,
@@ -1417,6 +1449,9 @@ async function saveService() {
     navigate(`/boat/${currentBoatId}/service`);
   } else {
     loadServices();
+  }
+  } finally {
+    setSaveButtonLoading(form, false);
   }
 }
 

@@ -5,6 +5,8 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/confirmModal.js';
 import { isBoatArchived, getEquipment, deleteEquipment } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
 
@@ -83,7 +85,7 @@ async function onMount(params = {}) {
       const remainingSlots = LIMITED_UPLOADS_PER_ENTITY - existing.length;
 
       if (remainingSlots <= 0) {
-        alert(`You can only upload up to ${LIMITED_UPLOADS_PER_ENTITY} files for this safety item.`);
+        showToast(`You can only upload up to ${LIMITED_UPLOADS_PER_ENTITY} files for this safety item.`, 'error');
         safetyFileInput.value = '';
         return;
       }
@@ -100,7 +102,7 @@ async function onMount(params = {}) {
       });
 
       if (oversizedCount > 0) {
-        alert('Some files were larger than 2 MB and were skipped.');
+        showToast('Some files were larger than 2 MB and were skipped.', 'info');
       }
 
       if (!validFiles.length) {
@@ -110,7 +112,7 @@ async function onMount(params = {}) {
 
       const filesToUpload = validFiles.slice(0, remainingSlots);
       if (validFiles.length > remainingSlots) {
-        alert(`Only ${remainingSlots} more file(s) can be uploaded for this safety item (max ${LIMITED_UPLOADS_PER_ENTITY}).`);
+        showToast(`Only ${remainingSlots} more file(s) can be uploaded for this safety item (max ${LIMITED_UPLOADS_PER_ENTITY}).`, 'info');
       }
 
       for (const file of filesToUpload) {
@@ -134,6 +136,7 @@ async function loadSafetyEquipment() {
       <div class="empty-state">
         <div class="empty-state-icon">${renderIcon('shield')}</div>
         <p>No safety equipment added yet</p>
+        ${!safetyArchived ? `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/safety/new')">${renderIcon('plus')} Add Equipment</button></div>` : ''}
       </div>
     `;
     return;
@@ -184,7 +187,8 @@ async function loadSafetyEquipment() {
 function attachHandlers() {
   window.navigate = navigate;
   window.safetyPageDelete = async (id) => {
-    if (confirm('Delete this equipment?')) {
+    const ok = await confirmAction({ title: 'Delete this equipment?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
+    if (ok) {
       await deleteEquipment(id, 'safety');
       loadSafetyEquipment();
     }
@@ -261,12 +265,13 @@ function attachSafetyAttachmentHandlers() {
   });
 
   document.querySelectorAll('.safety-delete-attachment-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const uploadId = btn.dataset.uploadId;
-      if (confirm('Delete this attachment?')) {
-        deleteUpload(uploadId);
-        loadSafetyEquipment();
-      }
+      const ok = await confirmAction({ title: 'Delete this attachment?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
+      if (!ok) return;
+      deleteUpload(uploadId);
+      loadSafetyEquipment();
+      showToast('Attachment removed', 'info');
     });
   });
 }

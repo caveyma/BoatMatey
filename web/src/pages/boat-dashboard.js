@@ -180,7 +180,7 @@ function render() {
 
   const wrapper = document.createElement('div');
 
-  const header = createYachtHeader(boat.boat_name || 'Boat Dashboard');
+  const header = createYachtHeader(boat.boat_name || 'Boat Dashboard', { showSettings: true });
   wrapper.appendChild(header);
 
   const pageContent = document.createElement('div');

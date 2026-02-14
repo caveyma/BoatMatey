@@ -6,6 +6,8 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { showToast } from '../components/toast.js';
+import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { getBoat, updateBoat, isBoatArchived } from '../lib/dataService.js';
 import { boatsStorage } from '../lib/storage.js';
 
@@ -151,6 +153,8 @@ async function onMount(params = {}) {
 }
 
 function saveSailsRigging() {
+  const form = document.getElementById('sails-rigging-form');
+  setSaveButtonLoading(form, true);
   const data = {
     mainsail_details: document.getElementById('mainsail_details')?.value?.trim() || '',
     headsails_details: document.getElementById('headsails_details')?.value?.trim() || '',
@@ -167,7 +171,8 @@ function saveSailsRigging() {
   boatsStorage.save(boat);
 
   updateBoat(currentBoatId, { sails_rigging_data: data }).finally(() => {
-    alert('Sails & rigging details saved.');
+    setSaveButtonLoading(form, false);
+    showToast('Sails & rigging details saved.', 'success');
     navigate(`/boat/${currentBoatId}`);
   });
 }

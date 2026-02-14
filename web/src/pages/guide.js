@@ -93,6 +93,36 @@ export function render(params = {}) {
       </ul>
     </div>
 
+    <div class="card guide-section guide-section-fuel">
+      <h3>Fuel &amp; Performance</h3>
+      <p><strong>What it is:</strong> Performance and tank settings (typical cruise RPM, speed, burn rate, tank capacity, preferred units) plus a log of fuel fills. You can record each fill with date, quantity, price, engine hours and notes to track consumption and costs over time.</p>
+      <p><strong>How to use it:</strong></p>
+      <ul>
+        <li>Tap Fuel &amp; Performance. Optionally fill in the Performance / Tank form (cruise RPM, speed, burn, capacity) and tap <strong>Save</strong>.</li>
+        <li>Tap <strong>Add fill</strong> to log a fuel fill; enter quantity, price, hours and notes.</li>
+      </ul>
+    </div>
+
+    <div class="card guide-section guide-section-electrical">
+      <h3>Electrical &amp; Batteries</h3>
+      <p><strong>What it is:</strong> Electrical system overview (voltage, shore power, inverter, solar, generator, charger) and a list of batteries. For each battery you store make, model, type, capacity, install date and optional next test or replacement date for reminders.</p>
+      <p><strong>How to use it:</strong></p>
+      <ul>
+        <li>Tap Electrical &amp; Batteries. Edit the system form (voltage, inverter, solar, etc.) and tap <strong>Save</strong>.</li>
+        <li>Tap <strong>Add battery</strong> to add a battery; enter make, model, capacity and optional dates for reminders.</li>
+      </ul>
+    </div>
+
+    <div class="card guide-section guide-section-mayday">
+      <h3>Mayday / Distress Call</h3>
+      <p><strong>What it is:</strong> An emergency tool to help you make a clear VHF distress call. You store vessel and contact details once (vessel name, callsign, MMSI, persons on board, emergency contact, liferaft, EPIRB, etc.). In an incident you enter position and nature of distress; the app builds a script you can read out on Channel 16. Scripts are provided for <strong>MAYDAY</strong> (immediate danger), <strong>PAN-PAN</strong> (urgent) and <strong>SÉCURITÉ</strong> (safety broadcast). In an emergency, always follow official coastguard guidance—this tool only helps you deliver a clear message.</p>
+      <p><strong>How to use it:</strong></p>
+      <ul>
+        <li>Tap Mayday / Distress Call. Fill in the setup form (vessel name, callsign, MMSI, persons on board, emergency contact, equipment) and tap <strong>Save</strong> so the script can use your details.</li>
+        <li>When needed: enter position and nature of distress in &quot;At the moment&quot;; the readout updates. Choose MAYDAY, PAN-PAN or SÉCURITÉ, then read the script slowly over VHF 16 or use <strong>Copy script</strong>.</li>
+      </ul>
+    </div>
+
     <div class="card guide-section guide-section-haulout">
       <h3>Haul-Out Maintenance</h3>
       <p><strong>What it is:</strong> Records of work done when the boat is out of the water: antifoul (brand, type, coats), anodes, props, shaft, cutless bearings, rudder and steering, seacocks, hull condition and osmosis checks. You can store which yard or contractor was used, costs and notes, and set when the next haul-out is due for reminders.</p>
@@ -191,6 +221,7 @@ export function render(params = {}) {
         <li>Most sections let you attach photos, PDFs or links so everything stays in one place.</li>
         <li>Use Calendar &amp; Alerts (home screen) to see time-based reminders from engines, service, haul-outs and warranties.</li>
         <li>Turn on &quot;Watermaker installed&quot; in Boat Details to show the Watermaker Service card; set boat type to Sailing to see the Sails &amp; Rigging card.</li>
+        <li>Fill in the Mayday / Distress Call setup form in advance so in an emergency you only need to add position and nature of distress.</li>
         <li>Your data syncs to the cloud when signed in so you can use BoatMatey on multiple devices.</li>
       </ul>
     </div>

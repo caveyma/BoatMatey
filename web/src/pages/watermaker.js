@@ -8,6 +8,9 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/confirmModal.js';
+import { setSaveButtonLoading } from '../utils/saveButton.js';
 import {
   getBoat,
   updateBoat,
@@ -179,7 +182,8 @@ function renderServiceList(services, boatId, archived) {
   if (!listEl) return;
 
   if (!services.length) {
-    listEl.innerHTML = '<div class="empty-state"><p class="text-muted">No service entries yet. Add one to get started.</p></div>';
+    const addBtn = archived ? '' : `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); window.navigate('/boat/${boatId}/watermaker/new')">${renderIcon('plus')} Add Service Entry</button></div>`;
+    listEl.innerHTML = `<div class="empty-state"><p>No service entries yet.</p>${addBtn}</div>`;
     return;
   }
 
@@ -268,7 +272,14 @@ function buildFormHtml(entry, unit) {
 }
 
 async function deleteService(serviceId) {
-  if (!confirm('Delete this service entry? Any linked calendar reminder will be removed.')) return;
+  const ok = await confirmAction({
+    title: 'Delete this service entry?',
+    message: 'Any linked calendar reminder will be removed.',
+    confirmLabel: 'Delete',
+    cancelLabel: 'Cancel',
+    danger: true
+  });
+  if (!ok) return;
   const boat = boatsStorage.get(currentBoatId) || { id: currentBoatId };
   const wm = getWatermakerData(boat);
   const entry = wm.services.find(s => s.id === serviceId);
@@ -286,11 +297,15 @@ async function deleteService(serviceId) {
 }
 
 async function saveWatermakerForm(entryId, isNew) {
+  const form = document.getElementById('watermaker-form');
+  setSaveButtonLoading(form, true);
   const date = document.getElementById('wm_date')?.value;
   if (!date) {
-    alert('Please enter the service date.');
+    showToast('Please enter the service date.', 'error');
+    setSaveButtonLoading(form, false);
     return;
   }
+  try {
   const next_service_due = document.getElementById('wm_next_service_due')?.value || null;
 
   const boat = boatsStorage.get(currentBoatId) || { id: currentBoatId };
@@ -350,8 +365,11 @@ async function saveWatermakerForm(entryId, isNew) {
   boatsStorage.save(boat);
   await updateBoat(currentBoatId, { watermaker_data: boat.watermaker_data, watermaker_installed: true });
 
-  alert('Watermaker service saved.' + (next_service_due ? ' A reminder was added to the calendar (1 day before).' : ''));
+  showToast('Watermaker service saved.' + (next_service_due ? ' A reminder was added to the calendar (1 day before).' : ''), 'success');
   navigate(`/boat/${currentBoatId}/watermaker`);
+  } finally {
+    setSaveButtonLoading(form, false);
+  }
 }
 
 async function onMount(params = {}) {

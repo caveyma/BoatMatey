@@ -5,7 +5,7 @@
 ### App Store Connect - COMPLETE ✅
 - **Product ID**: `boatmatey_yearly` ✅
 - **Duration**: 1 year ✅
-- **UK Price**: £24.99/year ✅
+- **UK Price**: £29.99/year ✅
 - **1-Month Free Trial**: ALL 175 countries ✅
 - **Localization**: English (U.S.) ✅
 - **Display Name**: "BoatMatey Pro - Annual" ✅
@@ -13,7 +13,7 @@
 
 ### Google Play Store - COMPLETE ✅
 - **Product ID**: `boatmatey_premium_yearly:yearly` ✅
-- **Price**: £24.99/year ✅
+- **Price**: £29.99/year ✅
 - **Trial**: 1 month free ✅
 - **Status**: Active & Published ✅
 - **Countries**: 174 regions ✅
@@ -37,7 +37,7 @@
 
 | Key Market | Currency | Price |
 |------------|----------|-------|
-| 🇬🇧 United Kingdom | GBP | **£24.99** |
+| 🇬🇧 United Kingdom | GBP | **£29.99** |
 | 🇺🇸 United States | USD | $24.99 |
 | 🇪🇺 Eurozone | EUR | €29.99 |
 | 🇦🇺 Australia | AUD | $39.99 |
@@ -51,7 +51,7 @@
 
 New subscribers get:
 - 1 month free trial
-- Then £24.99/year (or local equivalent)
+- Then £29.99/year (or local equivalent)
 - Auto-renews unless cancelled
 
 ## 🚀 FINAL STEP: Submit for Review
@@ -117,7 +117,7 @@ npm run dev
 Open App
     ↓
 Subscription Page
-  - "£24.99/year"
+  - "£29.99/year"
   - "1 Month Free Trial"
   - [Start Free Trial]
   - [Restore Purchase]
@@ -147,7 +147,7 @@ Main App (if both pass)
 
 **Per Subscriber**:
 - Trial: 1 month free
-- After trial: £24.99/year (~$32 USD)
+- After trial: £29.99/year (~$32 USD)
 - Your proceeds: ~£17.65/year (70% after Apple/Google fees)
 
 **Year 1 Proceeds** (from Apple export):
@@ -158,7 +158,7 @@ Main App (if both pass)
 ## ✅ Final Checklist
 
 - [x] Google Play subscription active
-- [x] App Store pricing set (£24.99 UK)
+- [x] App Store pricing set (£29.99 UK)
 - [x] Free trial configured (1 month, all countries)
 - [x] RevenueCat offering configured
 - [x] Both products in offering
@@ -179,7 +179,7 @@ You've completed 100% of the subscription configuration!
 
 **What you've accomplished**:
 - ✅ Full subscription system across iOS and Android
-- ✅ £24.99/year with 1-month free trial
+- ✅ £29.99/year with 1-month free trial
 - ✅ 175 countries with local pricing
 - ✅ GDPR-compliant data handling
 - ✅ Cross-platform cloud sync

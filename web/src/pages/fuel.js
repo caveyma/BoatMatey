@@ -6,6 +6,9 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/confirmModal.js';
+import { setSaveButtonLoading } from '../utils/saveButton.js';
 import {
   isBoatArchived,
   getFuelPerformance,
@@ -208,6 +211,9 @@ async function loadFuelPerformance() {
 
 async function saveFuelPerformance() {
   if (!currentBoatId) return;
+  const form = document.getElementById('fuel-performance-form');
+  setSaveButtonLoading(form, true);
+  try {
   const payload = {
     preferred_units: document.getElementById('fuel_preferred_units')?.value || 'litres',
     typical_cruise_rpm: document.getElementById('fuel_typical_cruise_rpm')?.value ? parseInt(document.getElementById('fuel_typical_cruise_rpm').value, 10) : null,
@@ -219,6 +225,10 @@ async function saveFuelPerformance() {
   };
   await upsertFuelPerformance(currentBoatId, payload);
   await loadFuelPerformance();
+  showToast('Performance settings saved.', 'success');
+  } finally {
+    setSaveButtonLoading(form, false);
+  }
 }
 
 function openEditLog(log) {
@@ -237,11 +247,15 @@ function openEditLog(log) {
 }
 
 async function saveFuelLogEntry() {
+  const form = document.getElementById('fuel-log-form');
+  setSaveButtonLoading(form, true);
   const dateEl = document.getElementById('fuel_log_date');
   if (!dateEl?.value?.trim()) {
-    alert('Date is required.');
+    showToast('Date is required.', 'error');
+    setSaveButtonLoading(form, false);
     return;
   }
+  try {
   const payload = {
     log_date: dateEl.value,
     engine_hours: document.getElementById('fuel_engine_hours')?.value ? parseFloat(document.getElementById('fuel_engine_hours').value) : null,
@@ -260,6 +274,9 @@ async function saveFuelLogEntry() {
   document.getElementById('fuel-log-form-wrap').style.display = 'none';
   document.getElementById('fuel-log-add-btn').style.display = fuelArchived ? 'none' : 'block';
   await loadFuelLogs();
+  } finally {
+    setSaveButtonLoading(form, false);
+  }
 }
 
 async function loadFuelLogs() {
@@ -273,6 +290,7 @@ async function loadFuelLogs() {
       <div class="empty-state">
         <div class="empty-state-icon">${renderIcon('fuel')}</div>
         <p>No fuel log entries yet</p>
+        ${!fuelArchived ? `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); document.getElementById('fuel-log-add-btn')?.click()">${renderIcon('plus')} Add Log Entry</button></div>` : ''}
       </div>
     `;
     attachLogHandlers();
@@ -337,9 +355,17 @@ function attachLogHandlers() {
 
   document.querySelectorAll('.fuel-log-delete-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Delete this fuel log entry?')) return;
+      const ok = await confirmAction({
+        title: 'Delete this fuel log entry?',
+        message: 'This cannot be undone.',
+        confirmLabel: 'Delete',
+        cancelLabel: 'Cancel',
+        danger: true
+      });
+      if (!ok) return;
       await deleteFuelLog(btn.dataset.logId);
       await loadFuelLogs();
+      showToast('Fuel log entry removed', 'info');
     });
   });
 }

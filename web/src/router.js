@@ -104,6 +104,25 @@ function matchRoute(path) {
   return null;
 }
 
+function setAriaRequired(container) {
+  if (!container) return;
+  container.querySelectorAll('input[required], select[required], textarea[required]').forEach((el) => {
+    el.setAttribute('aria-required', 'true');
+  });
+}
+
+function showAppLoading(app) {
+  if (!app) return;
+  app.innerHTML = '';
+  app.setAttribute('aria-busy', 'true');
+  const loading = document.createElement('div');
+  loading.className = 'app-loading';
+  loading.setAttribute('role', 'status');
+  loading.setAttribute('aria-live', 'polite');
+  loading.innerHTML = '<div class="app-loading-spinner" aria-hidden="true"></div><span class="aria-live-region">Loading…</span>';
+  app.appendChild(loading);
+}
+
 async function loadRoute(path) {
   // Normalize path
   if (path.startsWith('#')) {
@@ -115,6 +134,9 @@ async function loadRoute(path) {
 
   if (path === currentRoute) return;
   currentRoute = path;
+
+  const app = document.querySelector('#app');
+  showAppLoading(app);
 
   // Check access requirements (subscription + auth gate)
   const accessCheck = await checkAccess(path);
@@ -128,6 +150,10 @@ async function loadRoute(path) {
   if (!match) {
     console.error(`Router: Route not found: ${path}`);
     console.error('Router: Available routes:', Object.keys(routes));
+    if (app) {
+      app.removeAttribute('aria-busy');
+      app.innerHTML = '<div class="container"><h1>Error</h1><p>Page not found</p><a href="#/">Go home</a></div>';
+    }
     if (path !== '/') {
       navigate('/');
     }
@@ -150,23 +176,53 @@ async function loadRoute(path) {
   try {
     const pageModule = route;
     currentPage = pageModule;
-    
-    const app = document.querySelector('#app');
+
     if (app) {
+      app.removeAttribute('aria-busy');
       app.innerHTML = '';
-      
+
       if (pageModule && typeof pageModule.render === 'function') {
         const element = pageModule.render(params);
         if (element) {
+          const skipLink = document.createElement('a');
+          skipLink.href = '#main-content';
+          skipLink.className = 'skip-link';
+          skipLink.textContent = 'Skip to main content';
+          skipLink.setAttribute('tabindex', '0');
+          element.insertBefore(skipLink, element.firstChild);
           app.appendChild(element);
+          const main = element.querySelector ? element.querySelector('.page-content') : null;
+          if (main) {
+            main.setAttribute('role', 'main');
+            main.setAttribute('id', 'main-content');
+          }
+          setAriaRequired(app);
         }
       } else if (typeof pageModule === 'function') {
         const element = await pageModule(params);
         if (element) {
+          const skipLink = document.createElement('a');
+          skipLink.href = '#main-content';
+          skipLink.className = 'skip-link';
+          skipLink.textContent = 'Skip to main content';
+          skipLink.setAttribute('tabindex', '0');
+          element.insertBefore(skipLink, element.firstChild);
           app.appendChild(element);
+          const main = element.querySelector ? element.querySelector('.page-content') : null;
+          if (main) {
+            main.setAttribute('role', 'main');
+            main.setAttribute('id', 'main-content');
+          }
+          setAriaRequired(app);
         }
       } else if (pageModule instanceof HTMLElement) {
         app.appendChild(pageModule);
+        const main = app.querySelector('.page-content');
+        if (main) {
+          main.setAttribute('role', 'main');
+          main.setAttribute('id', 'main-content');
+        }
+        setAriaRequired(app);
       } else {
         console.error('Invalid page module format');
         app.innerHTML = '<div class="container"><h1>Error</h1><p>Page could not be loaded</p></div>';
@@ -179,9 +235,9 @@ async function loadRoute(path) {
     }
   } catch (e) {
     console.error(`Error loading route ${path}:`, e);
-    const app = document.querySelector('#app');
     if (app) {
-      app.innerHTML = `<div class="container"><h1>Error</h1><p>Failed to load page: ${e.message}</p></div>`;
+      app.removeAttribute('aria-busy');
+      app.innerHTML = `<div class="container"><h1>Error</h1><p>Failed to load page: ${e.message}</p><a href="#/">Go home</a></div>`;
     }
   }
 }

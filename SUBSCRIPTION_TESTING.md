@@ -51,7 +51,7 @@
 ### First Launch (No Subscription)
 - [ ] Open app
 - [ ] Should immediately show subscription page (`/subscription`)
-- [ ] Verify pricing shows: £24.99/year
+- [ ] Verify pricing shows: £29.99/year
 - [ ] Verify "1 Month Free Trial" badge is visible
 - [ ] Verify feature list is displayed
 - [ ] Tap "Restore Purchase" - should show "No active subscription found"
@@ -108,7 +108,7 @@
 ### First Launch (No Subscription)
 - [ ] Open app from Xcode
 - [ ] Should immediately show subscription page (`/subscription`)
-- [ ] Verify pricing shows: £24.99/year
+- [ ] Verify pricing shows: £29.99/year
 - [ ] Verify "1 Month Free Trial" badge is visible
 - [ ] Verify feature list is displayed
 

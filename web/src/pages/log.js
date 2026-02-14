@@ -5,12 +5,16 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/confirmModal.js';
 import { isBoatArchived, getLogbook, deleteLogEntry } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOADS_PER_ENTITY } from '../lib/uploads.js';
 
 let currentBoatId = null;
 let logFileInput = null;
 let logArchived = false;
+/** All log entries before search/sort */
+let allLogEntries = [];
 
 function render(params = {}) {
   // Get boat ID from route params
@@ -51,11 +55,21 @@ function render(params = {}) {
     </button>
   `;
 
+  const listTools = document.createElement('div');
+  listTools.className = 'list-tools';
+  listTools.innerHTML = `
+    <input type="search" id="log-search" class="form-control" placeholder="Search trips..." aria-label="Search trips">
+    <select id="log-sort" class="form-control" aria-label="Sort trips">
+      <option value="newest">Newest first</option>
+      <option value="oldest">Oldest first</option>
+    </select>
+  `;
   const listContainer = document.createElement('div');
   listContainer.id = 'log-list';
 
   container.appendChild(attachmentsCard);
   container.appendChild(addBtn);
+  container.appendChild(listTools);
   container.appendChild(listContainer);
 
   pageContent.appendChild(container);
@@ -77,6 +91,11 @@ async function onMount(params = {}) {
   loadLogAttachments();
   loadLogs();
 
+  const logSearch = document.getElementById('log-search');
+  const logSort = document.getElementById('log-sort');
+  if (logSearch) logSearch.addEventListener('input', () => applyLogFilterSort());
+  if (logSort) logSort.addEventListener('change', () => applyLogFilterSort());
+
   if (logFileInput) {
     logFileInput.addEventListener('change', async (e) => {
       const files = Array.from(e.target.files);
@@ -86,7 +105,7 @@ async function onMount(params = {}) {
       const remainingSlots = MAX_UPLOADS_PER_ENTITY - existing.length;
 
       if (remainingSlots <= 0) {
-        alert(`You can only upload up to ${MAX_UPLOADS_PER_ENTITY} files for Ship's Log.`);
+        showToast(`You can only upload up to ${MAX_UPLOADS_PER_ENTITY} files for Ship's Log.`, 'error');
         logFileInput.value = '';
         return;
       }
@@ -103,7 +122,7 @@ async function onMount(params = {}) {
       });
 
       if (oversizedCount > 0) {
-        alert('Some files were larger than 5 MB and were skipped.');
+        showToast('Some files were larger than 5 MB and were skipped.', 'info');
       }
 
       if (!validFiles.length) {
@@ -113,7 +132,7 @@ async function onMount(params = {}) {
 
       const filesToUpload = validFiles.slice(0, remainingSlots);
       if (validFiles.length > remainingSlots) {
-        alert(`Only ${remainingSlots} more file(s) can be uploaded for Ship's Log (max ${MAX_UPLOADS_PER_ENTITY}).`);
+        showToast(`Only ${remainingSlots} more file(s) can be uploaded for Ship's Log (max ${MAX_UPLOADS_PER_ENTITY}).`, 'info');
       }
 
       for (const file of filesToUpload) {
@@ -195,31 +214,56 @@ function attachLogAttachmentHandlers() {
   });
 
   document.querySelectorAll('.log-delete-attachment-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const uploadId = btn.dataset.uploadId;
-      if (confirm('Delete this attachment?')) {
-        deleteUpload(uploadId);
-        loadLogAttachments();
-        attachLogAttachmentHandlers();
-      }
+      const ok = await confirmAction({ title: 'Delete this attachment?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
+      if (!ok) return;
+      deleteUpload(uploadId);
+      loadLogAttachments();
+      attachLogAttachmentHandlers();
+      showToast('Attachment removed', 'info');
     });
   });
 }
 
 async function loadLogs() {
   const listContainer = document.getElementById('log-list');
-  const entries = currentBoatId ? await getLogbook(currentBoatId) : [];
+  const tools = document.querySelector('.list-tools');
+  allLogEntries = currentBoatId ? await getLogbook(currentBoatId) : [];
+  if (tools) tools.style.display = allLogEntries.length === 0 ? 'none' : 'flex';
+  applyLogFilterSort();
+}
 
+function applyLogFilterSort() {
+  const listContainer = document.getElementById('log-list');
+  if (!listContainer) return;
+  const q = (document.getElementById('log-search')?.value || '').trim().toLowerCase();
+  const sortVal = document.getElementById('log-sort')?.value || 'newest';
+  let entries = allLogEntries.filter(entry => {
+    if (!q) return true;
+    const dep = (entry.departure || '').toLowerCase();
+    const arr = (entry.arrival || '').toLowerCase();
+    const notes = (entry.notes || '').toLowerCase();
+    const dateStr = entry.date ? new Date(entry.date).toLocaleDateString().toLowerCase() : '';
+    return dep.includes(q) || arr.includes(q) || notes.includes(q) || dateStr.includes(q);
+  });
+  entries = [...entries].sort((a, b) => {
+    const dateA = a.date ? new Date(a.date).getTime() : 0;
+    const dateB = b.date ? new Date(b.date).getTime() : 0;
+    return sortVal === 'newest' ? dateB - dateA : dateA - dateB;
+  });
   if (entries.length === 0) {
-    listContainer.innerHTML = `
+    listContainer.innerHTML = allLogEntries.length === 0
+      ? `
       <div class="empty-state">
         <div class="empty-state-icon">${renderIcon('book')}</div>
         <p>No trips logged yet</p>
+        ${!logArchived ? `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/log/new')">${renderIcon('plus')} Add Trip</button></div>` : ''}
       </div>
-    `;
+    `
+      : `<p class="text-muted">No trips match your search.</p>`;
     return;
   }
-
   listContainer.innerHTML = entries.map(entry => {
     const hoursStart = entry.engine_hours_start || 'N/A';
     const hoursEnd = entry.engine_hours_end || 'N/A';
@@ -253,10 +297,11 @@ async function loadLogs() {
 
 function attachHandlers() {
   window.logPageDelete = async (id) => {
-    if (confirm('Delete this trip entry?')) {
-      await deleteLogEntry(id);
-      loadLogs();
-    }
+    const ok = await confirmAction({ title: 'Delete this trip entry?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
+    if (!ok) return;
+    await deleteLogEntry(id);
+    loadLogs();
+    showToast('Trip entry removed', 'info');
   };
 }
 

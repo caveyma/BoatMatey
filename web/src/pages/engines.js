@@ -5,12 +5,16 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
+import { showToast } from '../components/toast.js';
+import { confirmAction } from '../components/confirmModal.js';
 import { isBoatArchived, getEngines, deleteEngine } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOADS_PER_ENTITY } from '../lib/uploads.js';
 
 let currentBoatId = null;
 let enginesFileInput = null;
 let enginesArchived = false;
+/** All engines (before search/sort) for list filtering */
+let allEngines = [];
 
 function render(params = {}) {
   // Get boat ID from route params
@@ -23,12 +27,12 @@ function render(params = {}) {
 
   const wrapper = document.createElement('div');
   
-  const header = createYachtHeader('Engines');
+  const header = createYachtHeader('Engines', { showSettings: true });
   wrapper.appendChild(header);
 
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content card-color-engines';
-  pageContent.appendChild(createBackButton());
+  pageContent.appendChild(createBackButton(`/boat/${currentBoatId}`));
 
   const container = document.createElement('div');
   container.className = 'container';
@@ -46,6 +50,17 @@ function render(params = {}) {
     </button>
   `;
 
+  const listTools = document.createElement('div');
+  listTools.className = 'list-tools';
+  listTools.innerHTML = `
+    <input type="search" id="engines-search" class="form-control" placeholder="Search engines..." aria-label="Search engines">
+    <select id="engines-sort" class="form-control" aria-label="Sort engines">
+      <option value="name-asc">Name A–Z</option>
+      <option value="name-desc">Name Z–A</option>
+      <option value="newest">Newest first</option>
+      <option value="oldest">Oldest first</option>
+    </select>
+  `;
   const listContainer = document.createElement('div');
   listContainer.id = 'engines-list';
 
@@ -58,6 +73,7 @@ function render(params = {}) {
 
   container.appendChild(attachmentsCard);
   container.appendChild(addBtn);
+  container.appendChild(listTools);
   container.appendChild(listContainer);
   pageContent.appendChild(container);
   wrapper.appendChild(pageContent);
@@ -90,7 +106,7 @@ async function onMount(params = {}) {
       const remainingSlots = MAX_UPLOADS_PER_ENTITY - existing.length;
 
       if (remainingSlots <= 0) {
-        alert(`You can only upload up to ${MAX_UPLOADS_PER_ENTITY} files for Engines.`);
+        showToast(`You can only upload up to ${MAX_UPLOADS_PER_ENTITY} files for Engines.`, 'error');
         enginesFileInput.value = '';
         return;
       }
@@ -107,7 +123,7 @@ async function onMount(params = {}) {
       });
 
       if (oversizedCount > 0) {
-        alert('Some files were larger than 5 MB and were skipped.');
+        showToast('Some files were larger than 5 MB and were skipped.', 'info');
       }
 
       if (!validFiles.length) {
@@ -117,7 +133,7 @@ async function onMount(params = {}) {
 
       const filesToUpload = validFiles.slice(0, remainingSlots);
       if (validFiles.length > remainingSlots) {
-        alert(`Only ${remainingSlots} more file(s) can be uploaded for Engines (max ${MAX_UPLOADS_PER_ENTITY}).`);
+        showToast(`Only ${remainingSlots} more file(s) can be uploaded for Engines (max ${MAX_UPLOADS_PER_ENTITY}).`, 'info');
       }
 
       for (const file of filesToUpload) {
@@ -137,24 +153,55 @@ async function onMount(params = {}) {
     }
   }
 
+  const searchEl = document.getElementById('engines-search');
+  const sortEl = document.getElementById('engines-sort');
+  if (searchEl) searchEl.addEventListener('input', () => applyEnginesFilterSort());
+  if (sortEl) sortEl.addEventListener('change', () => applyEnginesFilterSort());
+
   loadEngines();
   window.navigate = navigate;
 }
 
 async function loadEngines() {
   const listContainer = document.getElementById('engines-list');
-  const engines = currentBoatId ? await getEngines(currentBoatId) : [];
+  const tools = document.querySelector('.list-tools');
+  allEngines = currentBoatId ? await getEngines(currentBoatId) : [];
+  if (tools) tools.style.display = allEngines.length === 0 ? 'none' : 'flex';
+  applyEnginesFilterSort();
+}
 
+function applyEnginesFilterSort() {
+  const listContainer = document.getElementById('engines-list');
+  if (!listContainer) return;
+  const q = (document.getElementById('engines-search')?.value || '').trim().toLowerCase();
+  const sortVal = document.getElementById('engines-sort')?.value || 'name-asc';
+  let engines = allEngines.filter(eng => {
+    if (!q) return true;
+    const label = (eng.label || '').toLowerCase();
+    const manufacturer = (eng.manufacturer || '').toLowerCase();
+    const model = (eng.model || '').toLowerCase();
+    return label.includes(q) || manufacturer.includes(q) || model.includes(q);
+  });
+  engines = [...engines].sort((a, b) => {
+    if (sortVal === 'name-asc') return (a.label || '').localeCompare(b.label || '');
+    if (sortVal === 'name-desc') return (b.label || '').localeCompare(a.label || '');
+    const dateA = a.install_date ? new Date(a.install_date).getTime() : 0;
+    const dateB = b.install_date ? new Date(b.install_date).getTime() : 0;
+    if (sortVal === 'newest') return dateB - dateA;
+    return dateA - dateB; // oldest
+  });
   if (engines.length === 0) {
-    listContainer.innerHTML = `
+    listContainer.innerHTML = allEngines.length === 0
+      ? `
       <div class="empty-state">
         <div class="empty-state-icon">${renderIcon('engine')}</div>
         <p>No engines added yet</p>
+        ${!enginesArchived ? `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/engines/new')">${renderIcon('plus')} Add Engine</button></div>` : ''}
       </div>
-    `;
+    `
+      : `<p class="text-muted">No engines match your search.</p>`;
     return;
   }
-
   listContainer.innerHTML = engines.map(engine => `
     <div class="card">
       <div class="card-header">
@@ -269,23 +316,25 @@ function attachEnginesAttachmentHandlers() {
   });
 
   document.querySelectorAll('.engines-delete-attachment-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const uploadId = btn.dataset.uploadId;
-      if (confirm('Delete this attachment?')) {
-        deleteUpload(uploadId);
-        loadEnginesAttachments();
-        attachEnginesAttachmentHandlers();
-      }
+      const ok = await confirmAction({ title: 'Delete this attachment?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
+      if (!ok) return;
+      deleteUpload(uploadId);
+      loadEnginesAttachments();
+      attachEnginesAttachmentHandlers();
+      showToast('Attachment removed', 'info');
     });
   });
 }
 
 function attachHandlers() {
   window.enginesPageDelete = async (id) => {
-    if (confirm('Delete this engine?')) {
-      await deleteEngine(id);
-      loadEngines();
-    }
+    const ok = await confirmAction({ title: 'Delete this engine?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
+    if (!ok) return;
+    await deleteEngine(id);
+    loadEngines();
+    showToast('Engine removed', 'info');
   };
 }
 
