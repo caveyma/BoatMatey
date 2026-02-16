@@ -26,7 +26,7 @@ import {
 
 let editingBoatId = null;
 
-import { createYachtHeader, createBackButton } from '../components/header.js';
+import { createYachtHeader } from '../components/header.js';
 import { showToast } from '../components/toast.js';
 import { confirmAction } from '../components/confirmModal.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
@@ -67,13 +67,12 @@ function compressImageToDataUrl(file, maxPx = 280, quality = 0.55) {
 function render() {
   const wrapper = document.createElement('div');
   
-  const header = createYachtHeader('');
+  const header = createYachtHeader('', { showHome: false });
   wrapper.appendChild(header);
-  
-  // Page content
+
+  // Page content (no Back button on home – nowhere to go back to)
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content';
-  pageContent.appendChild(createBackButton());
 
   const container = document.createElement('div');
   container.className = 'container';

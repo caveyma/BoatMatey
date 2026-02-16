@@ -32,10 +32,10 @@ export function createBackButton(backRoute) {
 
 /**
  * @param {string} title - Page/boat name
- * @param {{ showSettings?: boolean, breadcrumb?: string }} [options] - showSettings: add Settings link; breadcrumb: optional subtitle
+ * @param {{ showSettings?: boolean, showHome?: boolean, breadcrumb?: string }} [options] - showSettings: add Settings link; showHome: show Home nav (false on home page); breadcrumb: optional subtitle
  */
 export function createYachtHeader(title, options = {}) {
-  const { showSettings = false, breadcrumb = '' } = options;
+  const { showSettings = false, showHome = true, breadcrumb = '' } = options;
   const header = document.createElement('header');
   header.className = 'yacht-header compass-watermark';
   header.setAttribute('role', 'banner');
@@ -92,15 +92,17 @@ export function createYachtHeader(title, options = {}) {
     btn.style.minHeight = '44px';
   };
 
-  const homeBtn = document.createElement('button');
-  homeBtn.textContent = 'Home';
-  homeBtn.setAttribute('aria-label', 'Go to home');
-  baseButtonStyles(homeBtn);
-  homeBtn.onclick = (e) => {
-    e.preventDefault();
-    navigate('/');
-  };
-  actionsSection.appendChild(homeBtn);
+  if (showHome) {
+    const homeBtn = document.createElement('button');
+    homeBtn.textContent = 'Home';
+    homeBtn.setAttribute('aria-label', 'Go to home');
+    baseButtonStyles(homeBtn);
+    homeBtn.onclick = (e) => {
+      e.preventDefault();
+      navigate('/');
+    };
+    actionsSection.appendChild(homeBtn);
+  }
 
   if (showSettings) {
     const settingsBtn = document.createElement('button');
