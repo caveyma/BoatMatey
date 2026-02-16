@@ -67,7 +67,7 @@ function compressImageToDataUrl(file, maxPx = 280, quality = 0.55) {
 function render() {
   const wrapper = document.createElement('div');
   
-  const header = createYachtHeader('', { showHome: false });
+  const header = createYachtHeader('', { showHome: false, showSignOut: true });
   wrapper.appendChild(header);
 
   // Page content (no Back button on home – nowhere to go back to)

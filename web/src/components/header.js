@@ -5,6 +5,7 @@
  */
 
 import { navigate } from '../router.js';
+import { supabase } from '../lib/supabaseClient.js';
 
 /**
  * Back button for the top-left of the main body.
@@ -32,10 +33,10 @@ export function createBackButton(backRoute) {
 
 /**
  * @param {string} title - Page/boat name
- * @param {{ showSettings?: boolean, showHome?: boolean, breadcrumb?: string }} [options] - showSettings: add Settings link; showHome: show Home nav (false on home page); breadcrumb: optional subtitle
+ * @param {{ showSettings?: boolean, showHome?: boolean, showSignOut?: boolean, breadcrumb?: string }} [options] - showSettings: add Settings link; showHome: show Home nav (false on home page); showSignOut: show Sign out (e.g. on home screen); breadcrumb: optional subtitle
  */
 export function createYachtHeader(title, options = {}) {
-  const { showSettings = false, showHome = true, breadcrumb = '' } = options;
+  const { showSettings = false, showHome = true, showSignOut = false, breadcrumb = '' } = options;
   const header = document.createElement('header');
   header.className = 'yacht-header compass-watermark';
   header.setAttribute('role', 'banner');
@@ -102,6 +103,19 @@ export function createYachtHeader(title, options = {}) {
       navigate('/');
     };
     actionsSection.appendChild(homeBtn);
+  }
+
+  if (showSignOut) {
+    const signOutBtn = document.createElement('button');
+    signOutBtn.textContent = 'Sign out';
+    signOutBtn.setAttribute('aria-label', 'Sign out');
+    baseButtonStyles(signOutBtn);
+    signOutBtn.onclick = async (e) => {
+      e.preventDefault();
+      if (supabase) await supabase.auth.signOut();
+      navigate('/welcome');
+    };
+    actionsSection.appendChild(signOutBtn);
   }
 
   if (showSettings) {
