@@ -2,7 +2,6 @@
  * Simple hash-based router with subscription gate
  */
 
-import { Capacitor } from '@capacitor/core';
 import { supabase } from './lib/supabaseClient.js';
 // Note: subscription check moved to auth flow, not route access
 
@@ -247,17 +246,7 @@ async function loadRoute(path) {
  * Flow: Welcome → Auth → (Subscription for new users) → Home
  */
 async function checkAccess(path) {
-  let isNative = false;
-  try {
-    isNative = Capacitor?.isNativePlatform?.() ?? false;
-  } catch (e) {
-    // Capacitor not available (e.g. web build) – allow access
-  }
-  if (!isNative) {
-    return { allowed: true };
-  }
-
-  // Public routes (no authentication required)
+  // Public routes (no authentication required) – same for web and native
   const publicRoutes = ['/welcome', '/subscription', '/auth'];
   if (publicRoutes.includes(path)) {
     return { allowed: true };

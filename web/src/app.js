@@ -151,23 +151,16 @@ function initOfflineBanner() {
  * Flow: Welcome → Auth → (Subscription for new users) → Home
  */
 async function checkAccessAndRedirect() {
-  let isNative = false;
-  try {
-    isNative = Capacitor?.isNativePlatform?.() ?? false;
-  } catch (e) {}
   const currentHash = window.location.hash.substring(1) || '/';
-
-  // Web mode: no restrictions (dev/testing)
-  if (!isNative) return;
 
   // Public routes that don't require authentication
   const publicRoutes = ['/welcome', '/auth', '/subscription'];
   const isOnPublicPage = publicRoutes.includes(currentHash);
 
-  // Check authentication
+  // Check authentication (web and native)
   if (supabase) {
     const { data: { session } } = await supabase.auth.getSession();
-    
+
     if (!session && !isOnPublicPage) {
       navigate('/welcome');
       return;
