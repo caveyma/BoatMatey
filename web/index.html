@@ -1,14 +1,115 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/icon.png" />
-    <!-- viewport-fit=cover for safe-area (notch/home indicator); no double-tap zoom per App Store Guideline 4.0 -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <title>BoatMatey - Boat Maintenance & Logbook</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BoatMatey – Boat Maintenance &amp; Logbook App</title>
+  <meta name="description" content="BoatMatey helps UK boat owners keep maintenance logs, engine service records, safety equipment checks, and reminders in one place. Your digital boat logbook and maintenance tracker." />
+  <link rel="icon" type="image/png" href="/icon.png" />
+  <style>
+    :root {
+      --bm-navy: #0B2A3F;
+      --bm-teal: #0AA6A6;
+      --bm-foam: #E9F7F6;
+      --bm-bg: #C0E4EC;
+      --bm-card: #FFFFFF;
+      --color-text: #0B2A3F;
+      --color-text-light: #64748b;
+      --font: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --radius: 0.75rem;
+      --shadow: 0 4px 16px rgba(11, 31, 59, 0.10);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--font); color: var(--color-text); background: var(--bm-bg); line-height: 1.6; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 1.5rem; }
+    header { text-align: center; padding: 2rem 0; }
+    h1 { font-size: 1.75rem; color: var(--bm-navy); margin: 0 0 0.5rem; }
+    .tagline { color: var(--color-text-light); font-size: 1.05rem; }
+    .hero { background: var(--bm-card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 2rem; margin-bottom: 2rem; }
+    .cta { display: inline-block; background: var(--bm-teal); color: white; padding: 0.875rem 1.75rem; border-radius: var(--radius); text-decoration: none; font-weight: 600; margin: 1rem 0; }
+    .cta:hover { opacity: 0.95; }
+    section { margin-bottom: 2rem; }
+    section h2 { font-size: 1.35rem; color: var(--bm-navy); margin-bottom: 1rem; }
+    .card { background: var(--bm-card); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(11, 31, 59, 0.06); }
+    .card h3 { margin: 0 0 0.5rem; font-size: 1.1rem; color: var(--bm-navy); }
+    .card p { margin: 0; color: var(--color-text-light); font-size: 0.95rem; }
+    ul { padding-left: 1.25rem; color: var(--color-text-light); }
+    footer { text-align: center; padding: 2rem 0; font-size: 0.9rem; color: var(--color-text-light); }
+    footer a { color: var(--bm-teal); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>BoatMatey – Boat Maintenance &amp; Logbook App</h1>
+      <p class="tagline">Your digital boat management companion for maintenance logs, service reminders, and equipment checks</p>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p>BoatMatey helps boat owners in the UK and beyond keep their vessels shipshape. Record engine servicing, track safety equipment, store documents, and never miss a haul-out or warranty date again.</p>
+        <a href="/app" class="cta">Open the app</a>
+      </section>
+
+      <section>
+        <h2>Features</h2>
+        <div class="card">
+          <h3>Maintenance logs</h3>
+          <p>Keep a clear record of all work done on your boat: oil changes, filter replacements, impeller changes, and more. Each entry can include date, mileage or hours, parts used, and notes.</p>
+        </div>
+        <div class="card">
+          <h3>Engine and drive servicing</h3>
+          <p>Track multiple engines per boat. Log service history, next due dates, and link entries to specific engines or outboards so you always know what's been done and what's due.</p>
+        </div>
+        <div class="card">
+          <h3>Safety equipment checks</h3>
+          <p>Record lifejackets, flares, fire extinguishers, and other safety gear. Note expiry dates and last check dates so you stay compliant and ready for inspections.</p>
+        </div>
+        <div class="card">
+          <h3>Reminders and calendar</h3>
+          <p>Set reminders for servicing, haul-outs, warranty expiries, and annual checks. View everything in a calendar so you can plan ahead and avoid last-minute rushes.</p>
+        </div>
+        <div class="card">
+          <h3>Document storage</h3>
+          <p>Store manuals, certificates, and important documents with your boat. Keep everything in one place so you can find what you need when you need it.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2>Who it's for</h2>
+        <p>BoatMatey is built for boat owners who want a simple, reliable way to stay on top of maintenance and paperwork. Whether you have a sailing yacht, motor cruiser, or small day boat, you can track one or more boats, keep service and safety records, and get reminders so nothing slips through the net. It's especially useful if you're managing multiple engines, haul-outs, or annual checks and want everything in one app instead of spreadsheets or paper.</p>
+      </section>
+
+      <section>
+        <h2>How it works</h2>
+        <p>Create an account and add your boat or boats. For each boat you can add engines, log service history, record safety equipment and expiry dates, and attach documents. Use the calendar and alerts to see what's due and set reminders. Your data can be stored on the device and optionally synced to the cloud so you can access it from more than one device. The app works in the browser and on mobile, so you can update logs at home or on the pontoon.</p>
+      </section>
+
+      <section>
+        <h2>FAQ</h2>
+        <div class="card">
+          <h3>Do I need to create an account?</h3>
+          <p>Yes. Sign up to use the app and store your boats, logs, and reminders. Your data can be synced securely so you can use BoatMatey on different devices.</p>
+        </div>
+        <div class="card">
+          <h3>Can I track more than one boat?</h3>
+          <p>Yes. You can add multiple boats and manage maintenance, engines, safety equipment, and documents for each one separately.</p>
+        </div>
+        <div class="card">
+          <h3>Is my data private?</h3>
+          <p>Your logs and boat data are yours. We use industry-standard practices to store and sync data securely. We don't sell your data to third parties.</p>
+        </div>
+      </section>
+
+      <section class="hero">
+        <p>Ready to get organised? Open the app and start your first log.</p>
+        <a href="/app" class="cta">Open the app</a>
+      </section>
+    </main>
+
+    <footer>
+      <p><a href="/app">BoatMatey app</a> · <a href="/privacy.html">Privacy</a> · <a href="/terms/">Terms</a></p>
+    </footer>
+  </div>
+</body>
 </html>

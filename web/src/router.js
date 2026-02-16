@@ -283,6 +283,12 @@ async function checkAccess(path) {
  * Initialize router
  */
 export function init() {
+  // When app is served from /app with no hash, normalize to /app#/ so refresh and links work
+  const pathname = window.location.pathname.replace(/\/$/, '') || '/';
+  if ((pathname === '/app') && !window.location.hash) {
+    window.location.replace('/app#/');
+    return;
+  }
   const hash = window.location.hash.substring(1) || '/';
   loadRoute(hash);
 

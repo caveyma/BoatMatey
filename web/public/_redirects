@@ -1,0 +1,3 @@
+# SPA fallback for /app only. Do NOT add /* /index.html so /, /robots.txt, /sitemap.xml serve as static files.
+/app     /app/index.html  200
+/app/*   /app/index.html  200
