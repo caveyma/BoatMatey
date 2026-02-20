@@ -33,23 +33,23 @@ do $$
 begin
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_links' and policyname = 'boat_links_select_own') then
     create policy boat_links_select_own on public.boat_links for select
-      using (owner_id = auth.uid() and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = auth.uid()));
+      using (owner_id = (select auth.uid()) and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = (select auth.uid())));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_links' and policyname = 'boat_links_insert_own') then
     create policy boat_links_insert_own on public.boat_links for insert
       with check (
-        owner_id = auth.uid()
-        and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = auth.uid() and b.status = 'active')
+        owner_id = (select auth.uid())
+        and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = (select auth.uid()) and b.status = 'active')
       );
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_links' and policyname = 'boat_links_update_own') then
     create policy boat_links_update_own on public.boat_links for update
-      using (owner_id = auth.uid() and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = auth.uid() and b.status = 'active'))
-      with check (owner_id = auth.uid());
+      using (owner_id = (select auth.uid()) and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = (select auth.uid()) and b.status = 'active'))
+      with check (owner_id = (select auth.uid()));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_links' and policyname = 'boat_links_delete_own') then
     create policy boat_links_delete_own on public.boat_links for delete
-      using (owner_id = auth.uid());
+      using (owner_id = (select auth.uid()));
   end if;
 end $$;
 

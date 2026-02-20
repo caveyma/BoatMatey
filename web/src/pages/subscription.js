@@ -21,7 +21,7 @@ import {
 import { hasPendingSignup, getPendingSignupEmail, completeAccountCreation } from './auth.js';
 import { logInWithAppUserId } from '../services/revenuecat.js';
 import { Capacitor } from '@capacitor/core';
-import { PRIVACY_URL, TERMS_URL, EULA_URL, openExternalUrl } from '../lib/constants.js';
+import { PRIVACY_URL, TERMS_URL, EULA_URL, SUPPORT_URL, openExternalUrl } from '../lib/constants.js';
 
 function render() {
   const wrapper = document.createElement('div');
@@ -114,6 +114,8 @@ function render() {
 
       <p class="text-muted" style="font-size: 0.75rem; margin: 0.5rem 0 0.25rem; line-height: 1.3;">By subscribing you agree to our:</p>
       <div class="paywall-legal-links" style="display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; margin-bottom: 0.5rem; font-size: 0.8rem;">
+        <button type="button" class="btn-link legal-link" data-url="${SUPPORT_URL}" style="padding: 0.25rem 0; font-size: inherit; color: var(--bm-teal); text-decoration: underline; background: none; border: none; cursor: pointer;">Support</button>
+        <span style="color: var(--color-text-light);">·</span>
         <button type="button" class="btn-link legal-link" data-url="${PRIVACY_URL}" style="padding: 0.25rem 0; font-size: inherit; color: var(--bm-teal); text-decoration: underline; background: none; border: none; cursor: pointer;">Privacy Policy</button>
         <span style="color: var(--color-text-light);">·</span>
         <button type="button" class="btn-link legal-link" data-url="${TERMS_URL}" style="padding: 0.25rem 0; font-size: inherit; color: var(--bm-teal); text-decoration: underline; background: none; border: none; cursor: pointer;">Terms of Use</button>
@@ -127,6 +129,8 @@ function render() {
     ` : `
       <p class="text-muted" style="font-size: 0.75rem; margin: 0.5rem 0 0.25rem;">By subscribing you agree to our:</p>
       <div class="paywall-legal-links" style="display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; margin-bottom: 0.75rem; font-size: 0.8rem;">
+        <button type="button" class="btn-link legal-link" data-url="${SUPPORT_URL}" style="padding: 0.25rem 0; font-size: inherit; color: var(--bm-teal); text-decoration: underline; background: none; border: none; cursor: pointer;">Support</button>
+        <span style="color: var(--color-text-light);">·</span>
         <button type="button" class="btn-link legal-link" data-url="${PRIVACY_URL}" style="padding: 0.25rem 0; font-size: inherit; color: var(--bm-teal); text-decoration: underline; background: none; border: none; cursor: pointer;">Privacy Policy</button>
         <span style="color: var(--color-text-light);">·</span>
         <button type="button" class="btn-link legal-link" data-url="${TERMS_URL}" style="padding: 0.25rem 0; font-size: inherit; color: var(--bm-teal); text-decoration: underline; background: none; border: none; cursor: pointer;">Terms of Use</button>

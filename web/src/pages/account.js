@@ -14,7 +14,7 @@ import {
   restoreSubscription,
   refreshSubscriptionStatus
 } from '../lib/subscription.js';
-import { PRIVACY_URL, TERMS_URL, EULA_URL, openExternalUrl } from '../lib/constants.js';
+import { PRIVACY_URL, TERMS_URL, EULA_URL, SUPPORT_URL, openExternalUrl } from '../lib/constants.js';
 import { storage, boatStorage, boatsStorage, enginesStorage, serviceHistoryStorage, uploadsStorage } from '../lib/storage.js';
 import { getBoats, getEngines, getServiceEntries, getHaulouts, getEquipment, getLogbook, getLinks, listAttachments } from '../lib/dataService.js';
 import { supabase } from '../lib/supabaseClient.js';
@@ -111,8 +111,11 @@ function render() {
     </div>
 
     <div class="card">
-      <h3>Legal</h3>
+      <h3>Support & Legal</h3>
       <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+        <button type="button" class="btn-link account-legal-link" data-url="${SUPPORT_URL}" style="width: 100%; text-align: left; text-decoration: none; color: inherit; background: none; border: none; cursor: pointer; padding: 0.25rem 0;">
+          Support (boatmatey.com)
+        </button>
         <button type="button" class="btn-link account-legal-link" data-url="${PRIVACY_URL}" style="width: 100%; text-align: left; text-decoration: none; color: inherit; background: none; border: none; cursor: pointer; padding: 0.25rem 0;">
           Privacy Policy
         </button>

@@ -37,19 +37,19 @@ before update on public.calendar_events
 for each row
 execute procedure public.handle_updated_at();
 
--- RLS policies for calendar_events
+-- RLS policies for calendar_events (initplan-safe: (select auth.uid()))
 do $$
 begin
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'calendar_events' and policyname = 'calendar_events_select_own') then
-    create policy calendar_events_select_own on public.calendar_events for select using (owner_id = auth.uid());
+    create policy calendar_events_select_own on public.calendar_events for select using (owner_id = (select auth.uid()));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'calendar_events' and policyname = 'calendar_events_insert_own') then
-    create policy calendar_events_insert_own on public.calendar_events for insert with check (owner_id = auth.uid());
+    create policy calendar_events_insert_own on public.calendar_events for insert with check (owner_id = (select auth.uid()));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'calendar_events' and policyname = 'calendar_events_update_own') then
-    create policy calendar_events_update_own on public.calendar_events for update using (owner_id = auth.uid());
+    create policy calendar_events_update_own on public.calendar_events for update using (owner_id = (select auth.uid()));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'calendar_events' and policyname = 'calendar_events_delete_own') then
-    create policy calendar_events_delete_own on public.calendar_events for delete using (owner_id = auth.uid());
+    create policy calendar_events_delete_own on public.calendar_events for delete using (owner_id = (select auth.uid()));
   end if;
 end $$;

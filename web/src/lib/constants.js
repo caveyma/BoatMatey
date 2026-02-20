@@ -8,6 +8,7 @@ import { Capacitor } from '@capacitor/core';
 export const PRIVACY_URL = 'https://boatmatey.com/privacy';
 export const TERMS_URL = 'https://boatmatey.com/terms';
 export const EULA_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
+export const SUPPORT_URL = 'https://boatmatey.com';
 
 /**
  * Open a URL in the system browser (native) or new tab (web).

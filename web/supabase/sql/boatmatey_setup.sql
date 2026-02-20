@@ -274,7 +274,7 @@ begin
     create policy profiles_select_own
       on public.profiles
       for select
-      using (id = auth.uid());
+      using (id = (select auth.uid()));
   end if;
 
   if not exists (
@@ -284,7 +284,7 @@ begin
     create policy profiles_insert_own
       on public.profiles
       for insert
-      with check (id = auth.uid());
+      with check (id = (select auth.uid()));
   end if;
 
   if not exists (
@@ -294,8 +294,8 @@ begin
     create policy profiles_update_own
       on public.profiles
       for update
-      using (id = auth.uid())
-      with check (id = auth.uid());
+      using (id = (select auth.uid()))
+      with check (id = (select auth.uid()));
   end if;
 
   if not exists (
@@ -305,15 +305,15 @@ begin
     create policy profiles_delete_own
       on public.profiles
       for delete
-      using (id = auth.uid());
+      using (id = (select auth.uid()));
   end if;
 end $$;
 
--- Helper predicate: boat is owned by current user
-create or replace view public.boats_owned_by_current_user as
+-- Helper predicate: boat is owned by current user (security_invoker so RLS runs as caller)
+create or replace view public.boats_owned_by_current_user with (security_invoker = true) as
 select b.*
 from public.boats b
-where b.owner_id = auth.uid();
+where b.owner_id = (select auth.uid());
 
 -- Policies: boats -------------------------------------------------------------
 
@@ -326,7 +326,7 @@ begin
     create policy boats_select_own
       on public.boats
       for select
-      using (owner_id = auth.uid());
+      using (owner_id = (select auth.uid()));
   end if;
 
   if not exists (
@@ -336,7 +336,7 @@ begin
     create policy boats_insert_own
       on public.boats
       for insert
-      with check (owner_id = auth.uid());
+      with check (owner_id = (select auth.uid()));
   end if;
 
   if not exists (
@@ -346,8 +346,8 @@ begin
     create policy boats_update_own
       on public.boats
       for update
-      using (owner_id = auth.uid())
-      with check (owner_id = auth.uid());
+      using (owner_id = (select auth.uid()))
+      with check (owner_id = (select auth.uid()));
   end if;
 
   if not exists (
@@ -357,7 +357,7 @@ begin
     create policy boats_delete_own
       on public.boats
       for delete
-      using (owner_id = auth.uid());
+      using (owner_id = (select auth.uid()));
   end if;
 end $$;
 
@@ -374,10 +374,10 @@ begin
       on public.engines
       for select
       using (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -390,10 +390,10 @@ begin
       on public.engines
       for insert
       with check (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -406,17 +406,17 @@ begin
       on public.engines
       for update
       using (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       )
       with check (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -429,10 +429,10 @@ begin
       on public.engines
       for delete
       using (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -449,10 +449,10 @@ begin
       on public.service_entries
       for select
       using (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -465,10 +465,10 @@ begin
       on public.service_entries
       for insert
       with check (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -481,17 +481,17 @@ begin
       on public.service_entries
       for update
       using (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       )
       with check (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -504,10 +504,10 @@ begin
       on public.service_entries
       for delete
       using (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -524,10 +524,10 @@ begin
       on public.haulout_entries
       for select
       using (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -540,10 +540,10 @@ begin
       on public.haulout_entries
       for insert
       with check (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -556,17 +556,17 @@ begin
       on public.haulout_entries
       for update
       using (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       )
       with check (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -579,10 +579,10 @@ begin
       on public.haulout_entries
       for delete
       using (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -599,10 +599,10 @@ begin
       on public.equipment_items
       for select
       using (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -615,10 +615,10 @@ begin
       on public.equipment_items
       for insert
       with check (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -631,17 +631,17 @@ begin
       on public.equipment_items
       for update
       using (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       )
       with check (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -654,10 +654,10 @@ begin
       on public.equipment_items
       for delete
       using (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -674,10 +674,10 @@ begin
       on public.logbook_entries
       for select
       using (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -690,10 +690,10 @@ begin
       on public.logbook_entries
       for insert
       with check (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -706,17 +706,17 @@ begin
       on public.logbook_entries
       for update
       using (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       )
       with check (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -729,10 +729,10 @@ begin
       on public.logbook_entries
       for delete
       using (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -749,10 +749,10 @@ begin
       on public.attachments
       for select
       using (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -765,10 +765,10 @@ begin
       on public.attachments
       for insert
       with check (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -781,10 +781,10 @@ begin
       on public.attachments
       for delete
       using (
-        owner_id = auth.uid()
+        owner_id = (select auth.uid())
         and exists (
           select 1 from public.boats b
-          where b.id = boat_id and b.owner_id = auth.uid()
+          where b.id = boat_id and b.owner_id = (select auth.uid())
         )
       );
   end if;
@@ -802,7 +802,7 @@ on conflict (id) do nothing;
 -- enabled by default, so we intentionally do NOT alter the table here.
 
 -- Storage policies: only allow authenticated users to access objects in the
--- boatmatey-attachments bucket where the first path segment matches auth.uid().
+-- boatmatey-attachments bucket where the first path segment matches (select auth.uid()).
 
 do $$
 begin
@@ -815,8 +815,8 @@ begin
       for select
       using (
         bucket_id = 'boatmatey-attachments'
-        and auth.role() = 'authenticated'
-        and split_part(name, '/', 1) = auth.uid()::text
+        and (select auth.role()) = 'authenticated'
+        and split_part(name, '/', 1) = (select auth.uid())::text
       );
   end if;
 
@@ -829,8 +829,8 @@ begin
       for insert
       with check (
         bucket_id = 'boatmatey-attachments'
-        and auth.role() = 'authenticated'
-        and split_part(name, '/', 1) = auth.uid()::text
+        and (select auth.role()) = 'authenticated'
+        and split_part(name, '/', 1) = (select auth.uid())::text
       );
   end if;
 
@@ -843,8 +843,8 @@ begin
       for delete
       using (
         bucket_id = 'boatmatey-attachments'
-        and auth.role() = 'authenticated'
-        and split_part(name, '/', 1) = auth.uid()::text
+        and (select auth.role()) = 'authenticated'
+        and split_part(name, '/', 1) = (select auth.uid())::text
       );
   end if;
 end $$;

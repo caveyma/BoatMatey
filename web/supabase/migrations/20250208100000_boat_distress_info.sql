@@ -1,5 +1,5 @@
 -- Mayday / Distress Call: boat_distress_info table
--- One row per boat. RLS: CRUD where user_id = auth.uid().
+-- One row per boat. RLS: CRUD where user_id = (select auth.uid()).
 -- Requires handle_updated_at() from boatmatey_setup.sql.
 
 create table if not exists public.boat_distress_info (
@@ -51,18 +51,18 @@ do $$
 begin
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_distress_info' and policyname = 'boat_distress_info_select_own') then
     create policy boat_distress_info_select_own on public.boat_distress_info for select
-      using (user_id = auth.uid());
+      using (user_id = (select auth.uid()));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_distress_info' and policyname = 'boat_distress_info_insert_own') then
     create policy boat_distress_info_insert_own on public.boat_distress_info for insert
-      with check (user_id = auth.uid() and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = auth.uid()));
+      with check (user_id = (select auth.uid()) and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = (select auth.uid())));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_distress_info' and policyname = 'boat_distress_info_update_own') then
     create policy boat_distress_info_update_own on public.boat_distress_info for update
-      using (user_id = auth.uid()) with check (user_id = auth.uid());
+      using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_distress_info' and policyname = 'boat_distress_info_delete_own') then
     create policy boat_distress_info_delete_own on public.boat_distress_info for delete
-      using (user_id = auth.uid());
+      using (user_id = (select auth.uid()));
   end if;
 end $$;
