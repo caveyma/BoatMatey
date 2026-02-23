@@ -252,7 +252,7 @@ function render() {
               <img src="${APP_STORE_BADGE_URL}" alt="Download on the App Store" class="store-badge">
             </a>
             <a href="${GOOGLE_PLAY_URL || '#'}" class="store-button" target="_blank" rel="noopener">
-              <img src="${GOOGLE_PLAY_BADGE_URL}" alt="Get it on Google Play" class="store-badge" style="height: 40px; width: auto; display: block;">
+              <img src="${GOOGLE_PLAY_BADGE_URL}" alt="Get it on Google Play" class="store-badge" style="height: 54px; width: auto; display: block;">
             </a>
           </div>
         </div>
