@@ -124,7 +124,7 @@ alter table public.boats add column if not exists last_survey_notes text null;
 alter table public.boats add column if not exists home_port text null;
 
 -- =============================================================================
--- RLS: Enable and policies (user_id = auth.uid() and boat ownership)
+-- RLS: Enable and policies (user_id = (select auth.uid()) and boat ownership)
 -- =============================================================================
 alter table public.boat_fuel_logs       enable row level security;
 alter table public.boat_fuel_performance enable row level security;
@@ -136,19 +136,19 @@ do $$
 begin
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_fuel_logs' and policyname = 'boat_fuel_logs_select_own') then
     create policy boat_fuel_logs_select_own on public.boat_fuel_logs for select
-      using (user_id = auth.uid() and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = auth.uid()));
+      using (user_id = (select auth.uid()) and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = (select auth.uid())));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_fuel_logs' and policyname = 'boat_fuel_logs_insert_own') then
     create policy boat_fuel_logs_insert_own on public.boat_fuel_logs for insert
-      with check (user_id = auth.uid() and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = auth.uid()));
+      with check (user_id = (select auth.uid()) and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = (select auth.uid())));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_fuel_logs' and policyname = 'boat_fuel_logs_update_own') then
     create policy boat_fuel_logs_update_own on public.boat_fuel_logs for update
-      using (user_id = auth.uid()) with check (user_id = auth.uid());
+      using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_fuel_logs' and policyname = 'boat_fuel_logs_delete_own') then
     create policy boat_fuel_logs_delete_own on public.boat_fuel_logs for delete
-      using (user_id = auth.uid());
+      using (user_id = (select auth.uid()));
   end if;
 end $$;
 
@@ -157,19 +157,19 @@ do $$
 begin
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_fuel_performance' and policyname = 'boat_fuel_performance_select_own') then
     create policy boat_fuel_performance_select_own on public.boat_fuel_performance for select
-      using (user_id = auth.uid());
+      using (user_id = (select auth.uid()));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_fuel_performance' and policyname = 'boat_fuel_performance_insert_own') then
     create policy boat_fuel_performance_insert_own on public.boat_fuel_performance for insert
-      with check (user_id = auth.uid() and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = auth.uid()));
+      with check (user_id = (select auth.uid()) and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = (select auth.uid())));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_fuel_performance' and policyname = 'boat_fuel_performance_update_own') then
     create policy boat_fuel_performance_update_own on public.boat_fuel_performance for update
-      using (user_id = auth.uid()) with check (user_id = auth.uid());
+      using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_fuel_performance' and policyname = 'boat_fuel_performance_delete_own') then
     create policy boat_fuel_performance_delete_own on public.boat_fuel_performance for delete
-      using (user_id = auth.uid());
+      using (user_id = (select auth.uid()));
   end if;
 end $$;
 
@@ -178,19 +178,19 @@ do $$
 begin
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_electrical' and policyname = 'boat_electrical_select_own') then
     create policy boat_electrical_select_own on public.boat_electrical for select
-      using (user_id = auth.uid());
+      using (user_id = (select auth.uid()));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_electrical' and policyname = 'boat_electrical_insert_own') then
     create policy boat_electrical_insert_own on public.boat_electrical for insert
-      with check (user_id = auth.uid() and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = auth.uid()));
+      with check (user_id = (select auth.uid()) and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = (select auth.uid())));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_electrical' and policyname = 'boat_electrical_update_own') then
     create policy boat_electrical_update_own on public.boat_electrical for update
-      using (user_id = auth.uid()) with check (user_id = auth.uid());
+      using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_electrical' and policyname = 'boat_electrical_delete_own') then
     create policy boat_electrical_delete_own on public.boat_electrical for delete
-      using (user_id = auth.uid());
+      using (user_id = (select auth.uid()));
   end if;
 end $$;
 
@@ -199,18 +199,18 @@ do $$
 begin
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_batteries' and policyname = 'boat_batteries_select_own') then
     create policy boat_batteries_select_own on public.boat_batteries for select
-      using (user_id = auth.uid() and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = auth.uid()));
+      using (user_id = (select auth.uid()) and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = (select auth.uid())));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_batteries' and policyname = 'boat_batteries_insert_own') then
     create policy boat_batteries_insert_own on public.boat_batteries for insert
-      with check (user_id = auth.uid() and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = auth.uid()));
+      with check (user_id = (select auth.uid()) and exists (select 1 from public.boats b where b.id = boat_id and b.owner_id = (select auth.uid())));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_batteries' and policyname = 'boat_batteries_update_own') then
     create policy boat_batteries_update_own on public.boat_batteries for update
-      using (user_id = auth.uid()) with check (user_id = auth.uid());
+      using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
   end if;
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'boat_batteries' and policyname = 'boat_batteries_delete_own') then
     create policy boat_batteries_delete_own on public.boat_batteries for delete
-      using (user_id = auth.uid());
+      using (user_id = (select auth.uid()));
   end if;
 end $$;
