@@ -20,6 +20,10 @@ import {
 import { logInWithAppUserId } from '../services/revenuecat.js';
 import { Capacitor } from '@capacitor/core';
 
+// App store URLs for web auth page (subscribe via mobile apps)
+const APP_STORE_URL = 'https://apps.apple.com/app/boatmatey/id6758239609';
+const GOOGLE_PLAY_URL = ''; // Add your Google Play link when available
+
 // Store pending signup data (cleared after use)
 let pendingSignup = null;
 
@@ -217,11 +221,19 @@ function render() {
         <button type="submit" class="btn-primary" id="signin-btn" style="width: 100%; padding: 0.875rem; font-size: 1rem;">
           Sign in
         </button>
-        <div style="background: #fff3cd; border: 1px solid #ffc107; padding: 1rem; border-radius: 8px; margin-top: 1rem;">
-          <p style="margin: 0; color: #856404; font-size: 0.9rem;">
+        <div style="background: #f8f9fa; border: 1px solid #e9ecef; padding: 1rem; border-radius: 8px; margin-top: 1rem;">
+          <p style="margin: 0 0 0.75rem 0; color: var(--color-text); font-size: 0.9rem;">
             <strong>New to BoatMatey?</strong><br>
-            Download the mobile app to create an account and start your free trial.
+            Download the app to create an account and subscribe via the store.
           </p>
+          <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; justify-content: center;">
+            <a href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" aria-label="Download on the App Store" style="display: inline-block; line-height: 0;">
+              <img src="https://upload.wikimedia.org/wikipedia/commons/0/0f/Available_on_the_App_Store_%28black%29_SVG.svg" alt="Download on the App Store" style="height: 40px; width: auto; display: block;">
+            </a>
+            <a href="${GOOGLE_PLAY_URL || '#'}" ${GOOGLE_PLAY_URL ? 'target="_blank" rel="noopener noreferrer"' : ''} aria-label="Get it on Google Play" style="display: inline-block; line-height: 0;">
+              <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" style="height: 40px; width: auto; display: block;">
+            </a>
+          </div>
         </div>
       `}
     </form>
