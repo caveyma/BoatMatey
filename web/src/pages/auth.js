@@ -23,6 +23,8 @@ import { Capacitor } from '@capacitor/core';
 // App store URLs for web auth page (subscribe via mobile apps)
 const APP_STORE_URL = 'https://apps.apple.com/app/boatmatey/id6758239609';
 const GOOGLE_PLAY_URL = ''; // Add your Google Play link when available
+const APP_STORE_BADGE_URL = 'https://upload.wikimedia.org/wikipedia/commons/0/0f/Available_on_the_App_Store_%28black%29_SVG.svg';
+const GOOGLE_PLAY_BADGE_URL = 'https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png';
 
 // Store pending signup data (cleared after use)
 let pendingSignup = null;
@@ -226,12 +228,32 @@ function render() {
             <strong>New to BoatMatey?</strong><br>
             Download the app to create an account and subscribe via the store.
           </p>
-          <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; justify-content: center;">
-            <a href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" aria-label="Download on the App Store" style="width: 200px; height: 60px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
-              <img src="https://upload.wikimedia.org/wikipedia/commons/0/0f/Available_on_the_App_Store_%28black%29_SVG.svg" alt="Download on the App Store" style="width: 100%; height: 100%; object-fit: contain;">
+          <style>
+            .store-buttons {
+              display: flex;
+              gap: 12px;
+            }
+            .store-button {
+              width: 180px;
+              height: 54px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              background: transparent;
+            }
+            .store-button img {
+              width: 100%;
+              height: 100%;
+              object-fit: contain;
+              display: block;
+            }
+          </style>
+          <div class="store-buttons">
+            <a href="${APP_STORE_URL}" class="store-button" target="_blank" rel="noopener">
+              <img src="${APP_STORE_BADGE_URL}" alt="Download on the App Store">
             </a>
-            <a href="${GOOGLE_PLAY_URL || '#'}" ${GOOGLE_PLAY_URL ? 'target="_blank" rel="noopener noreferrer"' : ''} aria-label="Get it on Google Play" style="width: 200px; height: 60px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
-              <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" style="width: 100%; height: 100%; object-fit: contain;">
+            <a href="${GOOGLE_PLAY_URL || '#'}" class="store-button" target="_blank" rel="noopener">
+              <img src="${GOOGLE_PLAY_BADGE_URL}" alt="Get it on Google Play">
             </a>
           </div>
         </div>
