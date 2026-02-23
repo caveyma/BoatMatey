@@ -241,19 +241,18 @@ function render() {
               justify-content: center;
               background: transparent;
             }
-            .store-button img {
-              width: 100%;
-              height: 100%;
-              object-fit: contain;
+            .store-badge {
+              height: 40px;
+              width: auto;
               display: block;
             }
           </style>
           <div class="store-buttons">
             <a href="${APP_STORE_URL}" class="store-button" target="_blank" rel="noopener">
-              <img src="${APP_STORE_BADGE_URL}" alt="Download on the App Store">
+              <img src="${APP_STORE_BADGE_URL}" alt="Download on the App Store" class="store-badge">
             </a>
             <a href="${GOOGLE_PLAY_URL || '#'}" class="store-button" target="_blank" rel="noopener">
-              <img src="${GOOGLE_PLAY_BADGE_URL}" alt="Get it on Google Play">
+              <img src="${GOOGLE_PLAY_BADGE_URL}" alt="Get it on Google Play" class="store-badge">
             </a>
           </div>
         </div>
