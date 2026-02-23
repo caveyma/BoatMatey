@@ -227,11 +227,11 @@ function render() {
             Download the app to create an account and subscribe via the store.
           </p>
           <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; justify-content: center;">
-            <a href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" aria-label="Download on the App Store" style="display: inline-block; line-height: 0;">
-              <img src="https://upload.wikimedia.org/wikipedia/commons/0/0f/Available_on_the_App_Store_%28black%29_SVG.svg" alt="Download on the App Store" style="height: 40px; width: auto; display: block;">
+            <a href="${APP_STORE_URL}" target="_blank" rel="noopener noreferrer" aria-label="Download on the App Store" style="width: 200px; height: 60px; display: flex; align-items: center; justify-content: center;">
+              <img src="https://upload.wikimedia.org/wikipedia/commons/0/0f/Available_on_the_App_Store_%28black%29_SVG.svg" alt="Download on the App Store" style="width: 100%; height: 100%; object-fit: contain;">
             </a>
-            <a href="${GOOGLE_PLAY_URL || '#'}" ${GOOGLE_PLAY_URL ? 'target="_blank" rel="noopener noreferrer"' : ''} aria-label="Get it on Google Play" style="display: inline-block; line-height: 0;">
-              <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" style="height: 40px; width: auto; display: block;">
+            <a href="${GOOGLE_PLAY_URL || '#'}" ${GOOGLE_PLAY_URL ? 'target="_blank" rel="noopener noreferrer"' : ''} aria-label="Get it on Google Play" style="width: 200px; height: 60px; display: flex; align-items: center; justify-content: center;">
+              <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" style="width: 100%; height: 100%; object-fit: contain;">
             </a>
           </div>
         </div>
