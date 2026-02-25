@@ -22,7 +22,7 @@ import { Capacitor } from '@capacitor/core';
 
 // App store URLs for web auth page (subscribe via mobile apps)
 const APP_STORE_URL = 'https://apps.apple.com/app/boatmatey/id6758239609';
-const GOOGLE_PLAY_URL = ''; // Add your Google Play link when available
+const GOOGLE_PLAY_URL = 'https://play.google.com/store/apps/details?id=com.boatmatey.app';
 const APP_STORE_BADGE_URL = 'https://upload.wikimedia.org/wikipedia/commons/0/0f/Available_on_the_App_Store_%28black%29_SVG.svg';
 const GOOGLE_PLAY_BADGE_URL = 'https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png';
 
