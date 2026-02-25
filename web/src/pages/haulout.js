@@ -747,9 +747,15 @@ async function showHauloutForm() {
   listContainer.insertAdjacentHTML('afterbegin', formHtml);
 
   const form = document.getElementById('haulout-form');
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    saveHaulout();
+    try {
+      await saveHaulout();
+    } catch (err) {
+      console.error('Haul-out save error:', err);
+      setSaveButtonLoading(form, false);
+      showToast('Could not save haul-out. Please try again.', 'error');
+    }
   });
 
   // Toggle conditional issue/notes fields based on dropdown selections
@@ -934,7 +940,7 @@ async function saveHaulout() {
     setSaveButtonLoading(form, false);
     return;
   }
-  try {
+
   const entry = {
     id: editingId,
     haulout_date: hauloutDate,
@@ -988,6 +994,7 @@ async function saveHaulout() {
     next_haulout_reminder_minutes: parseInt(document.getElementById('next_haulout_reminder')?.value || '1440', 10) || null
   };
 
+  try {
   if (editingId && String(editingId).includes('-')) {
     await updateHaulout(editingId, entry);
   } else {

@@ -1361,6 +1361,9 @@ async function saveService() {
   const form = document.getElementById('service-form');
   setSaveButtonLoading(form, true);
   const serviceMode = document.querySelector('input[name="service_mode"]:checked')?.value || 'Professional';
+  const serviceType = document.getElementById('service_type').value || document.getElementById('service_type_custom').value;
+  const engineIdRaw = document.getElementById('service_engine').value;
+
   let diyChecklist = null;
   let diyMeta = null;
   let seacocksPosition = null;
@@ -1401,8 +1404,6 @@ async function saveService() {
     };
   }
 
-  const serviceType = document.getElementById('service_type').value || document.getElementById('service_type_custom').value;
-  const engineIdRaw = document.getElementById('service_engine').value;
   if (serviceType !== 'Sails & Rigging' && !engineIdRaw) {
     showToast('Please select an engine for this service type.', 'error');
     setSaveButtonLoading(form, false);

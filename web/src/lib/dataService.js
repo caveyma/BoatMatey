@@ -1096,10 +1096,10 @@ export async function createHaulout(boatId, payload) {
     yard_contractor_name: payload.yard_contractor_name || null,
     total_cost: payload.total_cost ?? null,
     general_notes: payload.general_notes || null,
-    recommendations_next_haulout: payload.recommendations_next_haulout || null,
-    next_haulout_due: payload.next_haulout_due || null,
-    next_haulout_reminder_minutes: payload.next_haulout_reminder_minutes ?? null
+    recommendations_next_haulout: payload.recommendations_next_haulout || null
   };
+  // Omit next_haulout_due and next_haulout_reminder_minutes so insert works with base schema.
+  // After running reminder_minutes_haulout.sql and haulout_next_due_and_calendar.sql, you can add them to the row.
 
   const { data, error } = await supabase
     .from('haulout_entries')
@@ -1158,9 +1158,7 @@ export async function updateHaulout(hauloutId, payload) {
     yard_contractor_name: payload.yard_contractor_name ?? null,
     total_cost: payload.total_cost ?? null,
     general_notes: payload.general_notes ?? null,
-    recommendations_next_haulout: payload.recommendations_next_haulout ?? null,
-    next_haulout_due: payload.next_haulout_due ?? null,
-    next_haulout_reminder_minutes: payload.next_haulout_reminder_minutes ?? null
+    recommendations_next_haulout: payload.recommendations_next_haulout ?? null
   };
 
   const { error } = await supabase
