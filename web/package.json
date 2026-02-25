@@ -6,13 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cap:ios": "npm run build && cd .. && npx cap sync ios"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
     "vite": "^7.2.4"
   },
   "dependencies": {
+    "@capacitor/camera": "^8.0.0",
     "@capacitor/local-notifications": "^8.0.0",
     "@capacitor/splash-screen": "^8.0.0",
     "@revenuecat/purchases-capacitor": "^12.0.5",

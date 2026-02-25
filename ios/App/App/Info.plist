@@ -49,5 +49,11 @@
 	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>BoatMatey uses the camera to take a photo of your boat when adding or editing a boat.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>BoatMatey needs access to your photo library to choose a boat photo when adding or editing a boat.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>BoatMatey may save boat photos to your photo library if you choose to.</string>
 </dict>
 </plist>

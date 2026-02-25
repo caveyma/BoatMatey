@@ -265,21 +265,6 @@ function render() {
       </button>
     </div>
 
-    ${isNative ? `
-      <div style="border-top: 1px solid #eee; margin-top: 1rem; padding-top: 1.25rem;">
-        <p style="text-align: center; margin-bottom: 0.75rem; font-weight: 500; color: var(--color-text-light);">
-          Got a promo code?
-        </p>
-        <div style="display: flex; gap: 0.5rem;">
-          <input type="text" id="promo-code" placeholder="Enter promo code" 
-                 style="flex: 1; padding: 0.625rem; border: 1px solid #ddd; border-radius: 8px; font-size: 0.95rem;">
-          <button type="button" class="btn-secondary" id="apply-promo-btn" style="padding: 0.625rem 1rem;">
-            Apply
-          </button>
-        </div>
-      </div>
-    ` : ''}
-
     <div id="auth-message" style="display: none; margin-top: 1rem; padding: 0.75rem; border-radius: 8px;">
       <p style="margin: 0; font-size: 0.95rem;"></p>
     </div>
@@ -344,7 +329,6 @@ async function onMount() {
   const signinBtn = document.getElementById('signin-btn');
   const createAccountBtn = document.getElementById('create-account-btn');
   const forgotPasswordBtn = document.getElementById('forgot-password-btn');
-  const applyPromoBtn = document.getElementById('apply-promo-btn');
   const backBtn = document.getElementById('back-btn');
 
   const passwordInput = document.getElementById('auth-password');
@@ -490,21 +474,6 @@ async function onMount() {
         forgotPasswordBtn.disabled = false;
         forgotPasswordBtn.textContent = 'Forgot password?';
       }
-    });
-  }
-
-  // Promo code
-  if (applyPromoBtn) {
-    applyPromoBtn.addEventListener('click', () => {
-      const promoCode = document.getElementById('promo-code').value.trim();
-      
-      if (!promoCode) {
-        showMessage('Please enter a promo code.', true);
-        return;
-      }
-
-      // TODO: Implement promo code validation with RevenueCat
-      showMessage('Promo code feature coming soon!');
     });
   }
 

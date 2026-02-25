@@ -1,0 +1,9 @@
+Thank you for your feedback. We have addressed both issues:
+
+Guideline 2.1 – Crash when selecting photo (Add Boat):
+We fixed the crash that occurred when choosing a photo during Add Boat on iPad. The app now uses the native photo library picker only (no camera option on this screen), with the required privacy usage descriptions (NSCameraUsageDescription, NSPhotoLibraryUsageDescription, NSPhotoLibraryAddUsageDescription) added to Info.plist. We have tested the flow on iPad and iPhone and it no longer crashes.
+
+Guideline 3.1.1 – Promo codes / In-App Purchase:
+We removed the "Got a promo code?" / "Apply" promo code UI from the sign-in screen. The app no longer offers or references any mechanism to unlock features via promo codes. Subscription and access are handled only through the App Store (e.g. in-app purchase / subscription) where applicable.
+
+We have tested the updated build on supported devices and would be grateful for re-review.

@@ -6,6 +6,7 @@
 import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { renderLogo } from '../components/logo.js';
+import { Capacitor } from '@capacitor/core';
 
 const calendarIconUrl = new URL('../assets/calendar-card.png', import.meta.url).href;
 const maydayIconUrl = new URL('../assets/mayday.png', import.meta.url).href;
@@ -25,6 +26,9 @@ import {
 } from '../lib/dataService.js';
 
 let editingBoatId = null;
+
+/** When on native, photo chosen via Camera plugin (library only) is stored here instead of file input. */
+let boatFormNativePhotoFile = null;
 
 import { createYachtHeader } from '../components/header.js';
 import { showToast } from '../components/toast.js';
@@ -379,7 +383,12 @@ function attachHandlers() {
 }
 
 function showBoatForm() {
+  boatFormNativePhotoFile = null;
   const boat = editingBoatId ? boatsStorage.get(editingBoatId) : null;
+  const isNative = Capacitor.isNativePlatform?.() ?? false;
+  const photoSectionHtml = isNative
+    ? `<button type="button" class="btn-secondary" id="boat-photo-choose-btn">Choose photo</button>`
+    : `<input type="file" id="boat_photo" accept="image/*">`;
 
   const formHtml = `
     <div class="card" id="boat-form-card" style="max-width: 600px; margin: 0 auto;">
@@ -403,7 +412,7 @@ function showBoatForm() {
         </div>
         <div class="form-group">
           <label for="boat_photo">Boat Photo</label>
-          <input type="file" id="boat_photo" accept="image/*">
+          ${photoSectionHtml}
           <div id="boat-photo-preview" style="margin-top: 0.5rem;">
             ${boat?.photo_data ? `<img src="${boat.photo_data}" alt="Preview" style="max-width: 200px; border-radius: var(--radius);">` : ''}
           </div>
@@ -422,18 +431,44 @@ function showBoatForm() {
   const form = document.getElementById('boat-form');
   const photoInput = document.getElementById('boat_photo');
   const photoPreview = document.getElementById('boat-photo-preview');
+  const choosePhotoBtn = document.getElementById('boat-photo-choose-btn');
 
-  // Handle photo upload
-  photoInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        photoPreview.innerHTML = `<img src="${event.target.result}" alt="Preview" style="max-width: 200px; border-radius: var(--radius);">`;
-      };
-      reader.readAsDataURL(file);
-    }
-  });
+  if (isNative && choosePhotoBtn) {
+    choosePhotoBtn.addEventListener('click', async () => {
+      try {
+        const { Camera, CameraSource, CameraResultType } = await import('@capacitor/camera');
+        const photo = await Camera.getPhoto({
+          source: CameraSource.Photos,
+          quality: 90,
+          resultType: CameraResultType.DataUrl
+        });
+        if (!photo?.dataUrl) return;
+        const res = await fetch(photo.dataUrl);
+        const blob = await res.blob();
+        const file = new File([blob], 'boat-photo.jpg', { type: blob.type || 'image/jpeg' });
+        boatFormNativePhotoFile = file;
+        photoPreview.innerHTML = `<img src="${photo.dataUrl}" alt="Preview" style="max-width: 200px; border-radius: var(--radius);">`;
+      } catch (e) {
+        if (e?.message !== 'User cancelled photos app') {
+          console.warn('Camera plugin error:', e);
+          showToast('Could not open photo library.', 'error');
+        }
+      }
+    });
+  }
+
+  if (photoInput) {
+    photoInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          photoPreview.innerHTML = `<img src="${event.target.result}" alt="Preview" style="max-width: 200px; border-radius: var(--radius);">`;
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+  }
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -443,6 +478,7 @@ function showBoatForm() {
   window.boatsPageCancelForm = () => {
     document.getElementById('boat-form-card').remove();
     editingBoatId = null;
+    boatFormNativePhotoFile = null;
   };
 }
 
@@ -458,7 +494,7 @@ async function saveBoat() {
   };
 
   const photoInput = document.getElementById('boat_photo');
-  const photoFile = photoInput?.files?.[0];
+  const photoFile = boatFormNativePhotoFile ?? photoInput?.files?.[0];
 
   if (photoFile) {
     // Prefer Supabase upload (stores URL only, avoids localStorage quota). Fallback: small compressed thumbnail for local-only.
@@ -493,6 +529,7 @@ async function saveBoat() {
     setSaveButtonLoading(form, false);
     document.getElementById('boat-form-card').remove();
     editingBoatId = null;
+    boatFormNativePhotoFile = null;
     loadBoats();
     return;
   }
@@ -529,9 +566,11 @@ async function saveBoat() {
   setSaveButtonLoading(form, false);
   document.getElementById('boat-form-card').remove();
   editingBoatId = null;
+  boatFormNativePhotoFile = null;
   loadBoats();
   } finally {
     setSaveButtonLoading(form, false);
+    boatFormNativePhotoFile = null;
   }
 }
 
