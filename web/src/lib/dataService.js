@@ -45,6 +45,28 @@ export async function getSession() {
   return data.session ?? null;
 }
 
+/** Like getSession() but times out after ms. Use at startup so the app never hangs on slow/unreachable network. */
+export async function getSessionWithTimeout(ms = 6000) {
+  if (!supabase) return null;
+  try {
+    const result = await Promise.race([
+      supabase.auth.getSession(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Session check timeout')), ms))
+    ]);
+    const { data, error } = result;
+    if (error) {
+      console.error('Supabase auth.getSession error:', error);
+      return null;
+    }
+    return data?.session ?? null;
+  } catch (e) {
+    if (e?.message === 'Session check timeout') {
+      console.warn('[BoatMatey] Auth check timed out – continuing without session (e.g. offline).');
+    }
+    return null;
+  }
+}
+
 function isSupabaseEnabled() {
   return !!supabase;
 }

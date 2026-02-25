@@ -12,7 +12,9 @@ import { initRevenueCat } from './services/revenuecat.js';
 import { initSubscription, refreshSubscriptionStatus } from './lib/subscription.js';
 import { syncOsNotifications } from './lib/notifications.js';
 import { supabase } from './lib/supabaseClient.js';
+import { getSessionWithTimeout } from './lib/dataService.js';
 import { Capacitor } from '@capacitor/core';
+import { SplashScreen } from '@capacitor/splash-screen';
 import boatsPage from './pages/boats.js';
 import boatDashboardPage from './pages/boat-dashboard.js';
 import boatDetailsPage from './pages/boat.js';
@@ -77,25 +79,37 @@ export async function init() {
     route('/boat/:id/links/:linkId', linkEditPage);
     route('/account', accountPage);
 
+    // Hide native splash as soon as the app shell is ready so user sees our UI (or our loading state)
     try {
-      await initRevenueCat();
+      if (Capacitor.isNativePlatform()) {
+        await SplashScreen.hide();
+      }
     } catch (e) {
-      console.warn('BoatMatey: RevenueCat init failed (ok on web):', e?.message || e);
-    }
-    try {
-      await initSubscription();
-    } catch (e) {
-      console.warn('BoatMatey: Subscription init failed:', e?.message || e);
+      console.warn('BoatMatey: SplashScreen.hide failed:', e?.message || e);
     }
 
-    try {
-      await checkAccessAndRedirect();
-    } catch (e) {
-      console.warn('BoatMatey: Access check failed, continuing:', e?.message || e);
-    }
-
+    // Show UI immediately so the app never appears stuck (e.g. on emulator where Billing is unavailable)
     initRouter();
     initOfflineBanner();
+
+    // Run RevenueCat, subscription and access check in background; redirect to welcome if no session
+    (async function runInitInBackground() {
+      try {
+        await initRevenueCat();
+      } catch (e) {
+        console.warn('BoatMatey: RevenueCat init failed (ok on web):', e?.message || e);
+      }
+      try {
+        await initSubscription();
+      } catch (e) {
+        console.warn('BoatMatey: Subscription init failed:', e?.message || e);
+      }
+      try {
+        await checkAccessAndRedirect();
+      } catch (e) {
+        console.warn('BoatMatey: Access check failed, continuing:', e?.message || e);
+      }
+    })();
 
     // Reschedule OS notifications when app comes to foreground
     try {
@@ -149,6 +163,7 @@ function initOfflineBanner() {
 /**
  * Check access requirements and redirect if needed
  * Flow: Welcome → Auth → (Subscription for new users) → Home
+ * Uses timeout so the app never hangs on slow/unreachable network (e.g. emulator).
  */
 async function checkAccessAndRedirect() {
   const currentHash = window.location.hash.substring(1) || '/';
@@ -157,14 +172,23 @@ async function checkAccessAndRedirect() {
   const publicRoutes = ['/welcome', '/auth', '/subscription'];
   const isOnPublicPage = publicRoutes.includes(currentHash);
 
-  // Check authentication (web and native)
+  // Check authentication with timeout so we don't hang on first load
   if (supabase) {
-    const { data: { session } } = await supabase.auth.getSession();
+    const session = await getSessionWithTimeout(6000);
 
     if (!session && !isOnPublicPage) {
       navigate('/welcome');
       return;
     }
-    if (session) await refreshSubscriptionStatus();
+    if (session) {
+      try {
+        await Promise.race([
+          refreshSubscriptionStatus(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000))
+        ]);
+      } catch (e) {
+        if (e?.message !== 'timeout') console.warn('BoatMatey: refreshSubscriptionStatus failed:', e?.message || e);
+      }
+    }
   }
 }

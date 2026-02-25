@@ -149,7 +149,12 @@ export async function refreshSubscriptionStatus() {
   await initRevenueCat();
 
   try {
-    const { customerInfo } = await Purchases.getCustomerInfo();
+    const getCustomerInfoWithTimeout = (ms = 8000) =>
+      Promise.race([
+        Purchases.getCustomerInfo(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('RevenueCat getCustomerInfo timeout')), ms))
+      ]);
+    const { customerInfo } = await getCustomerInfoWithTimeout();
     console.log('[Subscription] Raw customerInfo.entitlements:', JSON.stringify(customerInfo?.entitlements, null, 2));
 
     const entitlement = getActiveEntitlement(customerInfo);

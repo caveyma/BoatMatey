@@ -3,6 +3,7 @@
  */
 
 import { supabase } from './lib/supabaseClient.js';
+import { getSessionWithTimeout } from './lib/dataService.js';
 // Note: subscription check moved to auth flow, not route access
 
 let routes = {};
@@ -252,16 +253,11 @@ async function checkAccess(path) {
     return { allowed: true };
   }
 
-  // Protected routes: check authentication
+  // Protected routes: check authentication (with timeout so we don't hang on slow network)
   if (supabase) {
-    const { data: { session } } = await supabase.auth.getSession();
-    
+    const session = await getSessionWithTimeout(5000);
     if (!session) {
-      // Not authenticated - redirect to welcome
-      return { 
-        allowed: false, 
-        redirectTo: '/welcome' 
-      };
+      return { allowed: false, redirectTo: '/welcome' };
     }
   }
 
@@ -274,7 +270,8 @@ async function checkAccess(path) {
 export function init() {
   // When app is served from /app with no hash, normalize to /app#/ so refresh and links work
   const pathname = window.location.pathname.replace(/\/$/, '') || '/';
-  if ((pathname === '/app') && !window.location.hash) {
+  const isAppPath = pathname === '/app' || pathname === '/app/index.html';
+  if (isAppPath && !window.location.hash) {
     window.location.replace('/app#/');
     return;
   }
