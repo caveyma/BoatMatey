@@ -268,12 +268,12 @@ async function checkAccess(path) {
  * Initialize router
  */
 export function init() {
-  // When app is served from /app with no hash, normalize to /app#/ so refresh and links work
+  // Normalize hash without full page replace (replace() in Android WebView often doesn't reload,
+  // so we'd never run loadRoute or register hashchange – taps on #/auth would do nothing).
   const pathname = window.location.pathname.replace(/\/$/, '') || '/';
   const isAppPath = pathname === '/app' || pathname === '/app/index.html';
   if (isAppPath && !window.location.hash) {
-    window.location.replace('/app#/');
-    return;
+    window.location.hash = '#/';
   }
   const hash = window.location.hash.substring(1) || '/';
   loadRoute(hash);

@@ -5,7 +5,6 @@
  * Then proceeds to auth page for sign in or account creation
  */
 
-import { navigate } from '../router.js';
 import { renderLogoFull } from '../components/logo.js';
 
 function render() {
@@ -67,9 +66,9 @@ function render() {
       </div>
     </div>
 
-    <button type="button" class="btn-primary" id="get-started-btn" style="width: 100%; padding: 1rem; font-size: 1.1rem;">
+    <a href="#/auth" class="btn-primary" id="get-started-btn" style="display: block; width: 100%; padding: 1rem; font-size: 1.1rem; text-align: center; text-decoration: none; color: inherit; box-sizing: border-box;">
       Get Started
-    </button>
+    </a>
     <p style="margin-top: 1rem; font-size: 0.9rem;">
       <a href="#/auth" id="welcome-sign-in-link" style="color: var(--bm-teal); font-weight: 600;">Already have an account? Sign in</a>
     </p>
@@ -82,19 +81,8 @@ function render() {
 }
 
 function onMount() {
-  const getStartedBtn = document.getElementById('get-started-btn');
-  const signInLink = document.getElementById('welcome-sign-in-link');
-  if (getStartedBtn) {
-    getStartedBtn.addEventListener('click', () => {
-      navigate('/auth');
-    });
-  }
-  if (signInLink) {
-    signInLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      navigate('/auth');
-    });
-  }
+  // Get Started and Sign in are plain <a href="#/auth"> so the WebView navigates via hash change
+  // without relying on click handlers (which can fail to fire on some Android WebViews).
 }
 
 export default {
