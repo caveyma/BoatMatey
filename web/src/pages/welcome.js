@@ -19,8 +19,10 @@ function render() {
   card.style.textAlign = 'center';
   card.style.padding = '2rem 1.5rem';
 
-  // Promo video: use hyphenated filename (no spaces) to avoid 416 Range errors on Cloudflare/static hosts
-  const promoVideoSrc = '/assets/creating-a-new-boat.mp4';
+  // Promo video: use path that works on web (/) and in Capacitor when doc is at /app/index.html (../assets/)
+  const pathname = (typeof window !== 'undefined' && window.location?.pathname) || '';
+  const isAppEntry = pathname === '/app' || pathname === '/app/' || pathname.endsWith('/app/index.html');
+  const promoVideoSrc = isAppEntry ? '../assets/creating-a-new-boat.mp4' : '/assets/creating-a-new-boat.mp4';
 
   card.innerHTML = `
     <div style="margin-bottom: 2rem;">
