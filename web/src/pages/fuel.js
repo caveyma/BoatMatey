@@ -18,6 +18,7 @@ import {
   updateFuelLog,
   deleteFuelLog
 } from '../lib/dataService.js';
+import { currencySymbol, CURRENCIES } from '../lib/currency.js';
 
 let currentBoatId = null;
 let fuelArchived = false;
@@ -101,9 +102,17 @@ function render(params = {}) {
             <label for="fuel_added_litres">Fuel added (L)</label>
             <input type="number" id="fuel_added_litres" min="0" step="0.1">
           </div>
-          <div class="form-group">
-            <label for="fuel_cost">Fuel cost</label>
-            <input type="number" id="fuel_cost" min="0" step="0.01">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="fuel_cost">Fuel cost</label>
+              <input type="number" id="fuel_cost" min="0" step="0.01">
+            </div>
+            <div class="form-group">
+              <label for="fuel_currency">Currency</label>
+              <select id="fuel_currency">
+                ${CURRENCIES.map((c) => `<option value="${c.code}">${c.label}</option>`).join('')}
+              </select>
+            </div>
           </div>
           <div class="form-group">
             <label for="fuel_distance_nm">Distance (NM)</label>
@@ -237,6 +246,8 @@ function openEditLog(log) {
   document.getElementById('fuel_engine_hours').value = log.engine_hours ?? '';
   document.getElementById('fuel_added_litres').value = log.fuel_added_litres ?? '';
   document.getElementById('fuel_cost').value = log.fuel_cost ?? '';
+  const currencySelect = document.getElementById('fuel_currency');
+  if (currencySelect) currencySelect.value = log.fuel_currency || 'GBP';
   document.getElementById('fuel_distance_nm').value = log.distance_nm ?? '';
   document.getElementById('fuel_avg_speed_kn').value = log.avg_speed_kn ?? '';
   document.getElementById('fuel_log_notes').value = log.notes || '';
@@ -261,6 +272,7 @@ async function saveFuelLogEntry() {
     engine_hours: document.getElementById('fuel_engine_hours')?.value ? parseFloat(document.getElementById('fuel_engine_hours').value) : null,
     fuel_added_litres: document.getElementById('fuel_added_litres')?.value ? parseFloat(document.getElementById('fuel_added_litres').value) : null,
     fuel_cost: document.getElementById('fuel_cost')?.value ? parseFloat(document.getElementById('fuel_cost').value) : null,
+    fuel_currency: document.getElementById('fuel_currency')?.value || 'GBP',
     distance_nm: document.getElementById('fuel_distance_nm')?.value ? parseFloat(document.getElementById('fuel_distance_nm').value) : null,
     avg_speed_kn: document.getElementById('fuel_avg_speed_kn')?.value ? parseFloat(document.getElementById('fuel_avg_speed_kn').value) : null,
     notes: document.getElementById('fuel_log_notes')?.value || null
@@ -268,7 +280,10 @@ async function saveFuelLogEntry() {
   if (editingLogId) {
     await updateFuelLog(editingLogId, payload);
   } else {
-    await createFuelLog(currentBoatId, payload);
+    const created = await createFuelLog(currentBoatId, payload);
+    if (created?.currencyFallback) {
+      showToast('Entry saved. For currency labels (e.g. USD), run the database migration: add fuel_currency to boat_fuel_logs.', 'info');
+    }
   }
   editingLogId = null;
   document.getElementById('fuel-log-form-wrap').style.display = 'none';
@@ -299,6 +314,7 @@ async function loadFuelLogs() {
 
   listEl.innerHTML = logs.map((log) => {
     const pricePerLitre = log.fuel_price_per_litre != null ? Number(log.fuel_price_per_litre).toFixed(3) : '—';
+    const sym = currencySymbol(log.fuel_currency);
     const litresPerNm = (log.fuel_added_litres > 0 && log.distance_nm > 0)
       ? (log.fuel_added_litres / log.distance_nm).toFixed(2) + ' L/NM'
       : '';
@@ -310,8 +326,8 @@ async function loadFuelLogs() {
             <p class="text-muted">
               ${log.engine_hours != null ? log.engine_hours + ' h' : ''}
               ${log.fuel_added_litres != null ? ' • ' + log.fuel_added_litres + ' L' : ''}
-              ${log.fuel_cost != null ? ' • £' + Number(log.fuel_cost).toFixed(2) : ''}
-              ${pricePerLitre !== '—' ? ' • ' + pricePerLitre + ' £/L' : ''}
+              ${log.fuel_cost != null ? ' • ' + sym + Number(log.fuel_cost).toFixed(2) : ''}
+              ${pricePerLitre !== '—' ? ' • ' + pricePerLitre + ' ' + sym + '/L' : ''}
               ${litresPerNm ? ' • ' + litresPerNm : ''}
             </p>
           </div>

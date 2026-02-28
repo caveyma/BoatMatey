@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/copy-promo-video.js && vite build",
     "preview": "vite preview",
     "cap:ios": "npm run build && cd .. && npx cap sync ios"
   },

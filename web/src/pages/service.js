@@ -9,6 +9,7 @@ import { showToast } from '../components/toast.js';
 import { confirmAction } from '../components/confirmModal.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getServiceEntries, createServiceEntry, updateServiceEntry, deleteServiceEntry, getEngines } from '../lib/dataService.js';
+import { currencySymbol, CURRENCIES } from '../lib/currency.js';
 import { enginesStorage } from '../lib/storage.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
 
@@ -709,6 +710,7 @@ async function loadServices() {
       </div>
       <div>
         <p><strong>Engine Hours:</strong> ${service.engine_hours || 'N/A'}</p>
+        ${service.cost != null ? `<p><strong>Cost:</strong> ${currencySymbol(service.cost_currency)}${Number(service.cost).toFixed(2)}</p>` : ''}
         ${diySummary}
         ${service.notes ? `<p><strong>Notes:</strong> ${service.notes}</p>` : ''}
         <div class="service-attachments" data-service-id="${service.id}">
@@ -731,8 +733,12 @@ function attachHandlers() {
   window.servicePageDelete = async (id) => {
     const ok = await confirmAction({ title: 'Delete this service entry?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
     if (!ok) return;
-    await deleteServiceEntry(id);
-    loadServices();
+    const deleted = await deleteServiceEntry(id);
+    if (!deleted) {
+      showToast('Could not delete service entry. Try again or check your connection.', 'error');
+      return;
+    }
+    await loadServices();
     showToast('Service entry removed', 'info');
   };
 
@@ -984,6 +990,22 @@ async function showServiceForm() {
           <div class="form-group">
             <label for="pro_service_description">Service description</label>
             <textarea id="pro_service_description" rows="3">${entry?.pro_meta?.service_description || ''}</textarea>
+          </div>
+        </div>
+
+        <div class="form-section" style="margin-top: 1rem;">
+          <h4>Cost (optional)</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="service_cost">Cost</label>
+              <input type="number" id="service_cost" step="0.01" min="0" placeholder="0.00" value="${typeof entry?.cost === 'number' ? entry.cost : ''}">
+            </div>
+            <div class="form-group">
+              <label for="service_cost_currency">Currency</label>
+              <select id="service_cost_currency">
+                ${CURRENCIES.map((c) => `<option value="${c.code}" ${(entry?.cost_currency || 'GBP') === c.code ? 'selected' : ''}>${c.label}</option>`).join('')}
+              </select>
+            </div>
           </div>
         </div>
 
@@ -1411,6 +1433,8 @@ async function saveService() {
   }
   try {
 
+  const costEl = document.getElementById('service_cost');
+  const costVal = costEl?.value?.trim();
   const entry = {
     id: editingId,
     date: document.getElementById('service_date').value,
@@ -1418,6 +1442,8 @@ async function saveService() {
     service_type: serviceType,
     engine_hours: document.getElementById('service_hours').value ? parseFloat(document.getElementById('service_hours').value) : null,
     notes: document.getElementById('service_notes').value,
+    cost: costVal ? parseFloat(costVal) : null,
+    cost_currency: document.getElementById('service_cost_currency')?.value || 'GBP',
     mode: serviceMode,
     diy_checklist: diyChecklist,
     diy_meta: diyMeta,
@@ -1433,7 +1459,10 @@ async function saveService() {
   if (editingId && String(editingId).includes('-')) {
     await updateServiceEntry(editingId, entry);
   } else {
-    await createServiceEntry(currentBoatId, entry);
+    const created = await createServiceEntry(currentBoatId, entry);
+    if (created?.currencyFallback) {
+      showToast('Entry saved. For currency labels (e.g. USD), run the database migration: add cost_currency to service_entries.', 'info');
+    }
   }
   const card = document.getElementById('service-form-card');
   if (card) card.remove();

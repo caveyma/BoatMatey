@@ -733,7 +733,10 @@ export async function getServiceEntries(boatId) {
     try {
       if (e.description && typeof e.description === 'string' && (e.description.startsWith('{') || e.description.startsWith('['))) {
         const d = JSON.parse(e.description);
-        if (d && typeof d === 'object' && !Array.isArray(d)) Object.assign(out, d);
+        if (d && typeof d === 'object' && !Array.isArray(d)) {
+          const { id: _clientId, ...rest } = d;
+          Object.assign(out, rest);
+        }
       }
     } catch (_) {}
     return out;
@@ -750,21 +753,37 @@ export async function createServiceEntry(boatId, entry) {
   }
 
   // Store full entry as JSON in description so checklist, mode, diy_meta, pro_meta, etc. are persisted
-  const { data, error } = await supabase
+  const insertRow = {
+    boat_id: boatId,
+    engine_id: entry.engine_id ?? null,
+    owner_id: session.user.id,
+    service_date: entry.date,
+    title: entry.service_type || 'Service',
+    description: JSON.stringify(entry),
+    cost: entry.cost ?? null,
+    cost_currency: entry.cost_currency ?? 'GBP',
+    provider: entry.provider ?? null
+  };
+  let { data, error } = await supabase
     .from('service_entries')
-    .insert({
-      boat_id: boatId,
-      engine_id: entry.engine_id ?? null,
-      owner_id: session.user.id,
-      service_date: entry.date,
-      title: entry.service_type || 'Service',
-      description: JSON.stringify(entry),
-      cost: entry.cost ?? null,
-      provider: entry.provider ?? null
-    })
+    .insert(insertRow)
     .select('*')
     .single();
 
+  const isCurrencyColumnError = error && (error.status === 400 || error.code === '42703' || (error.message && (error.message.includes('cost_currency') || error.message.includes('column'))));
+  if (isCurrencyColumnError) {
+    const { cost_currency: _, ...rowWithoutCurrency } = insertRow;
+    const result = await supabase
+      .from('service_entries')
+      .insert(rowWithoutCurrency)
+      .select('*')
+      .single();
+    if (result.error) {
+      console.error('createServiceEntry error:', result.error);
+      return null;
+    }
+    return { ...result.data, currencyFallback: true };
+  }
   if (error) {
     console.error('createServiceEntry error:', error);
   }
@@ -781,28 +800,52 @@ export async function updateServiceEntry(serviceId, entry) {
   }
 
   // Store full entry as JSON in description so checklist and all details are persisted
-  const { error } = await supabase
+  const updateRow = {
+    engine_id: entry.engine_id ?? null,
+    service_date: entry.date,
+    title: entry.service_type || 'Service',
+    description: JSON.stringify(entry),
+    cost: entry.cost ?? null,
+    cost_currency: entry.cost_currency ?? 'GBP',
+    provider: entry.provider ?? null
+  };
+  let { error } = await supabase
     .from('service_entries')
-    .update({
-      engine_id: entry.engine_id ?? null,
-      service_date: entry.date,
-      title: entry.service_type || 'Service',
-      description: JSON.stringify(entry),
-      cost: entry.cost ?? null,
-      provider: entry.provider ?? null
-    })
+    .update(updateRow)
     .eq('id', serviceId);
 
+  const isCurrencyColumnError = error && (error.status === 400 || error.code === '42703' || (error.message && (error.message.includes('cost_currency') || error.message.includes('column'))));
+  if (isCurrencyColumnError) {
+    const { cost_currency: _, ...rowWithoutCurrency } = updateRow;
+    ({ error } = await supabase
+      .from('service_entries')
+      .update(rowWithoutCurrency)
+      .eq('id', serviceId));
+  }
   if (error) {
     console.error('updateServiceEntry error:', error);
   }
 }
 
+/** True if id is a client-side temporary id (e.g. service_1730..._abc123), not a Supabase UUID */
+function isTempServiceEntryId(id) {
+  return typeof id === 'string' && id.startsWith('service_') && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+}
+
+/**
+ * Delete a service entry (Supabase and/or local storage).
+ * @returns {Promise<boolean>} true if delete succeeded, false if Supabase delete failed
+ */
 export async function deleteServiceEntry(serviceId) {
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
     serviceHistoryStorage.delete(serviceId);
-    return;
+    return true;
+  }
+
+  if (isTempServiceEntryId(serviceId)) {
+    serviceHistoryStorage.delete(serviceId);
+    return true;
   }
 
   const { error } = await supabase
@@ -811,7 +854,10 @@ export async function deleteServiceEntry(serviceId) {
     .eq('id', serviceId);
   if (error) {
     console.error('deleteServiceEntry error:', error);
+    return false;
   }
+  serviceHistoryStorage.delete(serviceId);
+  return true;
 }
 
 // ----------------- Equipment (navigation / safety) -----------------
@@ -1119,18 +1165,33 @@ export async function createHaulout(boatId, payload) {
     keel_skeg_trim_tabs_notes: payload.keel_skeg_trim_tabs_notes || null,
     yard_contractor_name: payload.yard_contractor_name || null,
     total_cost: payload.total_cost ?? null,
+    total_cost_currency: payload.total_cost_currency ?? 'GBP',
     general_notes: payload.general_notes || null,
     recommendations_next_haulout: payload.recommendations_next_haulout || null
   };
   // Omit next_haulout_due and next_haulout_reminder_minutes so insert works with base schema.
   // After running reminder_minutes_haulout.sql and haulout_next_due_and_calendar.sql, you can add them to the row.
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('haulout_entries')
     .insert(row)
     .select('*')
     .single();
 
+  const isCurrencyColumnError = error && (error.status === 400 || error.code === '42703' || (error.message && (error.message.includes('total_cost_currency') || error.message.includes('column'))));
+  if (isCurrencyColumnError) {
+    const { total_cost_currency: _, ...rowWithoutCurrency } = row;
+    const result = await supabase
+      .from('haulout_entries')
+      .insert(rowWithoutCurrency)
+      .select('*')
+      .single();
+    if (result.error) {
+      logSupabaseFallback('haulout_entries', result.error);
+      return null;
+    }
+    return { ...result.data, currencyFallback: true };
+  }
   if (error) {
     logSupabaseFallback('haulout_entries', error);
     return null;
@@ -1181,15 +1242,24 @@ export async function updateHaulout(hauloutId, payload) {
     keel_skeg_trim_tabs_notes: payload.keel_skeg_trim_tabs_notes ?? null,
     yard_contractor_name: payload.yard_contractor_name ?? null,
     total_cost: payload.total_cost ?? null,
+    total_cost_currency: payload.total_cost_currency ?? 'GBP',
     general_notes: payload.general_notes ?? null,
     recommendations_next_haulout: payload.recommendations_next_haulout ?? null
   };
 
-  const { error } = await supabase
+  let { error } = await supabase
     .from('haulout_entries')
     .update(updateRow)
     .eq('id', hauloutId);
 
+  const isCurrencyColumnError = error && (error.status === 400 || error.code === '42703' || (error.message && (error.message.includes('total_cost_currency') || error.message.includes('column'))));
+  if (isCurrencyColumnError) {
+    const { total_cost_currency: _, ...rowWithoutCurrency } = updateRow;
+    ({ error } = await supabase
+      .from('haulout_entries')
+      .update(rowWithoutCurrency)
+      .eq('id', hauloutId));
+  }
   if (error) {
     logSupabaseFallback('haulout_entries', error);
   }
@@ -1464,21 +1534,37 @@ export async function createFuelLog(boatId, payload) {
   if (!session || !isSupabaseEnabled()) {
     return null;
   }
-  const { data, error } = await supabase
+  const row = {
+    boat_id: boatId,
+    user_id: session.user.id,
+    log_date: payload.log_date,
+    engine_hours: payload.engine_hours ?? null,
+    fuel_added_litres: payload.fuel_added_litres ?? null,
+    fuel_cost: payload.fuel_cost ?? null,
+    fuel_currency: payload.fuel_currency ?? 'GBP',
+    distance_nm: payload.distance_nm ?? null,
+    avg_speed_kn: payload.avg_speed_kn ?? null,
+    notes: payload.notes ?? null
+  };
+  let { data, error } = await supabase
     .from('boat_fuel_logs')
-    .insert({
-      boat_id: boatId,
-      user_id: session.user.id,
-      log_date: payload.log_date,
-      engine_hours: payload.engine_hours ?? null,
-      fuel_added_litres: payload.fuel_added_litres ?? null,
-      fuel_cost: payload.fuel_cost ?? null,
-      distance_nm: payload.distance_nm ?? null,
-      avg_speed_kn: payload.avg_speed_kn ?? null,
-      notes: payload.notes ?? null
-    })
+    .insert(row)
     .select('*')
     .single();
+  const isCurrencyColumnError = error && (error.status === 400 || error.code === '42703' || (error.message && (error.message.includes('fuel_currency') || error.message.includes('column'))));
+  if (isCurrencyColumnError) {
+    const { fuel_currency: _, ...rowWithoutCurrency } = row;
+    const result = await supabase
+      .from('boat_fuel_logs')
+      .insert(rowWithoutCurrency)
+      .select('*')
+      .single();
+    if (result.error) {
+      logSupabaseFallback('boat_fuel_logs', result.error);
+      return null;
+    }
+    return { ...result.data, currencyFallback: true };
+  }
   if (error) {
     logSupabaseFallback('boat_fuel_logs', error);
     return null;
@@ -1491,18 +1577,28 @@ export async function updateFuelLog(logId, payload) {
   if (!session || !isSupabaseEnabled()) {
     return null;
   }
-  const { error } = await supabase
+  const updateRow = {
+    log_date: payload.log_date,
+    engine_hours: payload.engine_hours ?? null,
+    fuel_added_litres: payload.fuel_added_litres ?? null,
+    fuel_cost: payload.fuel_cost ?? null,
+    fuel_currency: payload.fuel_currency ?? 'GBP',
+    distance_nm: payload.distance_nm ?? null,
+    avg_speed_kn: payload.avg_speed_kn ?? null,
+    notes: payload.notes ?? null
+  };
+  let { error } = await supabase
     .from('boat_fuel_logs')
-    .update({
-      log_date: payload.log_date,
-      engine_hours: payload.engine_hours ?? null,
-      fuel_added_litres: payload.fuel_added_litres ?? null,
-      fuel_cost: payload.fuel_cost ?? null,
-      distance_nm: payload.distance_nm ?? null,
-      avg_speed_kn: payload.avg_speed_kn ?? null,
-      notes: payload.notes ?? null
-    })
+    .update(updateRow)
     .eq('id', logId);
+  const isCurrencyColumnError = error && (error.status === 400 || error.code === '42703' || (error.message && (error.message.includes('fuel_currency') || error.message.includes('column'))));
+  if (isCurrencyColumnError) {
+    const { fuel_currency: _, ...rowWithoutCurrency } = updateRow;
+    ({ error } = await supabase
+      .from('boat_fuel_logs')
+      .update(rowWithoutCurrency)
+      .eq('id', logId));
+  }
   if (error) {
     logSupabaseFallback('boat_fuel_logs', error);
   }

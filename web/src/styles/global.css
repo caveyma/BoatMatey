@@ -208,6 +208,16 @@ label {
   margin-bottom: var(--spacing-md);
 }
 
+.form-row {
+  display: flex;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+.form-row .form-group {
+  flex: 1;
+  min-width: 120px;
+}
+
 .form-help {
   font-size: var(--font-size-sm);
   color: var(--color-text-light);

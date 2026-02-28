@@ -19,8 +19,8 @@ function render() {
   card.style.textAlign = 'center';
   card.style.padding = '2rem 1.5rem';
 
-  // Promo video is served from /assets/ (file in web/public/assets/ for build)
-  const promoVideoSrc = '/assets/Creating a new Boat.mp4';
+  // Promo video: use hyphenated filename (no spaces) to avoid 416 Range errors on Cloudflare/static hosts
+  const promoVideoSrc = '/assets/creating-a-new-boat.mp4';
 
   card.innerHTML = `
     <div style="margin-bottom: 2rem;">
@@ -37,6 +37,7 @@ function render() {
         style="width: 100%; display: block; max-height: 200px; object-fit: cover;"
         title="BoatMatey – Creating a new boat"
       ></video>
+      <p style="margin: 0.5rem 0 0; font-size: 0.8rem; color: var(--color-text-light);">Official BoatMatey product demo</p>
     </div>
 
     <h1 style="font-size: 1.75rem; color: var(--color-text); margin-bottom: 0.75rem;">

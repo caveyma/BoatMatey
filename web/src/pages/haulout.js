@@ -12,6 +12,7 @@ import { showToast } from '../components/toast.js';
 import { confirmAction } from '../components/confirmModal.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getHaulouts, createHaulout, updateHaulout, deleteHaulout } from '../lib/dataService.js';
+import { currencySymbol, CURRENCIES } from '../lib/currency.js';
 import {
   getUploads,
   saveUpload,
@@ -212,8 +213,8 @@ async function loadHaulouts() {
               : ''
           }
           ${
-            entry.total_cost
-              ? `<p><strong>Total cost:</strong> ${entry.total_cost}</p>`
+            entry.total_cost != null
+              ? `<p><strong>Total cost:</strong> ${currencySymbol(entry.total_cost_currency)}${Number(entry.total_cost).toFixed(2)}</p>`
               : ''
           }
           ${entry.general_notes ? `<p><strong>Notes:</strong> ${entry.general_notes}</p>` : ''}
@@ -673,11 +674,19 @@ async function showHauloutForm() {
             <label for="yard_contractor_name">Yard / contractor name</label>
             <input type="text" id="yard_contractor_name" value="${entry?.yard_contractor_name || ''}">
           </div>
-          <div class="form-group">
-            <label for="total_cost">Total cost</label>
-            <input type="number" id="total_cost" step="0.01" min="0" placeholder="0.00" value="${
-              typeof entry?.total_cost === 'number' ? entry.total_cost : ''
-            }">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="total_cost">Total cost</label>
+              <input type="number" id="total_cost" step="0.01" min="0" placeholder="0.00" value="${
+                typeof entry?.total_cost === 'number' ? entry.total_cost : ''
+              }">
+            </div>
+            <div class="form-group">
+              <label for="total_cost_currency">Currency</label>
+              <select id="total_cost_currency">
+                ${CURRENCIES.map((c) => `<option value="${c.code}" ${entry?.total_cost_currency === c.code ? 'selected' : ''}>${c.label}</option>`).join('')}
+              </select>
+            </div>
           </div>
           <p class="text-muted">
             Invoice and supporting documents can be uploaded below using the attachments area.
@@ -987,6 +996,7 @@ async function saveHaulout() {
     total_cost: document.getElementById('total_cost').value
       ? parseFloat(document.getElementById('total_cost').value)
       : null,
+    total_cost_currency: document.getElementById('total_cost_currency')?.value || 'GBP',
 
     general_notes: document.getElementById('general_notes').value || '',
     recommendations_next_haulout: document.getElementById('recommendations_next_haulout').value || '',
@@ -1000,6 +1010,9 @@ async function saveHaulout() {
   } else {
     const created = await createHaulout(currentBoatId, entry);
     if (created?.id) editingId = created.id;
+    if (created?.currencyFallback) {
+      showToast('Entry saved. For currency labels (e.g. USD), run the database migration: add total_cost_currency to haulout_entries.', 'info');
+    }
   }
   const card = document.getElementById('haulout-form-card');
   if (card) card.remove();
