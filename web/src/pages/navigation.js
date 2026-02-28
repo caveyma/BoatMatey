@@ -177,7 +177,7 @@ function attachHandlers() {
   window.navPageDelete = async (id) => {
     const ok = await confirmAction({ title: 'Delete this equipment?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
     if (!ok) return;
-    navEquipmentStorage.delete(id);
+    await deleteEquipment(id, 'navigation');
     loadNavEquipment();
     showToast('Equipment removed', 'info');
   };
