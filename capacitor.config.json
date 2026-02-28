@@ -3,6 +3,6 @@
   "appName": "BoatMatey",
   "webDir": "web/dist",
   "android": {
-    "adjustMarginsForEdgeToEdge": "auto"
+    "adjustMarginsForEdgeToEdge": "disable"
   }
 }

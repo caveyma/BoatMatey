@@ -23,9 +23,8 @@
 ## ❌ Cancellation Policy
 
 - User cancels via App Store / Google Play
-- Access continues until subscription expires
-- **On expiration: ALL DATA DELETED (GDPR)**
-- RevenueCat webhook triggers data deletion  
+- **Account is not deleted on cancel.** Access continues: 14 days if cancelled during free trial, otherwise until subscription expires
+- **On expiration: ALL DATA DELETED (GDPR)** — RevenueCat webhook triggers data deletion only on EXPIRATION  
 
 ## 📱 Product IDs
 

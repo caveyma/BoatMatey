@@ -77,7 +77,7 @@ console.log(limits.activeBoats.label); // "2 active boats"
 2. **Store Notification**: Store notifies RevenueCat
 3. **Webhook**: RevenueCat sends webhook to our Edge Function
 4. **Data Action**: Based on event type:
-   - `CANCELLATION`: Mark subscription as cancelled (user still has access until expiry)
+   - `CANCELLATION`: Mark subscription as cancelled; **do not delete**. User keeps access until expiry. If cancelled during free trial (TRIAL/INTRO), expiry is set to **14 days** from cancellation; otherwise the store’s expiry date is used.
    - `EXPIRATION`: **DELETE ALL USER DATA** (GDPR compliance)
 
 ### GDPR Compliance
@@ -114,8 +114,9 @@ RevenueCat receives CANCELLATION event
          ↓
 Webhook sent to Supabase Edge Function
          ↓
-Profile updated: subscription_status = 'cancelled'
-User still has access until subscription_expires_at
+Profile updated: subscription_status = 'cancelled', subscription_expires_at set
+(Trial cancel → 14 days from now; otherwise store expiry)
+User still has access until subscription_expires_at (account not deleted)
          ↓
 [Time passes until expiry date]
          ↓
@@ -219,7 +220,7 @@ SELECT public.delete_user_completely('user-uuid-here');
 The account page now includes:
 
 1. **Manage Subscription Button**: Opens App Store / Google Play subscription management
-2. **Cancellation Warning**: Explains that cancellation will delete data
+2. **Cancellation Warning**: Explains 14-day trial grace and access until expiry, then data deletion
 3. **Updated Limits Display**: Shows "2 active boats, 5 archived boats, unlimited engines..."
 
 ```javascript
@@ -229,7 +230,7 @@ The account page now includes:
 </button>
 <p class="text-muted" style="font-size: 0.85rem; margin-top: 0.75rem;">
   To cancel your subscription, use the App Store or Google Play subscription management. 
-  Note: Cancelling will delete your account and all data to comply with GDPR.
+  Note: Cancel during trial = 14 days access; otherwise until end of billing period. After that, account and data are deleted (GDPR).
 </p>
 ```
 
@@ -256,7 +257,7 @@ The account page now includes:
 
 ## Important Notes
 
-1. **Cancellation ≠ Deletion**: When a user cancels, they keep access until the end of their billing period. Data is only deleted on EXPIRATION.
+1. **Cancellation ≠ Deletion**: When a user cancels, their account is **not** deleted. They keep access until the expiry date: if they cancelled during the free trial, access continues for **14 days**; otherwise until the end of the billing period. Data is only deleted when RevenueCat sends EXPIRATION (after that date).
 
 2. **No Refunds in Code**: Refunds are handled by the stores. Our system just responds to lifecycle events.
 
