@@ -19,9 +19,24 @@ function render() {
   card.style.textAlign = 'center';
   card.style.padding = '2rem 1.5rem';
 
+  // Promo video is served from /assets/ (file in web/public/assets/ for build)
+  const promoVideoSrc = '/assets/Creating a new Boat.mp4';
+
   card.innerHTML = `
     <div style="margin-bottom: 2rem;">
       ${renderLogoFull(220)}
+    </div>
+
+    <div class="welcome-promo-video" style="margin-bottom: 1.5rem; border-radius: var(--radius, 0.75rem); overflow: hidden; background: #0B2A3F; max-width: 100%;">
+      <video
+        src="${promoVideoSrc}"
+        controls
+        playsinline
+        muted
+        loop
+        style="width: 100%; display: block; max-height: 200px; object-fit: cover;"
+        title="BoatMatey – Creating a new boat"
+      ></video>
     </div>
 
     <h1 style="font-size: 1.75rem; color: var(--color-text); margin-bottom: 0.75rem;">
