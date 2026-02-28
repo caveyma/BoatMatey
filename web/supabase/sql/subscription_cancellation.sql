@@ -1,6 +1,7 @@
 -- ============================================================================
 -- SUBSCRIPTION CANCELLATION HANDLER
--- GDPR Compliant: Deletes all user data when subscription is cancelled/expired
+-- On CANCELLATION: do not delete; mark cancelled and set expiry (14 days if
+--   trial/INTRO, else store expiry). On EXPIRATION: delete all user data (GDPR).
 -- ============================================================================
 
 -- Function to completely delete a user and all their data
@@ -164,12 +165,14 @@ $$;
 grant execute on function public.delete_user_self(uuid) to authenticated;
 
 -- Function to handle subscription status updates from RevenueCat webhook
+-- p_period_type: RevenueCat event.period_type - 'TRIAL' | 'INTRO' | 'NORMAL' (null allowed)
 create or replace function public.handle_subscription_webhook(
   p_event_type text,
   p_app_user_id text,
   p_product_id text,
   p_expires_at timestamptz,
-  p_original_app_user_id text default null
+  p_original_app_user_id text default null,
+  p_period_type text default null
 )
 returns jsonb
 language plpgsql
@@ -179,6 +182,7 @@ as $$
 declare
   v_user_id uuid;
   v_result jsonb;
+  v_expires_at timestamptz;
 begin
   -- Try to parse the app_user_id as UUID
   begin
@@ -219,11 +223,32 @@ begin
 
   -- Handle different event types
   case p_event_type
-    -- Cancellation events - delete user and all data so they cannot log back in
+    -- Cancellation: do NOT delete. Mark cancelled and set expiry. User keeps access until expiry.
+    -- If cancelled during free trial (TRIAL/INTRO), give 14 days; otherwise use store expiry.
     when 'CANCELLATION' then
-      v_result := public.delete_user_completely(v_user_id);
+      if p_period_type in ('TRIAL', 'INTRO') then
+        v_expires_at := timezone('utc', now()) + interval '14 days';
+      elsif p_expires_at is not null and p_expires_at > timezone('utc', now()) then
+        v_expires_at := p_expires_at;
+      else
+        v_expires_at := timezone('utc', now()) + interval '14 days';
+      end if;
+      update public.profiles
+      set
+        subscription_status = 'cancelled',
+        subscription_expires_at = v_expires_at,
+        metadata = metadata || jsonb_build_object('cancelled_at', timezone('utc', now())::text, 'cancellation_period_type', coalesce(p_period_type, 'unknown')),
+        updated_at = timezone('utc', now())
+      where id = v_user_id;
+      v_result := jsonb_build_object(
+        'success', true,
+        'action', 'cancelled_access_until_expiry',
+        'user_id', v_user_id,
+        'expires_at', v_expires_at,
+        'period_type', p_period_type
+      );
 
-    -- Expiration events - subscription has actually expired
+    -- Expiration events - subscription has actually expired; then delete (GDPR)
     when 'EXPIRATION' then
       -- GDPR: Delete user and all their data
       v_result := public.delete_user_completely(v_user_id);
@@ -293,7 +318,7 @@ end;
 $$;
 
 -- Grant execute to service_role
-grant execute on function public.handle_subscription_webhook(text, text, text, timestamptz, text) to service_role;
+grant execute on function public.handle_subscription_webhook(text, text, text, timestamptz, text, text) to service_role;
 
 -- Create a table to log webhook events (for debugging and audit)
 create table if not exists public.webhook_logs (
@@ -312,6 +337,7 @@ create index if not exists idx_webhook_logs_created_at on public.webhook_logs(cr
 alter table public.webhook_logs enable row level security;
 
 -- Explicit policy: no access for anon/authenticated; service_role bypasses RLS so can still insert/select
+drop policy if exists "webhook_logs_service_only" on public.webhook_logs;
 create policy "webhook_logs_service_only"
   on public.webhook_logs
   for all
@@ -321,8 +347,12 @@ create policy "webhook_logs_service_only"
 comment on table public.webhook_logs is 'Logs of RevenueCat webhook events for audit and debugging';
 
 -- View for admin to see subscription cancellations
-create or replace view public.subscription_events as
-select 
+-- Use security_invoker = true so the view runs with caller's permissions; RLS on webhook_logs then applies.
+drop view if exists public.subscription_events;
+create view public.subscription_events
+with (security_invoker = true)
+as
+select
   id,
   event_type,
   payload->>'app_user_id' as user_id,

@@ -742,24 +742,25 @@ export async function getServiceEntries(boatId) {
   return mapped;
 }
 
-export async function createServiceEntry(boatId, payload) {
+export async function createServiceEntry(boatId, entry) {
   if (await isBoatArchived(boatId)) return null;
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
-    return serviceHistoryStorage.save(payload, boatId);
+    return serviceHistoryStorage.save(entry, boatId);
   }
 
+  // Store full entry as JSON in description so checklist, mode, diy_meta, pro_meta, etc. are persisted
   const { data, error } = await supabase
     .from('service_entries')
     .insert({
       boat_id: boatId,
-      engine_id: payload.engine_id ?? null,
+      engine_id: entry.engine_id ?? null,
       owner_id: session.user.id,
-      service_date: payload.date,
-      title: payload.service_type || 'Service',
-      description: payload.notes ?? null,
-      cost: payload.cost ?? null,
-      provider: payload.provider ?? null
+      service_date: entry.date,
+      title: entry.service_type || 'Service',
+      description: JSON.stringify(entry),
+      cost: entry.cost ?? null,
+      provider: entry.provider ?? null
     })
     .select('*')
     .single();
@@ -771,23 +772,24 @@ export async function createServiceEntry(boatId, payload) {
   return data ?? null;
 }
 
-export async function updateServiceEntry(serviceId, payload) {
+export async function updateServiceEntry(serviceId, entry) {
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
     const existing = serviceHistoryStorage.get(serviceId) || { id: serviceId };
-    serviceHistoryStorage.save({ ...existing, ...payload }, existing.boat_id);
+    serviceHistoryStorage.save({ ...existing, ...entry }, existing.boat_id);
     return;
   }
 
+  // Store full entry as JSON in description so checklist and all details are persisted
   const { error } = await supabase
     .from('service_entries')
     .update({
-      engine_id: payload.engine_id ?? null,
-      service_date: payload.date,
-      title: payload.service_type || 'Service',
-      description: payload.notes ?? null,
-      cost: payload.cost ?? null,
-      provider: payload.provider ?? null
+      engine_id: entry.engine_id ?? null,
+      service_date: entry.date,
+      title: entry.service_type || 'Service',
+      description: JSON.stringify(entry),
+      cost: entry.cost ?? null,
+      provider: entry.provider ?? null
     })
     .eq('id', serviceId);
 

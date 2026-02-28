@@ -1429,18 +1429,11 @@ async function saveService() {
     pro_meta: proMeta
   };
 
-  const payload = {
-    date: entry.date,
-    service_type: entry.service_type,
-    notes: typeof entry.notes === 'string' && !entry.notes.startsWith('{') ? entry.notes : JSON.stringify(entry),
-    cost: entry.cost,
-    provider: entry.provider,
-    engine_id: entry.engine_id
-  };
+  // Pass full entry so checklist, DIY/pro meta, and all details are persisted (Supabase description + local storage)
   if (editingId && String(editingId).includes('-')) {
-    await updateServiceEntry(editingId, payload);
+    await updateServiceEntry(editingId, entry);
   } else {
-    await createServiceEntry(currentBoatId, payload);
+    await createServiceEntry(currentBoatId, entry);
   }
   const card = document.getElementById('service-form-card');
   if (card) card.remove();

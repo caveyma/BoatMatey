@@ -96,7 +96,7 @@ function render() {
       </div>
       <p class="text-muted" style="font-size: 0.85rem; margin-top: 0.75rem;">
         To cancel your subscription, use the App Store or Google Play subscription management. 
-        Note: Cancelling will delete your account and all data to comply with GDPR.
+        Note: If you cancel during the free trial, you keep access for 14 days. Otherwise access continues until the end of your billing period. After that, your account and data will be deleted (GDPR).
       </p>
     </div>
 

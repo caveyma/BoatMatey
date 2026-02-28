@@ -4,8 +4,8 @@
  * Handles subscription lifecycle events from RevenueCat:
  * - INITIAL_PURCHASE: New subscription
  * - RENEWAL: Subscription renewed
- * - CANCELLATION: User cancelled (may still have access until expiry)
- * - EXPIRATION: Subscription expired - DELETE USER DATA (GDPR)
+ * - CANCELLATION: User cancelled — do NOT delete; set cancelled + expiry (14 days if trial)
+ * - EXPIRATION: Subscription expired — DELETE USER DATA (GDPR)
  * - BILLING_ISSUE: Payment failed
  * - PRODUCT_CHANGE: User changed plan
  * - SUBSCRIBER_ALIAS: RevenueCat ID updated
@@ -120,6 +120,7 @@ serve(async (req: Request) => {
       p_product_id: event.product_id || null,
       p_expires_at: expiresAt,
       p_original_app_user_id: event.original_app_user_id || null,
+      p_period_type: event.period_type || null,
     });
 
     if (error) {
@@ -147,8 +148,8 @@ serve(async (req: Request) => {
 
     console.log(`[RevenueCat Webhook] Processed successfully:`, data);
 
-    // When we deleted the user (EXPIRATION or CANCELLATION), also delete their storage
-    const deletedUser = (event.type === 'EXPIRATION' || event.type === 'CANCELLATION') && data?.success && data?.user_id;
+    // Only on EXPIRATION do we delete the user (and thus their storage). CANCELLATION no longer deletes.
+    const deletedUser = event.type === 'EXPIRATION' && data?.success && data?.user_id;
     if (deletedUser) {
       try {
         const userId = data.user_id as string; // UUID from delete_user_completely
