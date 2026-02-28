@@ -289,7 +289,7 @@ html, body {
   -webkit-overflow-scrolling: touch;
   background: transparent;  /* Let body watermark show through */
   display: flex;
-  align-items: center;
+  align-items: flex-start;   /* top-align so user can scroll to logo/video on small screens */
   justify-content: center;
   z-index: 50;  /* Above normal content but below modals */
 }

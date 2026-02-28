@@ -96,6 +96,9 @@ function render() {
 }
 
 function onMount() {
+  // Scroll to top so header and video are visible (fixes small screens / restored scroll position).
+  const wrapper = document.querySelector('.page-fullscreen');
+  if (wrapper) wrapper.scrollTop = 0;
   // Get Started and Sign in are plain <a href="#/auth"> so the WebView navigates via hash change
   // without relying on click handlers (which can fail to fire on some Android WebViews).
 }
