@@ -35,7 +35,10 @@ export const icons = {
   calendar: `<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>`,
   fuel: `<path d="M6 20h12v-4l-2-6H8L6 16v4z"/><path d="M8 10V6h2v4"/><path d="M14 10V6h2v4"/><circle cx="12" cy="16" r="1.5"/>`,
   battery: `<rect x="2" y="6" width="18" height="12" rx="2" ry="2"/><path d="M6 10v4M10 10v4M14 10v4"/><path d="M22 10v4"/>`,
-  mayday: `<path d="M12 2L4 6v6c0 5.55 3.84 10.74 8 12 4.16-1.26 8-6.45 8-12V6l-8-4z"/><path d="M12 8v4"/><circle cx="12" cy="16" r="1.5" fill="currentColor"/>`
+  mayday: `<path d="M12 2L4 6v6c0 5.55 3.84 10.74 8 12 4.16-1.26 8-6.45 8-12V6l-8-4z"/><path d="M12 8v4"/><circle cx="12" cy="16" r="1.5" fill="currentColor"/>`,
+  clipboard: `<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M8 12h8M8 16h8M8 8h4"/>`,
+  inventory: `<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>`,
+  download: `<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>`
 };
 
 /**

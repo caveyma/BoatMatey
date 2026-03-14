@@ -55,7 +55,7 @@ function render() {
         <span style="font-size: 1.5rem; margin-right: 0.75rem;">⛵</span>
         <div>
           <strong style="display: block; margin-bottom: 0.25rem;">Manage Your Fleet</strong>
-          <span style="color: var(--color-text-light); font-size: 0.9rem;">Track up to 2 active boats and 5 archived vessels</span>
+          <span style="color: var(--color-text-light); font-size: 0.9rem;">Track up to 5 active boats and unlimited archived vessels</span>
         </div>
       </div>
       

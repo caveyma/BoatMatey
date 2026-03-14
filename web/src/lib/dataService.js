@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient.js';
+import { getActiveBoatLimit } from './subscription.js';
 import {
   boatsStorage,
   enginesStorage,
@@ -8,19 +9,22 @@ import {
   safetyEquipmentStorage,
   shipsLogStorage,
   linksStorage,
+  projectsStorage,
+  inventoryStorage,
   uploadsStorage,
   calendarEventsStorage
 } from './storage.js';
 
 // Boat limits (design allows future tiers to override without schema change)
+// Premium: 5 active, unlimited archive. Active limit enforced via getActiveBoatLimit().
 export const BOAT_LIMITS = {
-  MAX_ACTIVE_BOATS: 2,
-  MAX_ARCHIVED_BOATS: 5,
-  MAX_TOTAL_BOATS: 7
+  MAX_ACTIVE_BOATS: 5,
+  MAX_ARCHIVED_BOATS: Infinity,
+  MAX_TOTAL_BOATS: Infinity
 };
 
 // Entity types whose files are removed on archive (only service + logbook keep files)
-const ARCHIVE_REMOVE_FILE_ENTITY_TYPES = ['boat', 'engine', 'equipment', 'haulout'];
+const ARCHIVE_REMOVE_FILE_ENTITY_TYPES = ['boat', 'engine', 'equipment', 'haulout', 'inventory'];
 
 // Log Supabase errors once per resource per session (avoids console spam when tables don't exist)
 const _loggedFallbacks = new Set();
@@ -204,10 +208,11 @@ export async function createBoat(payload) {
   if (!session || !isSupabaseEnabled()) {
     const all = boatsStorage.getAll();
     const activeCount = all.filter((b) => (b.status || 'active') === 'active').length;
+    const activeLimit = getActiveBoatLimit();
     if (all.length >= BOAT_LIMITS.MAX_TOTAL_BOATS) {
       return { error: 'total_limit' };
     }
-    if (activeCount >= BOAT_LIMITS.MAX_ACTIVE_BOATS) {
+    if (activeCount >= activeLimit) {
       return { error: 'active_limit' };
     }
     const boat = {
@@ -222,10 +227,11 @@ export async function createBoat(payload) {
   }
 
   const counts = await getBoatCounts();
+  const activeLimit = getActiveBoatLimit();
   if (counts.total >= BOAT_LIMITS.MAX_TOTAL_BOATS) {
     return { error: 'total_limit' };
   }
-  if (counts.active >= BOAT_LIMITS.MAX_ACTIVE_BOATS) {
+  if (counts.active >= activeLimit) {
     return { error: 'active_limit' };
   }
 
@@ -413,7 +419,7 @@ export async function deleteBoat(boatId) {
 
 /**
  * Archive a boat: set status to archived, remove files from disallowed sections,
- * remove all link records. Only Service History and Ship's Log keep files.
+ * remove all link records. Only Service History and Passage Log keep files.
  */
 export async function archiveBoat(boatId) {
   const counts = await getBoatCounts();
@@ -462,13 +468,15 @@ export async function reactivateBoat(boatId) {
     const boat = boatsStorage.get(boatId);
     if (!boat) return { error: 'not_found' };
     const counts = await getBoatCounts();
-    if (counts.active >= BOAT_LIMITS.MAX_ACTIVE_BOATS) return { error: 'active_limit' };
+    const activeLimit = getActiveBoatLimit();
+    if (counts.active >= activeLimit) return { error: 'active_limit' };
     boatsStorage.save({ ...boat, status: 'active' });
     return {};
   }
 
   const counts = await getBoatCounts();
-  if (counts.active >= BOAT_LIMITS.MAX_ACTIVE_BOATS) {
+  const activeLimit = getActiveBoatLimit();
+  if (counts.active >= activeLimit) {
     return { error: 'active_limit' };
   }
 
@@ -1008,7 +1016,17 @@ export async function getLogbook(boatId) {
   }
 
   const mapped = (data || []).map((e) => {
-    const out = { ...e, boat_id: boatId, date: e.trip_date, departure: e.from_location, arrival: e.to_location };
+    const out = {
+      ...e,
+      boat_id: boatId,
+      date: e.trip_date,
+      date_end: e.trip_date_end ?? null,
+      passage_type: e.passage_type ?? null,
+      departure: e.from_location,
+      arrival: e.to_location,
+      title: e.title ?? 'Passage',
+      daily_notes: e.daily_notes && typeof e.daily_notes === 'object' ? e.daily_notes : null
+    };
     try {
       if (e.notes && typeof e.notes === 'string') {
         const d = JSON.parse(e.notes);
@@ -1039,11 +1057,14 @@ export async function createLogEntry(boatId, payload) {
       boat_id: boatId,
       owner_id: session.user.id,
       trip_date: payload.date || payload.trip_date,
-      title: payload.title ?? 'Trip',
+      trip_date_end: payload.date_end ?? payload.trip_date_end ?? null,
+      passage_type: payload.passage_type ?? null,
+      title: payload.title ?? 'Passage',
       notes: payload.notes ?? null,
       hours: payload.hours ?? null,
       from_location: payload.from_location ?? payload.departure ?? null,
-      to_location: payload.to_location ?? payload.arrival ?? null
+      to_location: payload.to_location ?? payload.arrival ?? null,
+      daily_notes: payload.daily_notes ?? null
     })
     .select('*')
     .single();
@@ -1067,11 +1088,14 @@ export async function updateLogEntry(logId, payload) {
     .from('logbook_entries')
     .update({
       trip_date: payload.date ?? payload.trip_date,
-      title: payload.title ?? 'Trip',
+      trip_date_end: payload.date_end ?? payload.trip_date_end ?? null,
+      passage_type: payload.passage_type ?? null,
+      title: payload.title ?? 'Passage',
       notes: payload.notes ?? null,
       hours: payload.hours ?? null,
       from_location: payload.from_location ?? payload.departure ?? null,
-      to_location: payload.to_location ?? payload.arrival ?? null
+      to_location: payload.to_location ?? payload.arrival ?? null,
+      daily_notes: payload.daily_notes ?? null
     })
     .eq('id', logId);
 
@@ -1164,21 +1188,25 @@ export async function createHaulout(boatId, payload) {
     osmosis_notes: payload.osmosis_notes || null,
     keel_skeg_trim_tabs_notes: payload.keel_skeg_trim_tabs_notes || null,
     yard_contractor_name: payload.yard_contractor_name || null,
-    total_cost: payload.total_cost ?? null,
+    total_cost: (typeof payload.total_cost === 'number' && !Number.isNaN(payload.total_cost)) ? payload.total_cost : null,
     total_cost_currency: payload.total_cost_currency ?? 'GBP',
     general_notes: payload.general_notes || null,
-    recommendations_next_haulout: payload.recommendations_next_haulout || null
+    recommendations_next_haulout: payload.recommendations_next_haulout || null,
+    next_haulout_due: payload.next_haulout_due || null,
+    next_haulout_reminder_minutes: payload.next_haulout_reminder_minutes ?? null
   };
-  // Omit next_haulout_due and next_haulout_reminder_minutes so insert works with base schema.
-  // After running reminder_minutes_haulout.sql and haulout_next_due_and_calendar.sql, you can add them to the row.
 
-  let { data, error } = await supabase
+  const insertResponse = await supabase
     .from('haulout_entries')
     .insert(row)
     .select('*')
     .single();
+  let { data, error } = insertResponse;
+  const insertStatus = insertResponse.status;
+  const insertLooksLikeSchemaOrBadRequest =
+    (error?.message && /column|schema cache|next_haulout|400|Bad Request/i.test(error.message));
 
-  const isCurrencyColumnError = error && (error.status === 400 || error.code === '42703' || (error.message && (error.message.includes('total_cost_currency') || error.message.includes('column'))));
+  const isCurrencyColumnError = error && (insertStatus === 400 || insertLooksLikeSchemaOrBadRequest || error.code === '42703' || (error.message && (error.message.includes('total_cost_currency') || error.message.includes('column'))));
   if (isCurrencyColumnError) {
     const { total_cost_currency: _, ...rowWithoutCurrency } = row;
     const result = await supabase
@@ -1192,6 +1220,24 @@ export async function createHaulout(boatId, payload) {
     }
     return { ...result.data, currencyFallback: true };
   }
+  // If 400 or schema/column error, retry with base-schema columns only
+  if (error && (insertStatus === 400 || insertLooksLikeSchemaOrBadRequest)) {
+    const {
+      total_cost_currency: _c,
+      next_haulout_due: _due,
+      next_haulout_reminder_minutes: _mins,
+      ...rowBaseOnly
+    } = row;
+    const result = await supabase
+      .from('haulout_entries')
+      .insert(rowBaseOnly)
+      .select('*')
+      .single();
+    if (!result.error) {
+      data = result.data;
+      error = null;
+    }
+  }
   if (error) {
     logSupabaseFallback('haulout_entries', error);
     return null;
@@ -1199,12 +1245,26 @@ export async function createHaulout(boatId, payload) {
   return data;
 }
 
+// True if the string looks like a Supabase UUID (used to avoid sending client-generated ids to the API)
+function isSupabaseUuid(id) {
+  if (!id || typeof id !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
 export async function updateHaulout(hauloutId, payload) {
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
     const existing = hauloutStorage.get(hauloutId) || { id: hauloutId };
     hauloutStorage.save({ ...existing, ...payload }, existing.boat_id);
-    return;
+    return { ok: true };
+  }
+  // Record was created locally (client id); update local storage only so we don't send invalid id to Supabase
+  if (!isSupabaseUuid(hauloutId)) {
+    const existing = hauloutStorage.get(hauloutId);
+    if (existing?.boat_id) {
+      hauloutStorage.save({ ...existing, ...payload }, existing.boat_id);
+    }
+    return { ok: true };
   }
 
   const updateRow = {
@@ -1241,28 +1301,57 @@ export async function updateHaulout(hauloutId, payload) {
     osmosis_notes: payload.osmosis_notes ?? null,
     keel_skeg_trim_tabs_notes: payload.keel_skeg_trim_tabs_notes ?? null,
     yard_contractor_name: payload.yard_contractor_name ?? null,
-    total_cost: payload.total_cost ?? null,
+    total_cost: (typeof payload.total_cost === 'number' && !Number.isNaN(payload.total_cost)) ? payload.total_cost : null,
     total_cost_currency: payload.total_cost_currency ?? 'GBP',
     general_notes: payload.general_notes ?? null,
-    recommendations_next_haulout: payload.recommendations_next_haulout ?? null
+    recommendations_next_haulout: payload.recommendations_next_haulout ?? null,
+    next_haulout_due: payload.next_haulout_due || null,
+    next_haulout_reminder_minutes: payload.next_haulout_reminder_minutes ?? null
   };
 
-  let { error } = await supabase
+  const updateResponse = await supabase
     .from('haulout_entries')
     .update(updateRow)
     .eq('id', hauloutId);
+  let { error } = updateResponse;
+  // HTTP status is on the response object; some proxies (e.g. boatmatey.com/api) may not expose it
+  const status = updateResponse.status;
+  const looksLikeSchemaOrBadRequest =
+    (error?.message && /column|schema cache|next_haulout|400|Bad Request/i.test(error.message));
 
-  const isCurrencyColumnError = error && (error.status === 400 || error.code === '42703' || (error.message && (error.message.includes('total_cost_currency') || error.message.includes('column'))));
-  if (isCurrencyColumnError) {
-    const { total_cost_currency: _, ...rowWithoutCurrency } = updateRow;
-    ({ error } = await supabase
+  if (error && (status === 400 || looksLikeSchemaOrBadRequest)) {
+    console.warn('[BoatMatey] Haul-out update failed:', status, error?.message, error?.details, error?.hint);
+  }
+
+  // On 400 or schema/column error (e.g. next_haulout_* or total_cost_currency missing), retry with base-schema columns
+  if (error && (status === 400 || looksLikeSchemaOrBadRequest)) {
+    const {
+      total_cost_currency: _c,
+      next_haulout_due: _due,
+      next_haulout_reminder_minutes: _mins,
+      ...rowBaseOnly
+    } = updateRow;
+    const { error: retryError } = await supabase
       .from('haulout_entries')
-      .update(rowWithoutCurrency)
-      .eq('id', hauloutId));
+      .update(rowBaseOnly)
+      .eq('id', hauloutId);
+    if (!retryError) {
+      error = null;
+    } else {
+      // Fallback: try without only total_cost_currency (in case only that column was missing)
+      const { total_cost_currency: _c2, ...rowNoCurrency } = updateRow;
+      const { error: retry2 } = await supabase
+        .from('haulout_entries')
+        .update(rowNoCurrency)
+        .eq('id', hauloutId);
+      if (!retry2) error = null;
+    }
   }
   if (error) {
     logSupabaseFallback('haulout_entries', error);
+    return { ok: false, error: error?.message || 'Update failed' };
   }
+  return { ok: true };
 }
 
 export async function deleteHaulout(hauloutId) {
@@ -1279,6 +1368,141 @@ export async function deleteHaulout(hauloutId) {
   if (error) {
     logSupabaseFallback('haulout_entries', error);
   }
+}
+
+// ----------------- Boat projects -----------------
+
+export async function getProjects(boatId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return projectsStorage.getAll(boatId);
+  }
+
+  const { data, error } = await supabase
+    .from('boat_projects')
+    .select('*')
+    .eq('boat_id', boatId)
+    .order('target_date', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    logSupabaseFallback('boat_projects', error);
+    return projectsStorage.getAll(boatId);
+  }
+
+  const list = (data || []).map((row) => ({ ...row, boat_id: boatId }));
+  projectsStorage.replaceForBoat(boatId, list);
+  return list;
+}
+
+export async function createProject(boatId, payload) {
+  if (await isBoatArchived(boatId)) return null;
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    projectsStorage.save(payload, boatId);
+    return projectsStorage.get(payload.id) || payload;
+  }
+
+  const row = {
+    boat_id: boatId,
+    owner_id: session.user.id,
+    project_name: payload.project_name || '',
+    category: payload.category || null,
+    description: payload.description || null,
+    status: payload.status || null,
+    priority: payload.priority || null,
+    target_date: payload.target_date || null,
+    completed_date: payload.completed_date || null,
+    estimated_cost: payload.estimated_cost ?? null,
+    estimated_cost_currency: payload.estimated_cost_currency ?? 'GBP',
+    actual_cost: payload.actual_cost ?? null,
+    actual_cost_currency: payload.actual_cost_currency ?? 'GBP',
+    supplier_installer: payload.supplier_installer || null,
+    notes: payload.notes || null
+  };
+
+  const { data, error } = await supabase
+    .from('boat_projects')
+    .insert(row)
+    .select('*')
+    .single();
+
+  if (error) {
+    logSupabaseFallback('boat_projects', error);
+    projectsStorage.save({ ...payload, boat_id: boatId }, boatId);
+    return projectsStorage.get(payload.id) || payload;
+  }
+  const out = { ...data, boat_id: boatId };
+  projectsStorage.save(out, boatId);
+  return out;
+}
+
+export async function updateProject(projectId, payload) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    const existing = projectsStorage.get(projectId) || { id: projectId };
+    projectsStorage.save({ ...existing, ...payload }, existing.boat_id);
+    return;
+  }
+
+  if (!isSupabaseUuid(projectId)) {
+    const existing = projectsStorage.get(projectId);
+    if (existing?.boat_id) {
+      projectsStorage.save({ ...existing, ...payload }, existing.boat_id);
+    }
+    return;
+  }
+
+  const updateRow = {
+    project_name: payload.project_name ?? null,
+    category: payload.category ?? null,
+    description: payload.description ?? null,
+    status: payload.status ?? null,
+    priority: payload.priority ?? null,
+    target_date: payload.target_date ?? null,
+    completed_date: payload.completed_date ?? null,
+    estimated_cost: payload.estimated_cost ?? null,
+    estimated_cost_currency: payload.estimated_cost_currency ?? 'GBP',
+    actual_cost: payload.actual_cost ?? null,
+    actual_cost_currency: payload.actual_cost_currency ?? 'GBP',
+    supplier_installer: payload.supplier_installer ?? null,
+    notes: payload.notes ?? null
+  };
+
+  const { error } = await supabase
+    .from('boat_projects')
+    .update(updateRow)
+    .eq('id', projectId);
+
+  if (error) {
+    logSupabaseFallback('boat_projects', error);
+    const existing = projectsStorage.get(projectId);
+    if (existing?.boat_id) {
+      projectsStorage.save({ ...existing, ...payload }, existing.boat_id);
+    }
+  }
+}
+
+export async function deleteProject(projectId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    projectsStorage.delete(projectId);
+    return;
+  }
+
+  if (!isSupabaseUuid(projectId)) {
+    projectsStorage.delete(projectId);
+    return;
+  }
+
+  const { error } = await supabase
+    .from('boat_projects')
+    .delete()
+    .eq('id', projectId);
+  if (error) {
+    logSupabaseFallback('boat_projects', error);
+  }
+  projectsStorage.delete(projectId);
 }
 
 // ----------------- Calendar events -----------------
@@ -1813,5 +2037,165 @@ export async function upsertBoatDistressInfo(boatId, payload) {
     return null;
   }
   return data;
+}
+
+// ----------------- Boat inventory -----------------
+
+export async function getInventory(boatId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return inventoryStorage.getAll(boatId);
+  }
+
+  const { data, error } = await supabase
+    .from('boat_inventory')
+    .select('*')
+    .eq('boat_id', boatId)
+    .order('name', { ascending: true });
+
+  if (error) {
+    logSupabaseFallback('boat_inventory', error);
+    return inventoryStorage.getAll(boatId);
+  }
+
+  const list = (data || []).map((row) => ({
+    ...row,
+    boat_id: boatId,
+    critical_spare: !!row.critical_spare
+  }));
+  inventoryStorage.replaceForBoat(boatId, list);
+  return list;
+}
+
+export async function createInventoryItem(boatId, payload) {
+  if (await isBoatArchived(boatId)) return null;
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    const item = {
+      name: payload.name || '',
+      category: payload.category || null,
+      type: payload.type || null,
+      location: payload.location || null,
+      position: payload.position || null,
+      required_quantity: payload.required_quantity != null ? Number(payload.required_quantity) : null,
+      in_stock_level: payload.in_stock_level != null ? Number(payload.in_stock_level) : null,
+      part_number: payload.part_number || null,
+      url: payload.url || null,
+      notes: payload.notes || null,
+      photo_url: payload.photo_url || null,
+      supplier_brand: payload.supplier_brand || null,
+      critical_spare: !!payload.critical_spare,
+      last_restocked_date: payload.last_restocked_date || null,
+      unit: payload.unit || null
+    };
+    inventoryStorage.save(item, boatId);
+    return inventoryStorage.get(item.id) || item;
+  }
+
+  const row = {
+    boat_id: boatId,
+    owner_id: session.user.id,
+    name: payload.name || '',
+    category: payload.category || null,
+    type: payload.type || null,
+    location: payload.location || null,
+    position: payload.position || null,
+    required_quantity: payload.required_quantity != null ? Number(payload.required_quantity) : null,
+    in_stock_level: payload.in_stock_level != null ? Number(payload.in_stock_level) : null,
+    part_number: payload.part_number || null,
+    url: payload.url || null,
+    notes: payload.notes || null,
+    photo_url: payload.photo_url || null,
+    supplier_brand: payload.supplier_brand || null,
+    critical_spare: !!payload.critical_spare,
+    last_restocked_date: payload.last_restocked_date || null,
+    unit: payload.unit || null
+  };
+
+  const { data, error } = await supabase
+    .from('boat_inventory')
+    .insert(row)
+    .select('*')
+    .single();
+
+  if (error) {
+    logSupabaseFallback('boat_inventory', error);
+    const item = { ...row, id: `inventory_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, boat_id: boatId };
+    inventoryStorage.save(item, boatId);
+    return item;
+  }
+  const out = { ...data, boat_id: boatId, critical_spare: !!data.critical_spare };
+  inventoryStorage.save(out, boatId);
+  return out;
+}
+
+export async function updateInventoryItem(itemId, payload) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    const existing = inventoryStorage.get(itemId) || { id: itemId };
+    inventoryStorage.save({ ...existing, ...payload }, existing.boat_id);
+    return;
+  }
+
+  if (!isSupabaseUuid(itemId)) {
+    const existing = inventoryStorage.get(itemId);
+    if (existing?.boat_id) {
+      inventoryStorage.save({ ...existing, ...payload }, existing.boat_id);
+    }
+    return;
+  }
+
+  const updateRow = {
+    name: payload.name ?? null,
+    category: payload.category ?? null,
+    type: payload.type ?? null,
+    location: payload.location ?? null,
+    position: payload.position ?? null,
+    required_quantity: payload.required_quantity != null ? Number(payload.required_quantity) : null,
+    in_stock_level: payload.in_stock_level != null ? Number(payload.in_stock_level) : null,
+    part_number: payload.part_number ?? null,
+    url: payload.url ?? null,
+    notes: payload.notes ?? null,
+    photo_url: payload.photo_url ?? null,
+    supplier_brand: payload.supplier_brand ?? null,
+    critical_spare: !!payload.critical_spare,
+    last_restocked_date: payload.last_restocked_date ?? null,
+    unit: payload.unit ?? null
+  };
+
+  const { error } = await supabase
+    .from('boat_inventory')
+    .update(updateRow)
+    .eq('id', itemId);
+
+  if (error) {
+    logSupabaseFallback('boat_inventory', error);
+    const existing = inventoryStorage.get(itemId);
+    if (existing?.boat_id) {
+      inventoryStorage.save({ ...existing, ...payload }, existing.boat_id);
+    }
+  }
+}
+
+export async function deleteInventoryItem(itemId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    inventoryStorage.delete(itemId);
+    return;
+  }
+
+  if (!isSupabaseUuid(itemId)) {
+    inventoryStorage.delete(itemId);
+    return;
+  }
+
+  const { error } = await supabase
+    .from('boat_inventory')
+    .delete()
+    .eq('id', itemId);
+  if (error) {
+    logSupabaseFallback('boat_inventory', error);
+  }
+  inventoryStorage.delete(itemId);
 }
 

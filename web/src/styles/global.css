@@ -218,10 +218,56 @@ label {
   min-width: 120px;
 }
 
-.form-help {
+.form-help,
+.form-hint {
   font-size: var(--font-size-sm);
   color: var(--color-text-light);
   margin-top: var(--spacing-xs);
+  display: block;
+}
+
+.log-daily-section {
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--color-border, #dee2e6);
+}
+.log-daily-section h4 {
+  margin-bottom: var(--spacing-xs);
+}
+.log-daily-section .log-day-block {
+  margin-bottom: var(--spacing-md);
+  border: 1px solid var(--color-border, #dee2e6);
+  border-radius: var(--radius);
+  padding: 0 var(--spacing-sm);
+}
+.log-daily-section .log-day-block summary {
+  cursor: pointer;
+  padding: var(--spacing-sm) 0;
+  font-weight: 600;
+  list-style: none;
+}
+.log-daily-section .log-day-block summary::-webkit-details-marker {
+  display: none;
+}
+.log-daily-section .log-day-block summary::before {
+  content: '▸ ';
+  display: inline-block;
+  transition: transform 0.2s;
+}
+.log-daily-section .log-day-block[open] summary::before {
+  transform: rotate(90deg);
+}
+.log-daily-section .log-day-fields {
+  padding-bottom: var(--spacing-md);
+  display: grid;
+  gap: var(--spacing-sm);
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+.log-daily-section .log-day-fields .form-group:last-child {
+  grid-column: 1 / -1;
+}
+.log-daily-day textarea {
+  min-height: 4em;
 }
 
 /* Layout */
@@ -355,6 +401,49 @@ label {
   color: var(--color-white);
 }
 
+.badge-secondary {
+  background-color: var(--color-bg-secondary, #e9ecef);
+  color: var(--color-text-light, #6c757d);
+}
+
+/* Project status badges (Projects card) */
+.project-badge {
+  display: inline-block;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+.project-badge-completed {
+  background: color-mix(in srgb, var(--color-success) 20%, transparent);
+  color: var(--color-success);
+}
+.project-badge-cancelled {
+  background: color-mix(in srgb, var(--color-text-light) 20%, transparent);
+  color: var(--color-text-light);
+}
+.project-badge-in-progress {
+  background: color-mix(in srgb, var(--bm-teal) 22%, transparent);
+  color: var(--bm-teal);
+}
+.project-badge-planned {
+  background: color-mix(in srgb, var(--bm-navy) 18%, transparent);
+  color: var(--bm-navy);
+}
+.project-badge-other {
+  background: color-mix(in srgb, var(--color-text-light) 15%, transparent);
+  color: var(--color-text-light);
+}
+
+/* Project priority (tasteful) */
+.project-priority {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+.priority-high { color: var(--color-error); }
+.priority-medium { color: var(--color-warning); }
+.priority-low { color: var(--color-text-light); }
+
 /* Icons */
 .icon {
   display: inline-block;
@@ -380,6 +469,142 @@ label {
 .mb-sm { margin-bottom: var(--spacing-sm); }
 .mb-md { margin-bottom: var(--spacing-md); }
 .mb-lg { margin-bottom: var(--spacing-lg); }
+
+/* Inventory page */
+.inventory-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  align-items: center;
+  margin-bottom: var(--spacing-lg);
+}
+.inventory-search-wrap {
+  flex: 1;
+  min-width: 160px;
+}
+.inventory-search {
+  width: 100%;
+  max-width: 280px;
+}
+.inventory-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  align-items: center;
+}
+.inventory-filters .form-control {
+  min-width: 0;
+}
+.inventory-item-card {
+  margin-bottom: var(--spacing-md);
+}
+.inventory-item-card .card-header {
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+.inventory-item-card.inventory-item-low {
+  border-left: 4px solid var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+}
+.inventory-item-card.inventory-item-critical {
+  border-left: 4px solid var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
+}
+.inventory-item-header-main {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+}
+.inventory-item-thumb {
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--color-gray-light);
+}
+.inventory-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.inventory-thumb-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-light);
+}
+.inventory-item-location {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-light);
+  margin: 0.25rem 0 0.5rem;
+}
+.inventory-item-stock-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: 0.25rem;
+}
+.inventory-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--color-success) 25%, transparent);
+  color: var(--color-success);
+}
+.inventory-badge-low {
+  background: color-mix(in srgb, var(--color-warning) 25%, transparent);
+  color: var(--color-warning);
+}
+.inventory-badge-critical {
+  background: color-mix(in srgb, var(--color-error) 25%, transparent);
+  color: var(--color-error);
+}
+.inventory-stock-numbers {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-light);
+}
+.inventory-item-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+  align-items: center;
+  flex-shrink: 0;
+}
+.inventory-form-photo .attachment-list {
+  margin-bottom: var(--spacing-sm);
+}
+.inventory-form-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: var(--radius);
+}
+.dashboard-card-inventory-badge {
+  position: absolute;
+  top: var(--spacing-sm);
+  right: var(--spacing-sm);
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  background: var(--color-warning);
+  color: var(--color-white);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dashboard-card-inventory-badge.dashboard-card-inventory-badge-critical {
+  background: var(--color-error);
+}
 
 /* Mobile responsive */
 @media (max-width: 768px) {

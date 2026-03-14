@@ -1,5 +1,5 @@
 /**
- * Ship's Log Page
+ * Passage Log Page
  */
 
 import { navigate } from '../router.js';
@@ -16,6 +16,23 @@ let logArchived = false;
 /** All log entries before search/sort */
 let allLogEntries = [];
 
+function formatPassageDateRange(date, dateEnd) {
+  if (!date) return 'N/A';
+  const start = new Date(date);
+  const startStr = start.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  if (!dateEnd || dateEnd === date) return startStr;
+  const end = new Date(dateEnd);
+  const endStr = end.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${startStr} – ${endStr}`;
+}
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
 function render(params = {}) {
   // Get boat ID from route params
   currentBoatId = params?.id || window.routeParams?.id;
@@ -27,7 +44,7 @@ function render(params = {}) {
 
   const wrapper = document.createElement('div');
 
-  const yachtHeader = createYachtHeader("Ship's Log");
+  const yachtHeader = createYachtHeader('Passage Log');
   wrapper.appendChild(yachtHeader);
 
   const pageContent = document.createElement('div');
@@ -40,14 +57,14 @@ function render(params = {}) {
   const addBtn = document.createElement('button');
   addBtn.className = 'btn-primary';
   addBtn.id = 'log-add-btn';
-  addBtn.innerHTML = `${renderIcon('plus')} Add Trip`;
+  addBtn.innerHTML = `${renderIcon('plus')} Add Passage`;
   addBtn.onclick = () => navigate(`/boat/${currentBoatId}/log/new`);
 
   const attachmentsCard = document.createElement('div');
   attachmentsCard.className = 'card';
   attachmentsCard.innerHTML = `
     <h3>Attachments</h3>
-    <p class="text-muted">Upload photos, logs, or documents for this boat's trips.</p>
+    <p class="text-muted">Upload photos, logs, or documents for this boat's passages.</p>
     <div class="attachment-list" id="log-attachments-list"></div>
     <input type="file" id="log-file-input" multiple accept=".pdf,.jpg,.jpeg,.png" style="display: none;">
     <button type="button" class="btn-secondary" id="log-add-attachment-btn">
@@ -58,8 +75,8 @@ function render(params = {}) {
   const listTools = document.createElement('div');
   listTools.className = 'list-tools';
   listTools.innerHTML = `
-    <input type="search" id="log-search" class="form-control" placeholder="Search trips..." aria-label="Search trips">
-    <select id="log-sort" class="form-control" aria-label="Sort trips">
+    <input type="search" id="log-search" class="form-control" placeholder="Search passages..." aria-label="Search passages">
+    <select id="log-sort" class="form-control" aria-label="Sort passages">
       <option value="newest">Newest first</option>
       <option value="oldest">Oldest first</option>
     </select>
@@ -105,7 +122,7 @@ async function onMount(params = {}) {
       const remainingSlots = MAX_UPLOADS_PER_ENTITY - existing.length;
 
       if (remainingSlots <= 0) {
-        showToast(`You can only upload up to ${MAX_UPLOADS_PER_ENTITY} files for Ship's Log.`, 'error');
+        showToast(`You can only upload up to ${MAX_UPLOADS_PER_ENTITY} files for Passage Log.`, 'error');
         logFileInput.value = '';
         return;
       }
@@ -132,7 +149,7 @@ async function onMount(params = {}) {
 
       const filesToUpload = validFiles.slice(0, remainingSlots);
       if (validFiles.length > remainingSlots) {
-        showToast(`Only ${remainingSlots} more file(s) can be uploaded for Ship's Log (max ${MAX_UPLOADS_PER_ENTITY}).`, 'info');
+        showToast(`Only ${remainingSlots} more file(s) can be uploaded for Passage Log (max ${MAX_UPLOADS_PER_ENTITY}).`, 'info');
       }
 
       for (const file of filesToUpload) {
@@ -244,8 +261,10 @@ function applyLogFilterSort() {
     const dep = (entry.departure || '').toLowerCase();
     const arr = (entry.arrival || '').toLowerCase();
     const notes = (entry.notes || '').toLowerCase();
+    const type = (entry.passage_type || '').toLowerCase();
     const dateStr = entry.date ? new Date(entry.date).toLocaleDateString().toLowerCase() : '';
-    return dep.includes(q) || arr.includes(q) || notes.includes(q) || dateStr.includes(q);
+    const dateEndStr = entry.date_end ? new Date(entry.date_end).toLocaleDateString().toLowerCase() : '';
+    return dep.includes(q) || arr.includes(q) || notes.includes(q) || type.includes(q) || dateStr.includes(q) || dateEndStr.includes(q);
   });
   entries = [...entries].sort((a, b) => {
     const dateA = a.date ? new Date(a.date).getTime() : 0;
@@ -257,26 +276,31 @@ function applyLogFilterSort() {
       ? `
       <div class="empty-state">
         <div class="empty-state-icon">${renderIcon('book')}</div>
-        <p>No trips logged yet</p>
-        ${!logArchived ? `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/log/new')">${renderIcon('plus')} Add Trip</button></div>` : ''}
+        <p>No passages logged yet</p>
+        ${!logArchived ? `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/log/new')">${renderIcon('plus')} Add Passage</button></div>` : ''}
       </div>
     `
-      : `<p class="text-muted">No trips match your search.</p>`;
+      : `<p class="text-muted">No passages match your search.</p>`;
     return;
   }
   listContainer.innerHTML = entries.map(entry => {
-    const hoursStart = entry.engine_hours_start || 'N/A';
-    const hoursEnd = entry.engine_hours_end || 'N/A';
-    const hoursUsed = (entry.engine_hours_start && entry.engine_hours_end) 
+    const dateRangeStr = formatPassageDateRange(entry.date, entry.date_end);
+    const titleStr = entry.title && entry.title.trim() ? entry.title.trim() : dateRangeStr;
+    const passageTypeLabel = entry.passage_type === 'motor' ? 'Motor' : entry.passage_type === 'sail' ? 'Sail' : entry.passage_type === 'both' ? 'Motor & Sail' : null;
+    const hoursStart = entry.engine_hours_start ?? '';
+    const hoursEnd = entry.engine_hours_end ?? '';
+    const hoursUsed = (entry.engine_hours_start != null && entry.engine_hours_end != null)
       ? (parseFloat(entry.engine_hours_end) - parseFloat(entry.engine_hours_start)).toFixed(1)
       : null;
+    const showEngineHours = passageTypeLabel === null || passageTypeLabel === 'Motor' || passageTypeLabel === 'Motor & Sail' || hoursStart !== '' || hoursEnd !== '';
+    const dailyNoteCount = entry.daily_notes && typeof entry.daily_notes === 'object' ? Object.keys(entry.daily_notes).length : 0;
 
     return `
     <div class="card">
       <div class="card-header">
         <div>
-          <h3 class="card-title">${new Date(entry.date).toLocaleDateString()}</h3>
-          <p class="text-muted">${entry.departure || 'N/A'} → ${entry.arrival || 'N/A'}</p>
+          <h3 class="card-title">${escapeHtml(titleStr)}</h3>
+          <p class="text-muted">${entry.title && entry.title.trim() ? dateRangeStr + ' · ' : ''}${entry.departure || '—'} → ${entry.arrival || '—'}${passageTypeLabel ? ` <span class="badge badge-secondary">${passageTypeLabel}</span>` : ''}</p>
         </div>
         <div>
           ${!logArchived ? `<a href="#/boat/${currentBoatId}/log/${entry.id}" class="btn-link" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/log/${entry.id}')">${renderIcon('edit')}</a>
@@ -284,7 +308,8 @@ function applyLogFilterSort() {
         </div>
       </div>
       <div>
-        <p><strong>Engine Hours:</strong> ${hoursStart} → ${hoursEnd}${hoursUsed ? ` (${hoursUsed} hrs used)` : ''}</p>
+        ${dailyNoteCount > 0 ? `<p><strong>Daily log:</strong> ${dailyNoteCount} day${dailyNoteCount !== 1 ? 's' : ''}</p>` : ''}
+        ${showEngineHours ? `<p><strong>Engine Hours:</strong> ${hoursStart || '—'} → ${hoursEnd || '—'}${hoursUsed ? ` (${hoursUsed} hrs used)` : ''}</p>` : ''}
         ${entry.distance_nm ? `<p><strong>Distance:</strong> ${entry.distance_nm} nm</p>` : ''}
         ${entry.notes ? `<p><strong>Notes:</strong> ${entry.notes}</p>` : ''}
       </div>
@@ -297,11 +322,11 @@ function applyLogFilterSort() {
 
 function attachHandlers() {
   window.logPageDelete = async (id) => {
-    const ok = await confirmAction({ title: 'Delete this trip entry?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
+    const ok = await confirmAction({ title: 'Delete this passage?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
     if (!ok) return;
     await deleteLogEntry(id);
     loadLogs();
-    showToast('Trip entry removed', 'info');
+    showToast('Passage removed', 'info');
   };
 }
 

@@ -26,14 +26,42 @@
     h1 { font-size: 1.75rem; color: var(--bm-navy); margin: 0 0 0.5rem; }
     .tagline { color: var(--color-text-light); font-size: 1.05rem; }
     .hero { background: var(--bm-card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 2rem; margin-bottom: 2rem; }
-    .cta { display: inline-block; background: var(--bm-teal); color: white; padding: 0.875rem 1.75rem; border-radius: var(--radius); text-decoration: none; font-weight: 600; margin: 1rem 0; }
+    .hero-headline { font-size: 1.5rem; font-weight: 700; color: var(--bm-navy); margin: 0 0 0.75rem; line-height: 1.3; }
+    .hero-subheadline { color: var(--color-text-light); font-size: 1.05rem; margin: 0 0 1.5rem; }
+    .cta-wrap { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 1.25rem; }
+    .cta { display: inline-block; background: var(--bm-teal); color: white; padding: 0.875rem 1.75rem; border-radius: var(--radius); text-decoration: none; font-weight: 600; margin: 0; }
     .cta:hover { opacity: 0.95; }
+    .cta-primary { font-size: 1.05rem; }
+    .cta-store { display: inline-flex; align-items: center; justify-content: center; background: transparent; padding: 0; width: 180px; height: 54px; }
+    .cta-store img { height: 40px; width: auto; display: block; }
+    .cta-store-google img { height: 54px; width: auto; display: block; }
+    .cta-store:hover { opacity: 0.9; }
+    .hero-benefits { list-style: none; padding: 0; margin: 0; color: var(--color-text-light); font-size: 0.95rem; }
+    .hero-benefits li { position: relative; padding-left: 1.25rem; margin-bottom: 0.5rem; }
+    .hero-benefits li::before { content: "✓"; position: absolute; left: 0; color: var(--bm-teal); font-weight: 700; }
+    .app-mock-wrap { margin: 1.5rem 0; text-align: center; border-radius: var(--radius); overflow: hidden; }
+    .app-mock-wrap img { max-width: 100%; height: auto; display: block; vertical-align: top; }
     section { margin-bottom: 2rem; }
     section h2 { font-size: 1.35rem; color: var(--bm-navy); margin-bottom: 1rem; }
     .card { background: var(--bm-card); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 2px 8px rgba(11, 31, 59, 0.06); }
     .card h3 { margin: 0 0 0.5rem; font-size: 1.1rem; color: var(--bm-navy); }
     .card p { margin: 0; color: var(--color-text-light); font-size: 0.95rem; }
     ul { padding-left: 1.25rem; color: var(--color-text-light); }
+    .how-it-works { display: grid; grid-template-columns: 1fr; gap: 1rem; margin-bottom: 2rem; }
+    @media (min-width: 600px) { .how-it-works { grid-template-columns: repeat(3, 1fr); } }
+    .how-step { background: var(--bm-card); border-radius: var(--radius); padding: 1.25rem; box-shadow: 0 2px 8px rgba(11, 31, 59, 0.06); text-align: center; }
+    .how-step .step-num { display: inline-block; width: 2rem; height: 2rem; line-height: 2rem; border-radius: 50%; background: var(--bm-teal); color: white; font-weight: 700; font-size: 0.9rem; margin-bottom: 0.5rem; }
+    .how-step h3 { margin: 0 0 0.5rem; font-size: 1rem; color: var(--bm-navy); }
+    .how-step p { margin: 0; color: var(--color-text-light); font-size: 0.9rem; }
+    .video-section { margin-bottom: 2rem; }
+    .video-section h2 { font-size: 1.35rem; color: var(--bm-navy); margin: 0 0 0.5rem; }
+    .video-section .video-subheading { color: var(--color-text-light); font-size: 1rem; margin: 0 0 1rem; }
+    .video-wrap { max-width: 900px; margin: 0 auto 1rem; border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); background: var(--bm-navy); }
+    .video-wrap video { width: 100%; height: auto; display: block; vertical-align: top; }
+    .video-section .cta-wrap { margin-top: 1rem; margin-bottom: 0; }
+    .download-section { background: var(--bm-card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 2rem; text-align: center; }
+    .download-section h2 { margin-bottom: 1rem; }
+    .download-badges { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center; align-items: center; margin-top: 1rem; }
     footer { text-align: center; padding: 2rem 0; font-size: 0.9rem; color: var(--color-text-light); }
     footer a { color: var(--bm-teal); }
   </style>
@@ -41,18 +69,52 @@
 <body>
   <div class="wrap">
     <header>
-      <h1>BoatMatey – Boat Maintenance &amp; Logbook App</h1>
-      <p class="tagline">Your digital boat management companion for maintenance logs, service reminders, and equipment checks</p>
+      <h1>BoatMatey</h1>
+      <p class="tagline">Boat maintenance &amp; logbook, simplified</p>
     </header>
 
     <main>
-      <section class="hero">
-        <p>BoatMatey helps boat owners in the UK and beyond keep their vessels shipshape. Record engine servicing, track safety equipment, store documents, and never miss a haul-out or warranty date again.</p>
-        <a href="/app/index.html" class="cta open-app-link">Open the app</a>
+      <section class="hero" id="hero">
+        <h2 class="hero-headline">Stay on top of your boat's maintenance, safety &amp; service history — without the stress.</h2>
+        <p class="hero-subheadline">BoatMatey keeps everything in one place: engine hours, servicing, safety equipment, reminders, and your ship's log.</p>
+
+        <div class="cta-wrap">
+          <a href="/app/index.html#/auth" class="cta cta-primary" id="cta-start-trial" aria-label="Start free trial">Start free trial</a>
+          <a href="https://apps.apple.com/app/boatmatey/id6758239609" class="cta-store" id="cta-app-store" target="_blank" rel="noopener noreferrer" aria-label="Download on the App Store">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/0/0f/Available_on_the_App_Store_%28black%29_SVG.svg" alt="Download on the App Store" width="120" height="40" />
+          </a>
+          <a href="https://play.google.com/store/apps/details?id=com.boatmatey.app" class="cta-store cta-store-google" id="cta-google-play" target="_blank" rel="noopener noreferrer" aria-label="Get it on Google Play">
+            <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" width="162" height="54" />
+          </a>
+        </div>
+
+        <ul class="hero-benefits" aria-label="Key benefits">
+          <li>Never miss a service interval</li>
+          <li>Protect resale &amp; insurance records</li>
+          <li>Log trips, hours &amp; maintenance in minutes</li>
+        </ul>
+
+        <div class="app-mock-wrap" aria-hidden="true">
+          <img src="/app-screenshot.png" alt="BoatMatey app dashboard showing boat details, engines, service history, and more" />
+        </div>
+      </section>
+
+      <section class="video-section" id="video-section">
+        <h2>See BoatMatey in action</h2>
+        <p class="video-subheading">A quick walkthrough of BoatMatey in under 2 minutes.</p>
+        <div class="video-wrap">
+          <video id="promo-video" src="/assets/creating-a-new-boat.mp4" controls preload="metadata" aria-label="BoatMatey promo video walkthrough">
+            Your browser does not support the video tag.
+          </video>
+        </div>
+        <div class="cta-wrap">
+          <a href="/app/index.html#/auth" class="cta cta-primary" id="cta-start-trial-video" aria-label="Start free trial">Start free trial</a>
+        </div>
       </section>
 
       <section>
         <h2>Features</h2>
+        <p style="margin-bottom: 1rem; color: var(--color-text-light); font-size: 0.95rem;">One place for maintenance logs, service reminders, safety checks, and your ship's log.</p>
         <div class="card">
           <h3>Maintenance logs</h3>
           <p>Keep a clear record of all work done on your boat: oil changes, filter replacements, impeller changes, and more. Each entry can include date, mileage or hours, parts used, and notes.</p>
@@ -76,13 +138,29 @@
       </section>
 
       <section>
-        <h2>Who it's for</h2>
-        <p>BoatMatey is built for boat owners who want a simple, reliable way to stay on top of maintenance and paperwork. Whether you have a sailing yacht, motor cruiser, or small day boat, you can track one or more boats, keep service and safety records, and get reminders so nothing slips through the net. It's especially useful if you're managing multiple engines, haul-outs, or annual checks and want everything in one app instead of spreadsheets or paper.</p>
+        <h2>How it works</h2>
+        <div class="how-it-works">
+          <div class="how-step">
+            <span class="step-num" aria-hidden="true">1</span>
+            <h3>Add your boat</h3>
+            <p>Set up your vessel and details in one place.</p>
+          </div>
+          <div class="how-step">
+            <span class="step-num" aria-hidden="true">2</span>
+            <h3>Log engines, servicing &amp; safety</h3>
+            <p>Record service history, hours, and safety equipment with expiry dates.</p>
+          </div>
+          <div class="how-step">
+            <span class="step-num" aria-hidden="true">3</span>
+            <h3>Get reminders and keep a full history</h3>
+            <p>Never miss a service interval; export or share records when you need them.</p>
+          </div>
+        </div>
       </section>
 
       <section>
-        <h2>How it works</h2>
-        <p>Create an account and add your boat or boats. For each boat you can add engines, log service history, record safety equipment and expiry dates, and attach documents. Use the calendar and alerts to see what's due and set reminders. Your data can be stored on the device and optionally synced to the cloud so you can access it from more than one device. The app works in the browser and on mobile, so you can update logs at home or on the pontoon.</p>
+        <h2>Who it's for</h2>
+        <p>BoatMatey is built for boat owners who want a simple, reliable way to stay on top of maintenance and paperwork. Whether you have a sailing yacht, motor cruiser, or small day boat, you can track one or more boats, keep service and safety records, and get reminders so nothing slips through the net. It's especially useful if you're managing multiple engines, haul-outs, or annual checks and want everything in one app instead of spreadsheets or paper.</p>
       </section>
 
       <section>
@@ -101,9 +179,18 @@
         </div>
       </section>
 
-      <section class="hero">
-        <p>Ready to get organised? Open the app and start your first log.</p>
-        <a href="/app/index.html" class="cta open-app-link">Open the app</a>
+      <section class="download-section" id="download">
+        <h2>Get BoatMatey</h2>
+        <p style="margin: 0 0 1rem; color: var(--color-text-light);">Start your free trial or download the app.</p>
+        <a href="/app/index.html#/auth" class="cta cta-primary" id="cta-start-trial-footer" aria-label="Start free trial">Start free trial</a>
+        <div class="download-badges">
+          <a href="https://apps.apple.com/app/boatmatey/id6758239609" class="cta-store" id="cta-app-store-footer" target="_blank" rel="noopener noreferrer" aria-label="Download on the App Store">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/0/0f/Available_on_the_App_Store_%28black%29_SVG.svg" alt="Download on the App Store" width="120" height="40" />
+          </a>
+          <a href="https://play.google.com/store/apps/details?id=com.boatmatey.app" class="cta-store cta-store-google" id="cta-google-play-footer" target="_blank" rel="noopener noreferrer" aria-label="Get it on Google Play">
+            <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" alt="Get it on Google Play" width="162" height="54" />
+          </a>
+        </div>
       </section>
     </main>
 
@@ -111,5 +198,59 @@
       <p><a href="/app/index.html">BoatMatey app</a> · <a href="/privacy.html">Privacy</a> · <a href="/terms/">Terms</a></p>
     </footer>
   </div>
+
+  <script>
+    (function() {
+      // Lightweight event tracking. If GA4 gtag is present, events are sent there; otherwise console only.
+      // TODO: add GA4 Measurement ID and gtag snippet to enable tracking (in head).
+      // Example: load gtag js with id G-XXXXXXXXXX, then call gtag('config','G-XXXXXXXXXX').
+      function track(eventName, props) {
+        var p = props && typeof props === 'object' ? props : {};
+        if (typeof window.gtag === 'function') {
+          window.gtag('event', eventName, p);
+        } else {
+          if (typeof console !== 'undefined' && console.log) console.log('[track]', eventName, p);
+        }
+      }
+
+      document.addEventListener('DOMContentLoaded', function() {
+        var startTrialTop = document.getElementById('cta-start-trial');
+        var startTrialVideo = document.getElementById('cta-start-trial-video');
+        var startTrialFooter = document.getElementById('cta-start-trial-footer');
+        var appStore = document.getElementById('cta-app-store');
+        var appStoreFooter = document.getElementById('cta-app-store-footer');
+        var googlePlay = document.getElementById('cta-google-play');
+        var googlePlayFooter = document.getElementById('cta-google-play-footer');
+
+        if (startTrialTop) startTrialTop.addEventListener('click', function() { track('cta_start_free_trial_top', { cta_id: 'hero' }); });
+        if (startTrialVideo) startTrialVideo.addEventListener('click', function() { track('cta_start_free_trial_video', { cta_id: 'video' }); });
+        if (startTrialFooter) startTrialFooter.addEventListener('click', function() { track('cta_start_free_trial_top', { cta_id: 'footer' }); });
+        if (appStore) appStore.addEventListener('click', function() { track('app_store_click', { cta_id: 'hero' }); });
+        if (appStoreFooter) appStoreFooter.addEventListener('click', function() { track('app_store_click', { cta_id: 'footer' }); });
+        if (googlePlay) googlePlay.addEventListener('click', function() { track('google_play_click', { cta_id: 'hero' }); });
+        if (googlePlayFooter) googlePlayFooter.addEventListener('click', function() { track('google_play_click', { cta_id: 'footer' }); });
+
+        var video = document.getElementById('promo-video');
+        if (video) {
+          var played = false, q25 = false, q50 = false, q75 = false, complete = false;
+          video.addEventListener('play', function() {
+            if (!played) { played = true; track('video_play'); }
+          });
+          video.addEventListener('timeupdate', function() {
+            var d = video.duration;
+            if (!(d > 0)) return;
+            var t = video.currentTime;
+            var p = (t / d) * 100;
+            if (!q25 && p >= 25) { q25 = true; track('video_25'); }
+            if (!q50 && p >= 50) { q50 = true; track('video_50'); }
+            if (!q75 && p >= 75) { q75 = true; track('video_75'); }
+          });
+          video.addEventListener('ended', function() {
+            if (!complete) { complete = true; track('video_complete'); }
+          });
+        }
+      });
+    })();
+  </script>
 </body>
 </html>

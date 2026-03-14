@@ -24,6 +24,8 @@ import {
   getBoatCounts,
   BOAT_LIMITS
 } from '../lib/dataService.js';
+import { getActiveBoatLimit } from '../lib/subscription.js';
+import { canAccessRoute } from '../lib/access.js';
 
 let editingBoatId = null;
 
@@ -34,6 +36,7 @@ import { createYachtHeader } from '../components/header.js';
 import { showToast } from '../components/toast.js';
 import { confirmAction } from '../components/confirmModal.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
+import { APP_STORE_URL, GOOGLE_PLAY_URL, APP_STORE_BADGE_URL, GOOGLE_PLAY_BADGE_URL } from '../lib/constants.js';
 
 /** Compress image to a small data URL for local storage (avoids QuotaExceededError). */
 function compressImageToDataUrl(file, maxPx = 280, quality = 0.55) {
@@ -81,18 +84,19 @@ function render() {
   const container = document.createElement('div');
   container.className = 'container';
 
+  const activeLimit = getActiveBoatLimit();
   const pageHeader = document.createElement('div');
   pageHeader.className = 'page-header';
   pageHeader.innerHTML = `
     <p class="text-muted">Your boats</p>
-    <p class="boats-limit-hint text-muted">You can have up to ${BOAT_LIMITS.MAX_ACTIVE_BOATS} active and ${BOAT_LIMITS.MAX_ARCHIVED_BOATS} archived boats (${BOAT_LIMITS.MAX_TOTAL_BOATS} total).</p>
+    <p class="boats-limit-hint text-muted">You can have up to ${activeLimit} active and ${BOAT_LIMITS.MAX_ARCHIVED_BOATS === Infinity ? 'unlimited' : BOAT_LIMITS.MAX_ARCHIVED_BOATS} archived boats${BOAT_LIMITS.MAX_TOTAL_BOATS === Infinity ? '.' : ` (${BOAT_LIMITS.MAX_TOTAL_BOATS} total).`}</p>
   `;
 
   const addBtn = document.createElement('button');
   addBtn.className = 'btn-primary';
   addBtn.id = 'boats-add-btn';
   addBtn.innerHTML = `${renderIcon('plus')} Add Boat`;
-  addBtn.onclick = () => showBoatForm();
+  addBtn.onclick = () => onAddBoatClick();
   addBtn.style.marginBottom = 'var(--spacing-lg)';
 
   const grid = document.createElement('div');
@@ -110,19 +114,22 @@ function render() {
 }
 
 function createCalendarCard() {
+  const canAccess = canAccessRoute('/calendar');
   const card = document.createElement('a');
-  card.href = '#/calendar';
-  card.className = 'dashboard-card card-color-calendar calendar-home-card';
+  card.href = canAccess ? '#/calendar' : '#/subscription';
+  card.className = 'dashboard-card card-color-calendar calendar-home-card' + (!canAccess ? ' dashboard-card-premium-locked' : '');
   card.innerHTML = `
     <div class="dashboard-card-icon-badge dashboard-card-icon-bitmap">
       <img src="${calendarIconUrl}" alt="Calendar" class="dashboard-card-icon-img">
     </div>
+    ${!canAccess ? '<span class="dashboard-card-premium-badge" aria-label="Premium feature">Premium</span>' : ''}
     <div class="dashboard-card-title">Calendar & Alerts</div>
     <div class="dashboard-card-status text-muted">Reminders & appointments</div>
   `;
   card.onclick = (e) => {
     e.preventDefault();
-    navigate('/calendar');
+    if (canAccess) navigate('/calendar');
+    else navigate('/subscription');
   };
   return card;
 }
@@ -301,6 +308,7 @@ async function loadBoats() {
 async function updateAddBoatButton(boatsList) {
   const addBtn = document.getElementById('boats-add-btn');
   if (!addBtn) return;
+  const activeLimit = getActiveBoatLimit();
   const counts = Array.isArray(boatsList)
     ? {
         total: boatsList.length,
@@ -308,17 +316,147 @@ async function updateAddBoatButton(boatsList) {
         archived: boatsList.filter((b) => b.status === 'archived').length
       }
     : await getBoatCounts();
-  const atTotalLimit = counts.total >= BOAT_LIMITS.MAX_TOTAL_BOATS;
-  const atActiveLimit = counts.active >= BOAT_LIMITS.MAX_ACTIVE_BOATS;
-  const cannotAdd = atTotalLimit || atActiveLimit;
+  const atTotalLimit = Number.isFinite(BOAT_LIMITS.MAX_TOTAL_BOATS) && counts.total >= BOAT_LIMITS.MAX_TOTAL_BOATS;
+  const atActiveLimit = counts.active >= activeLimit;
+  const isFreeAtLimit = activeLimit === 1 && atActiveLimit;
+  const cannotAdd = atTotalLimit || (atActiveLimit && !isFreeAtLimit);
   addBtn.disabled = cannotAdd;
   if (atActiveLimit && !atTotalLimit) {
-    addBtn.title = `You have the maximum number of active boats (${BOAT_LIMITS.MAX_ACTIVE_BOATS}). Archive a boat to add another.`;
+    if (activeLimit === 1) {
+      addBtn.title = 'Free plan allows 1 boat. Upgrade to Premium to add more.';
+    } else {
+      addBtn.title = `You have the maximum number of active boats (${activeLimit}). Archive a boat to add another.`;
+    }
   } else if (atTotalLimit) {
-    addBtn.title = `You have the maximum number of boats (${BOAT_LIMITS.MAX_TOTAL_BOATS}). Archive or delete a boat to add another.`;
+    addBtn.title = `You have the maximum number of boats. Archive or delete a boat to add another.`;
   } else {
     addBtn.title = 'Add a new boat';
   }
+}
+
+async function onAddBoatClick() {
+  const activeLimit = getActiveBoatLimit();
+  const counts = await getBoatCounts();
+  const atActiveLimit = counts.active >= activeLimit;
+  if (activeLimit === 1 && atActiveLimit) {
+    showUpgradeForMoreBoatsModal();
+    return;
+  }
+  if (atActiveLimit) {
+    showMaxActiveBoatsModal(activeLimit);
+    return;
+  }
+  showBoatForm();
+}
+
+function showMaxActiveBoatsModal(activeLimit) {
+  let root = document.getElementById('modal-root');
+  if (!root) {
+    root = document.createElement('div');
+    root.id = 'modal-root';
+    root.className = 'modal-root';
+    document.body.appendChild(root);
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-modal-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-labelledby', 'max-boats-modal-title');
+
+  overlay.innerHTML = `
+    <div class="confirm-modal" style="max-width: 380px;">
+      <h2 id="max-boats-modal-title" class="confirm-modal-title">Maximum active boats reached</h2>
+      <p class="confirm-modal-message" style="margin-bottom: 1rem;">
+        You have the maximum number of active boats (${activeLimit}). To create a new boat, archive an existing boat first from its card, then add your new boat.
+      </p>
+      <div class="confirm-modal-actions">
+        <button type="button" class="btn-primary confirm-modal-close-max-boats">OK</button>
+      </div>
+    </div>
+  `;
+
+  function close() {
+    overlay.classList.add('confirm-modal-exit');
+    setTimeout(() => overlay.remove(), 200);
+  }
+
+  overlay.querySelector('.confirm-modal-close-max-boats').onclick = close;
+  overlay.onclick = (e) => {
+    if (e.target === overlay) close();
+  };
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+    }
+  });
+
+  root.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('confirm-modal-visible'));
+}
+
+function showUpgradeForMoreBoatsModal() {
+  let root = document.getElementById('modal-root');
+  if (!root) {
+    root = document.createElement('div');
+    root.id = 'modal-root';
+    root.className = 'modal-root';
+    document.body.appendChild(root);
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-modal-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-labelledby', 'upgrade-modal-title');
+
+  overlay.innerHTML = `
+    <div class="confirm-modal" style="max-width: 380px;">
+      <h2 id="upgrade-modal-title" class="confirm-modal-title">Additional boats require a subscription</h2>
+      <p class="confirm-modal-message" style="margin-bottom: 1rem;">
+        The free plan includes 1 boat. Upgrade to Premium to add more boats and unlock all features: 5 active boats, unlimited archive, service history, logbook, calendar and cloud sync.
+      </p>
+      <p class="text-muted" style="font-size: 0.9rem; margin-bottom: 1rem;">
+        <strong>£29.99/year</strong> including VAT · 1 month free trial
+      </p>
+      <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-bottom: 1rem;">
+        <a href="${APP_STORE_URL}" target="_blank" rel="noopener" style="display: flex; align-items: center; justify-content: center;">
+          <img src="${APP_STORE_BADGE_URL}" alt="Download on the App Store" style="height: 40px; width: auto;">
+        </a>
+        <a href="${GOOGLE_PLAY_URL}" target="_blank" rel="noopener" style="display: flex; align-items: center; justify-content: center;">
+          <img src="${GOOGLE_PLAY_BADGE_URL}" alt="Get it on Google Play" style="height: 54px; width: auto;">
+        </a>
+      </div>
+      <div class="confirm-modal-actions" style="flex-direction: column; gap: 0.5rem;">
+        <button type="button" class="btn-primary upgrade-modal-view-subscription">View subscription details</button>
+        <button type="button" class="btn-secondary confirm-modal-cancel">Close</button>
+      </div>
+    </div>
+  `;
+
+  function close() {
+    overlay.classList.add('confirm-modal-exit');
+    setTimeout(() => overlay.remove(), 200);
+  }
+
+  overlay.querySelector('.confirm-modal-cancel').onclick = close;
+  overlay.querySelector('.upgrade-modal-view-subscription').onclick = () => {
+    close();
+    navigate('/subscription');
+  };
+  overlay.onclick = (e) => {
+    if (e.target === overlay) close();
+  };
+  overlay.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+    }
+  });
+
+  root.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('confirm-modal-visible'));
 }
 
 function attachHandlers() {
@@ -370,7 +508,7 @@ function attachHandlers() {
     const result = await reactivateBoatApi(id);
     if (result && result.error) {
       if (result.error === 'active_limit') {
-        showToast('You have the maximum number of active boats. Archive one to reactivate this boat.', 'error');
+        showToast(getActiveBoatLimit() === 1 ? 'Free plan allows 1 boat. Upgrade to Premium to add more.' : 'You have the maximum number of active boats. Archive one to reactivate this boat.', 'error');
       } else {
         showToast(result.error, 'error');
       }
@@ -536,12 +674,13 @@ async function saveBoat() {
 
   const result = await createBoatApi({ boat_name: boat.boat_name, boat_type: boat.boat_type, make_model: boat.make_model });
   if (result && result.error === 'active_limit') {
-    showToast(`You have the maximum number of active boats (${BOAT_LIMITS.MAX_ACTIVE_BOATS}). Archive a boat to add another.`, 'error');
+    const limit = getActiveBoatLimit();
+    showToast(limit === 1 ? 'Free plan allows 1 boat. Upgrade to Premium to add more.' : `You have the maximum number of active boats (${limit}). Archive a boat to add another.`, 'error');
     setSaveButtonLoading(form, false);
     return;
   }
   if (result && result.error === 'total_limit') {
-    showToast(`You have the maximum number of boats (${BOAT_LIMITS.MAX_TOTAL_BOATS}). Archive or delete a boat to add another.`, 'error');
+    showToast('You have the maximum number of boats. Archive or delete a boat to add another.', 'error');
     setSaveButtonLoading(form, false);
     return;
   }

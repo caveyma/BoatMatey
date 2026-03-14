@@ -113,7 +113,13 @@ serve(async (req: Request) => {
       ? new Date(event.expiration_at_ms).toISOString() 
       : null;
 
-    // Call the database function to handle the webhook
+    // Optional: for affiliate commission idempotency and amount (RevenueCat payload may include store_transaction_id)
+    const rcEventId = (payload as { event?: { id?: string } }).event?.id ?? null;
+    const rcTransactionId = (event as { store_transaction_id?: string }).store_transaction_id ?? null;
+    const purchasedAtMs = event.purchased_at_ms ?? null;
+    const price = event.price ?? event.price_in_purchased_currency ?? null;
+    const currency = event.currency ?? null;
+
     const { data, error } = await supabase.rpc('handle_subscription_webhook', {
       p_event_type: event.type,
       p_app_user_id: event.app_user_id,
@@ -121,6 +127,11 @@ serve(async (req: Request) => {
       p_expires_at: expiresAt,
       p_original_app_user_id: event.original_app_user_id || null,
       p_period_type: event.period_type || null,
+      p_rc_event_id: rcEventId,
+      p_rc_transaction_id: rcTransactionId,
+      p_purchased_at_ms: purchasedAtMs,
+      p_price: price,
+      p_currency: currency,
     });
 
     if (error) {

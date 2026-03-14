@@ -11,6 +11,8 @@ import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { boatsStorage } from '../lib/storage.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOADS_PER_ENTITY } from '../lib/uploads.js';
 import { getBoat as getBoatFromApi, updateBoat as updateBoatApi, isBoatArchived } from '../lib/dataService.js';
+import { canAccessPremiumFeature } from '../lib/access.js';
+import { exportBoatReport } from '../lib/exportBoatReport.js';
 
 let currentBoat = null;
 let currentBoatId = null;
@@ -181,6 +183,7 @@ function render(params = {}) {
     </div>
 
     <div class="form-actions">
+      <button type="button" class="btn-secondary" id="export-boat-report-btn" aria-label="Export boat report as PDF">${renderIcon('download')} Export Boat Report</button>
       <button type="button" class="btn-secondary" id="cancel-btn">Cancel</button>
       <button type="submit" class="btn-primary">Save</button>
     </div>
@@ -327,6 +330,39 @@ async function onMount(params = {}) {
   if (cancelBtn) {
     cancelBtn.addEventListener('click', () => {
       window.history.back();
+    });
+  }
+
+  const exportBtn = document.getElementById('export-boat-report-btn');
+  if (exportBtn && boatId) {
+    exportBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (!canAccessPremiumFeature()) {
+        showToast('Export Boat Report is a Premium feature.', 'info');
+        navigate('/subscription');
+        return;
+      }
+      exportBtn.disabled = true;
+      const labelHtml = exportBtn.innerHTML;
+      exportBtn.innerHTML = 'Generating…';
+      try {
+        const result = await exportBoatReport(boatId);
+        if (result.success) {
+          showToast('Report ready. ' + (window.Capacitor?.isNativePlatform?.() ? 'Use the share sheet to save or share.' : 'Download started.'), 'success');
+        } else {
+          if (result.error === 'premium_required') {
+            showToast('Export Boat Report is a Premium feature.', 'info');
+            navigate('/subscription');
+          } else {
+            showToast(result.error || 'Export failed.', 'error');
+          }
+        }
+      } catch (err) {
+        showToast(err?.message || 'Export failed. Please try again.', 'error');
+      } finally {
+        exportBtn.disabled = false;
+        exportBtn.innerHTML = labelHtml;
+      }
     });
   }
 

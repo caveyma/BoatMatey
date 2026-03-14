@@ -201,6 +201,28 @@
   letter-spacing: -0.01em;
 }
 
+/* Premium lock: badge and locked state (free users on premium cards) */
+.dashboard-card-premium-badge {
+  position: absolute;
+  top: var(--spacing-sm);
+  right: var(--spacing-sm);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--bm-teal, #0d9488);
+  background: rgba(13, 148, 136, 0.12);
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  z-index: 2;
+}
+
+.dashboard-card-premium-locked {
+  position: relative;
+}
+
+.dashboard-card-premium-locked .dashboard-card-title {
+  padding-right: 4rem;
+}
+
 .dashboard-card-status {
   font-size: var(--font-size-sm);
   color: var(--color-text-light);

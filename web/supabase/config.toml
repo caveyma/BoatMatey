@@ -1,0 +1,8 @@
+# Per-function config: validate-promo is called before sign-up (no user JWT).
+# apply-promo-after-signup is called right after signUp with user_id + code (no session yet).
+# Redeem-promo and revenuecat-webhook require auth or are called by external services.
+[functions.validate-promo]
+verify_jwt = false
+
+[functions.apply-promo-after-signup]
+verify_jwt = false

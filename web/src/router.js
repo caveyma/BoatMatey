@@ -4,6 +4,7 @@
 
 import { supabase } from './lib/supabaseClient.js';
 import { getSessionWithTimeout } from './lib/dataService.js';
+import { canAccessRoute } from './lib/access.js';
 // Note: subscription check moved to auth flow, not route access
 
 let routes = {};
@@ -26,7 +27,9 @@ const PAGE_COLOR_CLASSES = [
   'page-color-watermaker',
   'page-color-fuel',
   'page-color-electrical',
-  'page-color-mayday'
+  'page-color-mayday',
+  'page-color-projects',
+  'page-color-inventory'
 ];
 
 function applyPageColor(path) {
@@ -49,6 +52,8 @@ function applyPageColor(path) {
   else if (path.includes('/fuel')) key = 'fuel';
   else if (path.includes('/electrical')) key = 'electrical';
   else if (path.includes('/mayday')) key = 'mayday';
+  else if (path.includes('/projects')) key = 'projects';
+  else if (path.includes('/inventory')) key = 'inventory';
 
   if (key) document.body.classList.add(`page-color-${key}`);
 }
@@ -124,29 +129,28 @@ function showAppLoading(app) {
 }
 
 async function loadRoute(path) {
-  // Normalize path
+  // Normalize path (strip hash, strip query for matching)
   if (path.startsWith('#')) {
     path = path.substring(1);
   }
-  if (!path || path === '/') {
-    path = '/';
-  }
+  if (!path || path === '/') path = '/';
+  const pathForMatch = path.includes('?') ? path.split('?')[0] : path;
+  const pathNorm = pathForMatch || '/';
 
-  if (path === currentRoute) return;
+  if (pathForMatch === (currentRoute?.split('?')[0])) return;
   currentRoute = path;
 
   const app = document.querySelector('#app');
   showAppLoading(app);
 
-  // Check access requirements (subscription + auth gate)
-  const accessCheck = await checkAccess(path);
+  const accessCheck = await checkAccess(pathNorm);
   if (!accessCheck.allowed) {
     window.location.hash = accessCheck.redirectTo;
     currentRoute = null;
     return;
   }
 
-  const match = matchRoute(path);
+  const match = matchRoute(pathNorm);
   if (!match) {
     console.error(`Router: Route not found: ${path}`);
     console.error('Router: Available routes:', Object.keys(routes));
@@ -253,12 +257,17 @@ async function checkAccess(path) {
     return { allowed: true };
   }
 
-  // Protected routes: check authentication (with timeout so we don't hang on slow network)
+  // Protected routes: require authentication; redirect to auth (Create account handles promo)
   if (supabase) {
     const session = await getSessionWithTimeout(5000);
     if (!session) {
-      return { allowed: false, redirectTo: '/welcome' };
+      return { allowed: false, redirectTo: '/auth' };
     }
+  }
+
+  // Free vs Premium: redirect to subscription if user cannot access this route
+  if (!canAccessRoute(path)) {
+    return { allowed: false, redirectTo: '/subscription' };
   }
 
   return { allowed: true };
@@ -275,7 +284,7 @@ export function init() {
   if (isAppPath && !window.location.hash) {
     window.location.hash = '#/';
   }
-  const hash = window.location.hash.substring(1) || '/';
+  let hash = window.location.hash.substring(1) || '/';
   loadRoute(hash);
 
   window.addEventListener('hashchange', () => {

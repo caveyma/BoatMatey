@@ -1006,7 +1006,12 @@ async function saveHaulout() {
 
   try {
   if (editingId && String(editingId).includes('-')) {
-    await updateHaulout(editingId, entry);
+    const result = await updateHaulout(editingId, entry);
+    if (result && result.ok === false) {
+      showToast(result.error || 'Failed to save haul-out.', 'error');
+      setSaveButtonLoading(form, false);
+      return;
+    }
   } else {
     const created = await createHaulout(currentBoatId, entry);
     if (created?.id) editingId = created.id;

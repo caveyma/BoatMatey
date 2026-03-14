@@ -36,8 +36,12 @@ function render() {
 
   const status = getSubscriptionStatus();
   const isActive = hasActiveSubscription();
+  const isPromo = status.isPromo === true;
   const isNative = Capacitor.isNativePlatform?.() ?? false;
   const showSubscribeAndRestore = isNative && !isActive;
+  const displayPlan = status.plan ?? 'None';
+  const displayPrice = isPromo ? 'Free' : (status.price ?? '—');
+  const statusBadgeText = isActive ? (isPromo ? 'ACTIVE (Promo)' : 'ACTIVE') : 'INACTIVE';
 
   const content = document.createElement('div');
   content.innerHTML = `
@@ -73,14 +77,14 @@ function render() {
       <div style="margin-bottom: 1rem;" id="account-subscription-details">
         <p><strong>Status:</strong> 
           <span class="badge ${isActive ? 'badge-success' : 'badge-warning'}" id="account-subscription-badge">
-            ${isActive ? 'Active' : 'Not Active'}
+            ${statusBadgeText}
           </span>
         </p>
-        <p><strong>Plan:</strong> <span id="account-subscription-plan">${status.plan}</span></p>
-        ${status.price ? `<p><strong>Price:</strong> ${status.price}</p>` : ''}
-        <p id="account-subscription-renew" style="${status.expires_at ? '' : 'display: none;'}"><strong>Renews:</strong> <span id="account-subscription-renew-date">${status.expires_at ? new Date(status.expires_at).toLocaleDateString() : ''}</span></p>
+        <p><strong>Plan:</strong> <span id="account-subscription-plan">${displayPlan}</span></p>
+        <p><strong>Price:</strong> <span id="account-subscription-price">${displayPrice}</span></p>
+        <p id="account-subscription-renew" style="${status.expires_at ? '' : 'display: none;'}"><strong>${isPromo ? 'Access ends:' : 'Renews:'}</strong> <span id="account-subscription-renew-date">${status.expires_at ? new Date(status.expires_at).toLocaleDateString() : ''}</span></p>
       </div>
-      <p class="text-muted">BoatMatey subscription includes 2 active boats, 5 archived boats, unlimited engines, service entries, and uploads.</p>
+      <p class="text-muted">BoatMatey subscription includes 5 active boats, unlimited archived boats, unlimited engines, service entries, and uploads.</p>
       <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.75rem;">
         <div id="account-subscribe-restore-buttons" style="${showSubscribeAndRestore ? '' : 'display: none;'}">
           <button class="btn-primary" id="subscribe-btn" style="width: 100%;">
@@ -188,19 +192,27 @@ async function onMount() {
   refreshSubscriptionStatus().then(() => {
     const status = getSubscriptionStatus();
     const isActive = hasActiveSubscription();
+    const isPromo = status.isPromo === true;
+    const displayPlan = status.plan ?? 'None';
+    const displayPrice = isPromo ? 'Free' : (status.price ?? '—');
+    const statusBadgeText = isActive ? (isPromo ? 'ACTIVE (Promo)' : 'ACTIVE') : 'INACTIVE';
 
     const statusBadge = document.getElementById('account-subscription-badge');
     if (statusBadge) {
-      statusBadge.textContent = isActive ? 'Active' : 'Not Active';
+      statusBadge.textContent = statusBadgeText;
       statusBadge.className = `badge ${isActive ? 'badge-success' : 'badge-warning'}`;
     }
     const planEl = document.getElementById('account-subscription-plan');
-    if (planEl) planEl.textContent = status.plan;
+    if (planEl) planEl.textContent = displayPlan;
+    const priceEl = document.getElementById('account-subscription-price');
+    if (priceEl) priceEl.textContent = displayPrice;
     const renewEl = document.getElementById('account-subscription-renew');
     const renewDateEl = document.getElementById('account-subscription-renew-date');
     if (renewEl && renewDateEl) {
       if (status.expires_at) {
         renewEl.style.display = '';
+        const label = renewEl.querySelector('strong');
+        if (label) label.textContent = isPromo ? 'Access ends: ' : 'Renews: ';
         renewDateEl.textContent = new Date(status.expires_at).toLocaleDateString();
       } else {
         renewEl.style.display = 'none';

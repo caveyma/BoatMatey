@@ -34,6 +34,7 @@ import authPage from './pages/auth.js';
 import subscriptionPage from './pages/subscription.js';
 import welcomePage from './pages/welcome.js';
 import hauloutPage from './pages/haulout.js';
+import projectsPage from './pages/projects.js';
 import calendarPage from './pages/calendar.js';
 import guidePage from './pages/guide.js';
 import sailsRiggingPage from './pages/sails-rigging.js';
@@ -41,6 +42,7 @@ import watermakerPage from './pages/watermaker.js';
 import fuelPage from './pages/fuel.js';
 import electricalPage from './pages/electrical.js';
 import maydayPage from './pages/mayday.js';
+import inventoryPage from './pages/inventory.js';
 
 /**
  * Initialize the app
@@ -62,6 +64,10 @@ export async function init() {
     route('/boat/:id/service/:entryId', servicePage);
     route('/boat/:id/haulout', hauloutPage);
     route('/boat/:id/haulout/:entryId', hauloutPage);
+    route('/boat/:id/projects', projectsPage);
+    route('/boat/:id/projects/:projectId', projectsPage);
+    route('/boat/:id/inventory', inventoryPage);
+    route('/boat/:id/inventory/:itemId', inventoryPage);
     route('/boat/:id/sails-rigging', sailsRiggingPage);
     route('/boat/:id/watermaker', watermakerPage);
     route('/boat/:id/watermaker/:entryId', watermakerPage);

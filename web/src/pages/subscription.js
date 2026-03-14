@@ -21,7 +21,7 @@ import {
 import { hasPendingSignup, getPendingSignupEmail, completeAccountCreation } from './auth.js';
 import { logInWithAppUserId } from '../services/revenuecat.js';
 import { Capacitor } from '@capacitor/core';
-import { PRIVACY_URL, TERMS_URL, EULA_URL, SUPPORT_URL, openExternalUrl } from '../lib/constants.js';
+import { PRIVACY_URL, TERMS_URL, EULA_URL, SUPPORT_URL, openExternalUrl, APP_STORE_URL, GOOGLE_PLAY_URL, APP_STORE_BADGE_URL, GOOGLE_PLAY_BADGE_URL } from '../lib/constants.js';
 
 function render() {
   const wrapper = document.createElement('div');
@@ -78,7 +78,7 @@ function render() {
       <div style="text-align: left; font-size: 0.9rem;">
         <div style="margin-bottom: 0.5rem; display: flex; align-items: center;">
           <span style="margin-right: 0.5rem;">✓</span>
-          <span>2 active boats + 5 archived boats</span>
+          <span>5 active boats + unlimited archive</span>
         </div>
         <div style="margin-bottom: 0.5rem; display: flex; align-items: center;">
           <span style="margin-right: 0.5rem;">✓</span>
@@ -138,11 +138,19 @@ function render() {
         <button type="button" class="btn-link legal-link" data-url="${EULA_URL}" style="padding: 0.25rem 0; font-size: inherit; color: var(--bm-teal); text-decoration: underline; background: none; border: none; cursor: pointer;">Apple EULA</button>
       </div>
       <div style="background: #f0f8ff; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
-        <p style="margin: 0; color: #1e5a8e; font-size: 0.9rem; text-align: center;">
-          <strong>Note:</strong> Subscriptions can only be purchased from the Android or iOS app.
+        <p style="margin: 0 0 0.75rem; color: #1e5a8e; font-size: 0.9rem; text-align: center;">
+          <strong>Complete your purchase in the app.</strong> Download BoatMatey on your device, then subscribe inside the app.
         </p>
+        <div class="subscription-store-buttons" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 12px;">
+          <a href="${APP_STORE_URL}" target="_blank" rel="noopener" class="subscription-store-btn" style="display: flex; align-items: center; justify-content: center; background: transparent;">
+            <img src="${APP_STORE_BADGE_URL}" alt="Download on the App Store" style="height: 40px; width: auto; display: block;">
+          </a>
+          <a href="${GOOGLE_PLAY_URL}" target="_blank" rel="noopener" class="subscription-store-btn" style="display: flex; align-items: center; justify-content: center; background: transparent;">
+            <img src="${GOOGLE_PLAY_BADGE_URL}" alt="Get it on Google Play" style="height: 54px; width: auto; display: block;">
+          </a>
+        </div>
       </div>
-      
+
       <button type="button" class="btn-secondary" id="cancel-btn" style="width: 100%; padding: 0.75rem;">
         ← Back
       </button>
@@ -161,7 +169,7 @@ function render() {
         <p style="margin: 0 0 0.5rem;"><strong>When am I charged?</strong> After your 1‑month free trial. You can cancel before the trial ends and won’t be charged.</p>
         <p style="margin: 0 0 0.5rem;"><strong>How do I cancel?</strong> Open your device Settings → Subscriptions (or App Store / Play Store subscriptions), find BoatMatey and cancel. Access continues until the end of the current period.</p>
         <p style="margin: 0 0 0.5rem;"><strong>What if I already have an account?</strong> Tap “Restore Purchases” to link this device to your existing subscription.</p>
-        <p style="margin: 0;"><strong>What’s included?</strong> 2 active boats, 5 archived boats, unlimited engines and equipment, service history, logbook, calendar and cloud sync.</p>
+        <p style="margin: 0;"><strong>What’s included?</strong> 5 active boats, unlimited archived boats, unlimited engines and equipment, service history, logbook, calendar and cloud sync.</p>
       </div>
     </details>
 

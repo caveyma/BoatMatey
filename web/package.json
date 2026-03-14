@@ -14,14 +14,17 @@
     "vite": "^7.2.4"
   },
   "dependencies": {
-    "@capacitor/camera": "^8.0.0",
-    "@capacitor/local-notifications": "^8.0.0",
-    "@capacitor/splash-screen": "^8.0.0",
-    "@revenuecat/purchases-capacitor": "^12.0.5",
     "@capacitor/android": "^8.0.1",
+    "@capacitor/camera": "^8.0.0",
     "@capacitor/cli": "^8.0.1",
     "@capacitor/core": "^8.0.1",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/local-notifications": "^8.0.0",
+    "@capacitor/share": "^8.0.1",
+    "@capacitor/splash-screen": "^8.0.0",
+    "@revenuecat/purchases-capacitor": "^12.0.5",
     "@supabase/supabase-js": "^2.93.1",
-    "canvas": "^3.2.1"
+    "canvas": "^3.2.1",
+    "jspdf": "^4.2.0"
   }
 }

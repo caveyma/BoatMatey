@@ -41,14 +41,14 @@ function getActiveEntitlement(customerInfo) {
 let initialized = false;
 
 // Internal cache of the current subscription state.
-// Default active: true for web (no paywall). Native must not default to true or users
-// can get in without subscribing when RevenueCat isn't ready or throws.
+// Default inactive/None until profile or RevenueCat is loaded; nulls must never result in ACTIVE.
 function getDefaultSubscriptionState() {
-  const isNative = Capacitor.isNativePlatform?.() ?? false;
   return {
-    active: !isNative,
-    plan: isNative ? 'None' : 'BoatMatey Yearly',
-    price: DISPLAY_PRICE,
+    active: false,
+    isPromo: false,
+    promo_source: null,
+    plan: 'None',
+    price: null,
     expires_at: null
   };
 }
@@ -66,7 +66,7 @@ export async function initSubscription() {
   // For web / dev server we keep the previous "always-active" behaviour.
   if (!isNative) {
     initialized = true;
-    console.log('[Subscription] Web/dev mode – treating subscription as always active.');
+    console.log('[Subscription] Web: subscription state from profile (no RevenueCat).');
     return;
   }
 
@@ -94,6 +94,8 @@ export async function initSubscription() {
 /**
  * Fetch subscription status from the user's Supabase profile (source of truth when signed in).
  * Returns null if no session or no profile; otherwise { active, plan, expires_at }.
+ * Premium/active is determined only by subscription_status: if it is 'active' the user has premium.
+ * If subscription_status is 'expired', 'inactive', or null, the user does not have premium.
  */
 async function getSubscriptionFromProfile() {
   if (!supabase) return null;
@@ -102,16 +104,23 @@ async function getSubscriptionFromProfile() {
   try {
     const { data: profile, error } = await supabase
       .from('profiles')
-      .select('subscription_status, subscription_plan, subscription_expires_at')
+      .select('subscription_status, subscription_plan, subscription_expires_at, promo_access_until, promo_source, access_until')
       .eq('id', session.user.id)
       .maybeSingle();
     if (error || !profile) return null;
-    const expiresAt = profile.subscription_expires_at ? new Date(profile.subscription_expires_at) : null;
-    const active = profile.subscription_status === 'active' && (!expiresAt || expiresAt > new Date());
+    const status = (profile.subscription_status || '').toLowerCase();
+    const active = status === 'active';
+    const rcExpiresAt = profile.subscription_expires_at ? new Date(profile.subscription_expires_at) : null;
+    const promoUntil = profile.promo_access_until ? new Date(profile.promo_access_until) : null;
+    const accessUntilCol = profile.access_until ? new Date(profile.access_until) : null;
+    const latestUntil = [rcExpiresAt, promoUntil, accessUntilCol].filter(Boolean).sort((a, b) => b - a)[0] ?? null;
+    const isPromo = active && (profile.promo_source || (promoUntil && promoUntil > new Date()) || (accessUntilCol && accessUntilCol > new Date()));
     return {
       active,
-      plan: profile.subscription_plan || (active ? 'BoatMatey Yearly' : 'None'),
-      expires_at: profile.subscription_expires_at ?? null
+      isPromo: !!isPromo,
+      promo_source: profile.promo_source || null,
+      plan: profile.subscription_plan ?? 'None',
+      expires_at: latestUntil ? latestUntil.toISOString() : null
     };
   } catch (e) {
     console.warn('[Subscription] Failed to get profile subscription:', e);
@@ -127,13 +136,18 @@ async function getSubscriptionFromProfile() {
 export async function refreshSubscriptionStatus() {
   const isNative = Capacitor.isNativePlatform?.() ?? false;
   if (!isNative) {
-    // Web: no RevenueCat; keep always-active but load renewal date from profile when signed in
     const profileSub = await getSubscriptionFromProfile();
-    if (profileSub?.expires_at) {
+    if (profileSub) {
       subscriptionState = {
-        ...subscriptionState,
+        active: profileSub.active,
+        isPromo: profileSub.isPromo || false,
+        promo_source: profileSub.promo_source || null,
+        plan: profileSub.plan,
+        price: profileSub.isPromo ? null : (profileSub.active ? DISPLAY_PRICE : null),
         expires_at: profileSub.expires_at
       };
+    } else {
+      subscriptionState = { active: false, isPromo: false, promo_source: null, plan: 'None', price: null, expires_at: null };
     }
     return subscriptionState;
   }
@@ -163,6 +177,8 @@ export async function refreshSubscriptionStatus() {
 
     subscriptionState = {
       active: rcActive,
+      isPromo: false,
+      promo_source: null,
       plan: rcActive ? 'BoatMatey Yearly' : 'None',
       price: DISPLAY_PRICE,
       expires_at: entitlement?.expirationDate ?? null
@@ -175,8 +191,10 @@ export async function refreshSubscriptionStatus() {
       if (useProfile) {
         subscriptionState = {
           active: true,
-          plan: profileSub.plan || 'BoatMatey Yearly',
-          price: DISPLAY_PRICE,
+          isPromo: profileSub.isPromo || false,
+          promo_source: profileSub.promo_source || null,
+          plan: profileSub.plan ?? 'None',
+          price: profileSub.isPromo ? null : DISPLAY_PRICE,
           expires_at: profileSub.expires_at ?? subscriptionState.expires_at
         };
         console.log('[Subscription] Using profile subscription (active, expires:', subscriptionState.expires_at, ')');
@@ -189,8 +207,10 @@ export async function refreshSubscriptionStatus() {
     if (profileSub?.active) {
       subscriptionState = {
         active: true,
-        plan: profileSub.plan || 'BoatMatey Yearly',
-        price: DISPLAY_PRICE,
+        isPromo: profileSub.isPromo || false,
+        promo_source: profileSub.promo_source || null,
+        plan: profileSub.plan ?? 'None',
+        price: profileSub.isPromo ? null : DISPLAY_PRICE,
         expires_at: profileSub.expires_at ?? null
       };
       console.log('[Subscription] Using profile subscription after RevenueCat failure');
@@ -340,6 +360,14 @@ export function hasActiveSubscription() {
 }
 
 /**
+ * Active boat limit for current plan. Free = 1, Premium = 5.
+ * Used for Add Boat and reactivate checks.
+ */
+export function getActiveBoatLimit() {
+  return hasActiveSubscription() ? 5 : 1;
+}
+
+/**
  * Get a human-friendly subscription status object for UI.
  */
 export function getSubscriptionStatus() {
@@ -348,13 +376,13 @@ export function getSubscriptionStatus() {
 
 /**
  * Subscription limits for BoatMatey
- * - 2 active boats
- * - 5 archived boats
+ * - 5 active boats (Premium)
+ * - Unlimited archived boats
  * - Unlimited engines, service entries, equipment, etc.
  */
 const LIMITS = {
-  active_boats: 2,
-  archived_boats: 5,
+  active_boats: 5,
+  archived_boats: Infinity,
   engines: Infinity,
   service_entries: Infinity,
   equipment: Infinity,
@@ -369,9 +397,9 @@ const LIMITS = {
  * @returns {{ allowed: boolean, limit: number, current: number, remaining: number }}
  */
 export function checkLimit(resourceType, currentCount) {
-  const limit = LIMITS[resourceType] ?? Infinity;
+  const limit = resourceType === 'active_boats' ? getActiveBoatLimit() : (LIMITS[resourceType] ?? Infinity);
   const remaining = Math.max(0, limit - currentCount);
-  
+
   return {
     allowed: currentCount < limit,
     limit: limit,
@@ -386,12 +414,12 @@ export function checkLimit(resourceType, currentCount) {
  * @returns {{ limit: number, label: string }}
  */
 export function getLimitInfo(resourceType) {
-  const limit = LIMITS[resourceType] ?? Infinity;
-  
+  const limit = resourceType === 'active_boats' ? getActiveBoatLimit() : (LIMITS[resourceType] ?? Infinity);
+
   if (limit === Infinity) {
     return { limit: Infinity, label: 'Unlimited' };
   }
-  
+
   return { limit: limit, label: `${limit}` };
 }
 
@@ -399,9 +427,11 @@ export function getLimitInfo(resourceType) {
  * Get all limits for display
  */
 export function getAllLimits() {
+  const activeLimit = getActiveBoatLimit();
+  const archivedLabel = LIMITS.archived_boats === Infinity ? 'Unlimited archived boats' : `${LIMITS.archived_boats} archived boats`;
   return {
-    activeBoats: { limit: LIMITS.active_boats, label: `${LIMITS.active_boats} active boats` },
-    archivedBoats: { limit: LIMITS.archived_boats, label: `${LIMITS.archived_boats} archived boats` },
+    activeBoats: { limit: activeLimit, label: `${activeLimit} active boat${activeLimit !== 1 ? 's' : ''}` },
+    archivedBoats: { limit: LIMITS.archived_boats, label: archivedLabel },
     engines: { limit: LIMITS.engines, label: 'Unlimited engines' },
     serviceEntries: { limit: LIMITS.service_entries, label: 'Unlimited service entries' },
     equipment: { limit: LIMITS.equipment, label: 'Unlimited equipment' },

@@ -12,6 +12,8 @@ const STORAGE_KEYS = {
   SAFETY_EQUIPMENT: 'boatmatey_safety_equipment', // Scoped by boat_id
   SHIPS_LOG: 'boatmatey_ships_log', // Scoped by boat_id
   LINKS: 'boatmatey_links', // Scoped by boat_id
+  PROJECTS: 'boatmatey_projects', // Scoped by boat_id
+  INVENTORY: 'boatmatey_inventory', // Scoped by boat_id
   UPLOADS: 'boatmatey_uploads', // Scoped by boat_id
   CALENDAR_EVENTS: 'boatmatey_calendar_events', // Scoped by boat_id
   SETTINGS: 'boatmatey_settings'
@@ -122,7 +124,13 @@ export const boatsStorage = {
     
     const links = linksStorage.getAll().filter(l => l.boat_id !== boatId);
     storage.set(STORAGE_KEYS.LINKS, links);
-    
+
+    const projects = projectsStorage.getAll().filter(p => p.boat_id !== boatId);
+    storage.set(STORAGE_KEYS.PROJECTS, projects);
+
+    const inventory = inventoryStorage.getAll().filter(i => i.boat_id !== boatId);
+    storage.set(STORAGE_KEYS.INVENTORY, inventory);
+
     const uploads = uploadsStorage.getAll().filter(u => u.boat_id !== boatId);
     storage.set(STORAGE_KEYS.UPLOADS, uploads);
   }
@@ -506,6 +514,104 @@ export const linksStorage = {
     const all = this.getAll().filter(l => l.boat_id !== boatId);
     const withBoatId = (links || []).map(l => ({ ...l, boat_id: boatId }));
     return storage.set(STORAGE_KEYS.LINKS, all.concat(withBoatId));
+  }
+};
+
+/**
+ * Projects operations (scoped by boat_id)
+ * Planned or in-progress boat projects/upgrades/refit.
+ */
+export const projectsStorage = {
+  getAll(boatId = null) {
+    const all = storage.get(STORAGE_KEYS.PROJECTS, []);
+    if (boatId) {
+      return all.filter(p => p.boat_id === boatId);
+    }
+    return all;
+  },
+
+  get(id) {
+    const projects = this.getAll();
+    return projects.find(p => p.id === id) || null;
+  },
+
+  save(entry, boatId = null) {
+    const entries = this.getAll();
+    if (entry.id) {
+      const index = entries.findIndex(e => e.id === entry.id);
+      if (index >= 0) {
+        entries[index] = { ...entry, updated_at: new Date().toISOString() };
+      } else {
+        entries.push({ ...entry, boat_id: boatId || entry.boat_id, created_at: new Date().toISOString() });
+      }
+    } else {
+      entry.id = `project_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      entry.boat_id = boatId || entry.boat_id;
+      entry.created_at = new Date().toISOString();
+      entries.push(entry);
+    }
+    return storage.set(STORAGE_KEYS.PROJECTS, entries);
+  },
+
+  delete(id) {
+    const entries = this.getAll();
+    const filtered = entries.filter(e => e.id !== id);
+    return storage.set(STORAGE_KEYS.PROJECTS, filtered);
+  },
+
+  replaceForBoat(boatId, entries) {
+    const all = this.getAll().filter(e => e.boat_id !== boatId);
+    const withBoatId = (entries || []).map(e => ({ ...e, boat_id: boatId }));
+    return storage.set(STORAGE_KEYS.PROJECTS, all.concat(withBoatId));
+  }
+};
+
+/**
+ * Inventory operations (scoped by boat_id)
+ * Onboard stock with required level, in-stock level, low-stock alerts.
+ */
+export const inventoryStorage = {
+  getAll(boatId = null) {
+    const all = storage.get(STORAGE_KEYS.INVENTORY, []);
+    if (boatId) {
+      return all.filter(i => i.boat_id === boatId);
+    }
+    return all;
+  },
+
+  get(id) {
+    const items = this.getAll();
+    return items.find(i => i.id === id) || null;
+  },
+
+  save(item, boatId = null) {
+    const items = this.getAll();
+    if (item.id) {
+      const index = items.findIndex(i => i.id === item.id);
+      if (index >= 0) {
+        items[index] = { ...item, updated_at: new Date().toISOString() };
+      } else {
+        items.push({ ...item, boat_id: boatId || item.boat_id, created_at: new Date().toISOString() });
+      }
+    } else {
+      item.id = `inventory_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      item.boat_id = boatId || item.boat_id;
+      item.created_at = new Date().toISOString();
+      items.push(item);
+    }
+    return storage.set(STORAGE_KEYS.INVENTORY, items);
+  },
+
+  delete(id) {
+    const items = this.getAll();
+    const filtered = items.filter(i => i.id !== id);
+    return storage.set(STORAGE_KEYS.INVENTORY, filtered);
+  },
+
+  replaceForBoat(boatId, items) {
+    const all = this.getAll().filter(i => i.boat_id !== boatId);
+    const withBoatId = (items || []).map(i => ({ ...i, boat_id: boatId }));
+    return storage.set(STORAGE_KEYS.INVENTORY, all.concat(withBoatId));
   }
 };
 

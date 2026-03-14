@@ -168,12 +168,12 @@ export function render(params = {}) {
     </div>
 
     <div class="card guide-section guide-section-log">
-      <h3>Ship&apos;s Log</h3>
-      <p><strong>What it is:</strong> A simple logbook of trips and passages: dates, departure and arrival, engine hours, distance and notes. Over time it builds a history you can use for planning, surveys or when selling the boat.</p>
+      <h3>Passage Log</h3>
+      <p><strong>What it is:</strong> A logbook for passages from a few hours to many days—coastal hops, island hops, or ocean crossings. Record start and end dates, departure and arrival, passage type (motor, sail, or both), optional engine hours, distance and notes. Works for motorboats and sailing boats.</p>
       <p><strong>How to use it:</strong></p>
       <ul>
-        <li>Tap Ship&apos;s Log, then <strong>Add trip</strong>.</li>
-        <li>Enter departure and arrival (date/time or place), engine hours, distance and any notes.</li>
+        <li>Tap <strong>Passage Log</strong>, then <strong>Add Passage</strong>.</li>
+        <li>Enter start date and optionally end date for multi-day passages. Choose passage type (Motor, Sail, or Motor &amp; Sail), departure and arrival, engine hours if applicable, distance and notes.</li>
       </ul>
     </div>
 

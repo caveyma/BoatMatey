@@ -42,7 +42,7 @@ function getStatusText(cardId) {
     
     case 'log':
       const logs = shipsLogStorage.getAll();
-      return `${logs.length} trip${logs.length !== 1 ? 's' : ''}`;
+      return `${logs.length} passage${logs.length !== 1 ? 's' : ''}`;
     
     case 'links':
       const links = linksStorage.getAll();
@@ -135,7 +135,7 @@ function render() {
     { id: 'service', title: 'Service History', icon: 'wrench', route: '/service' },
     { id: 'navigation', title: 'Navigation Equipment', icon: 'compass', route: '/navigation' },
     { id: 'safety', title: 'Safety Equipment', icon: 'shield', route: '/safety' },
-    { id: 'log', title: "Ship's Log", icon: 'book', route: '/log' },
+    { id: 'log', title: 'Passage Log', icon: 'book', route: '/log' },
     { id: 'links', title: 'Web Links', icon: 'link', route: '/links' }
   ];
 

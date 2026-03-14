@@ -21,6 +21,8 @@
   --card-fuel: #E8A838;        /* Amber / fuel */
   --card-electrical: #5B8DEE;  /* Blue / electrical */
   --card-mayday: #C44536;      /* Red / distress */
+  --card-projects: #2D7D6E;   /* Teal / planning */
+  --card-inventory: #6B5B95;  /* Muted purple / stock */
 }
 
 /* Card color classes */
@@ -40,6 +42,8 @@
 .card-color-fuel { --card-color: var(--card-fuel); }
 .card-color-electrical { --card-color: var(--card-electrical); }
 .card-color-mayday { --card-color: var(--card-mayday); }
+.card-color-projects { --card-color: var(--card-projects); }
+.card-color-inventory { --card-color: var(--card-inventory); }
 
 
 /* Inner page background colours (solid soft pastel) */
@@ -59,3 +63,5 @@ body.page-color-watermaker { --page-bg: color-mix(in srgb, var(--card-watermaker
 body.page-color-fuel { --page-bg: color-mix(in srgb, var(--card-fuel) 30%, white); }
 body.page-color-electrical { --page-bg: color-mix(in srgb, var(--card-electrical) 30%, white); }
 body.page-color-mayday { --page-bg: color-mix(in srgb, var(--card-mayday) 30%, white); }
+body.page-color-projects { --page-bg: color-mix(in srgb, var(--card-projects) 30%, white); }
+body.page-color-inventory { --page-bg: color-mix(in srgb, var(--card-inventory) 30%, white); }
