@@ -80,25 +80,36 @@ export async function exportBoatReport(boatId) {
     const isNative = Capacitor.isNativePlatform?.() ?? false;
 
     if (isNative) {
-      // Mobile: write to cache and share via Capacitor Share
-      const { Filesystem, Directory } = await import('@capacitor/filesystem');
-      const { Share } = await import('@capacitor/share');
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-      const path = `BoatMatey/${filename}`;
-      await Filesystem.writeFile({
-        path,
-        data: base64,
-        directory: Directory.Cache,
-        recursive: true
-      });
-      const { uri } = await Filesystem.getUri({ path, directory: Directory.Cache });
-      await Share.share({
-        title: 'Boat Report',
-        text: `Boat report for ${data.boat.boat_name || 'boat'}`,
-        url: uri,
-        dialogTitle: 'Share boat report'
-      });
-      return { success: true };
+      try {
+        // Mobile: write to cache and share via Capacitor Share
+        const { Filesystem, Directory } = await import('@capacitor/filesystem');
+        const { Share } = await import('@capacitor/share');
+        const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+        const path = `BoatMatey/${filename}`;
+        await Filesystem.writeFile({
+          path,
+          data: base64,
+          directory: Directory.Cache,
+          recursive: true
+        });
+        const { uri } = await Filesystem.getUri({ path, directory: Directory.Cache });
+        await Share.share({
+          title: 'Boat Report',
+          text: `Boat report for ${data.boat.boat_name || 'boat'}`,
+          url: uri,
+          dialogTitle: 'Share boat report'
+        });
+        return { success: true };
+      } catch (nativeErr) {
+        // Filesystem plugin is not available in iOS Simulator (and some environments).
+        // Fall back to browser-style download so export still works when testing.
+        const msg = nativeErr?.message || '';
+        if (msg.includes('not implemented') || msg.includes('Filesystem')) {
+          downloadPdf(arrayBuffer, filename);
+          return { success: true };
+        }
+        throw nativeErr;
+      }
     }
 
     // Web: download

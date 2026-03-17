@@ -36,6 +36,7 @@
     .cta-store img { height: 40px; width: auto; display: block; }
     .cta-store-google img { height: 54px; width: auto; display: block; }
     .cta-store:hover { opacity: 0.9; }
+    body.native-app .cta-store { display: none !important; }
     .hero-benefits { list-style: none; padding: 0; margin: 0; color: var(--color-text-light); font-size: 0.95rem; }
     .hero-benefits li { position: relative; padding-left: 1.25rem; margin-bottom: 0.5rem; }
     .hero-benefits li::before { content: "✓"; position: absolute; left: 0; color: var(--bm-teal); font-weight: 700; }
@@ -214,6 +215,10 @@
       }
 
       document.addEventListener('DOMContentLoaded', function() {
+        if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+          document.body.classList.add('native-app');
+        }
+
         var startTrialTop = document.getElementById('cta-start-trial');
         var startTrialVideo = document.getElementById('cta-start-trial-video');
         var startTrialFooter = document.getElementById('cta-start-trial-footer');
