@@ -27,6 +27,8 @@ import {
   LIMITED_UPLOADS_PER_ENTITY
 } from '../lib/uploads.js';
 import { uploadsStorage } from '../lib/storage.js';
+import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
+import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 
 const INVENTORY_CATEGORIES = [
   'Engine',
@@ -164,6 +166,11 @@ async function onMount(params = {}) {
   if (itemId) {
     editingId = itemId === 'new' ? `inventory_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` : itemId;
     await showInventoryForm();
+    insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-inventory'), {
+      headline: 'Preview: Inventory',
+      detail:
+        'Track spares and stores here. Tap Save when ready — Premium is required to keep inventory on your boat.'
+    });
     return;
   }
 
@@ -203,6 +210,12 @@ async function onMount(params = {}) {
     if (el) el.addEventListener('change', () => loadInventory());
   });
   if (searchEl) searchEl.addEventListener('input', () => loadInventory());
+
+  insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-inventory'), {
+    headline: 'Preview: Inventory',
+    detail:
+      'Track spares and stores here. Tap Save when ready — Premium is required to keep inventory on your boat.'
+  });
 
   loadInventory();
 }
@@ -474,6 +487,7 @@ async function showInventoryForm() {
   document.getElementById('inventory-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = document.getElementById('inventory-save-btn');
+    if (blockPremiumSaveIfNeeded()) return;
     setSaveButtonLoading(btn, true);
 
     const payload = {

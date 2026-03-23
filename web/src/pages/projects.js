@@ -21,6 +21,8 @@ import {
   LIMITED_UPLOAD_SIZE_BYTES,
   LIMITED_UPLOADS_PER_ENTITY
 } from '../lib/uploads.js';
+import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
+import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 
 const CATEGORIES = ['Electronics', 'Mechanical', 'Plumbing', 'Electrical', 'Hull / Deck', 'Interior', 'Safety', 'Other'];
 const STATUSES = ['Idea', 'Planning', 'Parts Ordered', 'Scheduled', 'In Progress', 'Completed', 'Cancelled'];
@@ -151,6 +153,11 @@ async function onMount(params = {}) {
   if (projectId) {
     editingId = projectId === 'new' ? `project_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` : projectId;
     await showProjectForm();
+    insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-projects'), {
+      headline: 'Preview: Projects',
+      detail:
+        'Plan refits and jobs here. Tap Save when ready — Premium is required to keep your projects and attachments.'
+    });
     return;
   }
 
@@ -195,6 +202,12 @@ async function onMount(params = {}) {
   if (filterPriorityEl) filterPriorityEl.addEventListener('change', () => { filterPriority = filterPriorityEl.value; loadProjects(); });
   if (filterCategoryEl) filterCategoryEl.addEventListener('change', () => { filterCategory = filterCategoryEl.value; loadProjects(); });
   if (sortByEl) sortByEl.addEventListener('change', () => { sortBy = sortByEl.value; loadProjects(); });
+
+  insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-projects'), {
+    headline: 'Preview: Projects',
+    detail:
+      'Plan refits and jobs here. Tap Save when ready — Premium is required to keep your projects and attachments.'
+  });
 
   loadProjects();
 }
@@ -507,6 +520,7 @@ async function showProjectForm() {
       showToast('Project name is required', 'error');
       return;
     }
+    if (blockPremiumSaveIfNeeded()) return;
     setSaveButtonLoading(saveBtn, true);
     try {
       const isNew = !existing || existing.id !== editingId;

@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient.js';
-import { getActiveBoatLimit } from './subscription.js';
+import { getActiveBoatLimit, hasActiveSubscription } from './subscription.js';
 import {
   boatsStorage,
   enginesStorage,
@@ -757,7 +757,22 @@ export async function createServiceEntry(boatId, entry) {
   if (await isBoatArchived(boatId)) return null;
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
+    if (!hasActiveSubscription()) {
+      const n = serviceHistoryStorage.getAll(boatId).length;
+      if (n >= 1) return null;
+    }
     return serviceHistoryStorage.save(entry, boatId);
+  }
+
+  if (!hasActiveSubscription()) {
+    const { count, error: countErr } = await supabase
+      .from('service_entries')
+      .select('id', { count: 'exact', head: true })
+      .eq('boat_id', boatId)
+      .eq('owner_id', session.user.id);
+    if (!countErr && (count ?? 0) >= 1) {
+      return null;
+    }
   }
 
   // Store full entry as JSON in description so checklist, mode, diy_meta, pro_meta, etc. are persisted
@@ -1532,6 +1547,9 @@ export async function getCalendarEvents(boatId) {
 
 export async function createCalendarEvent(boatId, payload) {
   if (await isBoatArchived(boatId)) return null;
+  if (!hasActiveSubscription()) {
+    return null;
+  }
   const session = await getSession();
   const dbPayload = {
     boat_id: boatId,
@@ -1568,6 +1586,9 @@ export async function createCalendarEvent(boatId, payload) {
 }
 
 export async function updateCalendarEvent(eventId, payload) {
+  if (!hasActiveSubscription()) {
+    return;
+  }
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
     const existing = calendarEventsStorage.get(eventId) || { id: eventId };
@@ -1596,6 +1617,9 @@ export async function updateCalendarEvent(eventId, payload) {
 }
 
 export async function deleteCalendarEvent(eventId) {
+  if (!hasActiveSubscription()) {
+    return;
+  }
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
     calendarEventsStorage.delete(eventId);

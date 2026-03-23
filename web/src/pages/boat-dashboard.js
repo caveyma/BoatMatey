@@ -10,6 +10,21 @@ import { showToast } from '../components/toast.js';
 import { getBoat, getEngines, getServiceEntries, getHaulouts, getProjects, getInventory, getEquipment, getLogbook, getLinks, getFuelLogs, getBatteries, getBoatElectrical, getBoatDistressInfo } from '../lib/dataService.js';
 import { boatsStorage, enginesStorage, serviceHistoryStorage, hauloutStorage, projectsStorage, inventoryStorage, navEquipmentStorage, safetyEquipmentStorage, shipsLogStorage, linksStorage } from '../lib/storage.js';
 import { canAccessCard, shouldShowPremiumBadge, canAccessPremiumFeature } from '../lib/access.js';
+import { hasActiveSubscription } from '../lib/subscription.js';
+
+/** Short benefit-led line for premium-locked dashboard cards (free users). */
+const PREMIUM_CARD_TEASER = {
+  fuel: 'Monitor fuel usage and performance',
+  electrical: 'Track batteries and avoid failures',
+  haulout: 'Plan and track haul-out work',
+  projects: 'Plan refits and onboard jobs',
+  inventory: 'Spares and stores with low-stock alerts',
+  navigation: 'Navigation kit and warranty dates',
+  safety: 'Safety gear, inspections and expiry dates',
+  log: 'Log your trips and journeys',
+  watermaker: 'Service history for your watermaker',
+  'sails-rigging': 'Sails, rigging and deck hardware'
+};
 import { exportBoatReport } from '../lib/exportBoatReport.js';
 
 const serviceIconUrl = new URL('../assets/service-wrench.png', import.meta.url).href;
@@ -116,12 +131,11 @@ function getStatusText(cardId, boatId) {
 function createCard(id, title, iconName, route, boatId) {
   const isLocked = shouldShowPremiumBadge(id);
   const card = document.createElement('a');
-  card.href = isLocked ? '#/subscription' : `#${route}`;
+  card.href = `#${route}`;
   card.className = `dashboard-card card-color-${id}` + (isLocked ? ' dashboard-card-premium-locked' : '');
   card.onclick = (e) => {
     e.preventDefault();
-    if (canAccessCard(id)) navigate(route);
-    else navigate('/subscription');
+    navigate(route);
   };
 
   const useBitmapImage = id === 'boat' || id === 'service' || id === 'haulout' || id === 'engines' || id === 'navigation' || id === 'safety' || id === 'log' || id === 'links' || id === 'watermaker' || id === 'sails-rigging' || id === 'mayday' || id === 'fuel' || id === 'electrical' || id === 'projects' || id === 'inventory';
@@ -166,11 +180,14 @@ function createCard(id, title, iconName, route, boatId) {
   }
 
   card.setAttribute('data-card-id', id);
+  const statusLine =
+    isLocked && PREMIUM_CARD_TEASER[id] ? PREMIUM_CARD_TEASER[id] : getStatusText(id, boatId);
+
   card.innerHTML = `
     <div class="${badgeClass}">${iconHtml}</div>
-    ${isLocked ? '<span class="dashboard-card-premium-badge" aria-label="Premium feature">Premium</span>' : ''}
+    ${isLocked ? '<span class="dashboard-card-premium-badge" title="Available with Premium — try it first" aria-label="Premium feature">Premium Feature</span>' : ''}
     <div class="dashboard-card-title">${title}</div>
-    <div class="dashboard-card-status">${getStatusText(id, boatId)}</div>
+    <div class="dashboard-card-status">${statusLine}</div>
   `;
 
   return card;
@@ -221,6 +238,10 @@ function render() {
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content';
   pageContent.appendChild(createBackButton());
+
+  const onboardingHost = document.createElement('div');
+  onboardingHost.id = 'boat-dashboard-onboarding';
+  pageContent.appendChild(onboardingHost);
 
   if (isArchived) {
     const banner = document.createElement('div');
@@ -278,12 +299,80 @@ function render() {
   return wrapper;
 }
 
+function renderBoatDashboardOnboarding(boatId) {
+  const host = document.getElementById('boat-dashboard-onboarding');
+  if (!host || !boatId) return;
+  if (hasActiveSubscription()) {
+    host.innerHTML = '';
+    host.hidden = true;
+    return;
+  }
+  host.hidden = false;
+  const engines = enginesStorage.getAll(boatId);
+  const services = serviceHistoryStorage.getAll(boatId);
+  const hasEngine = engines.length > 0;
+  const hasService = services.length > 0;
+  const hasReminderFlow = services.some((s) => !!s.next_service_due);
+
+  const stepClass = (done) => (done ? 'dashboard-onboarding-step is-done' : 'dashboard-onboarding-step');
+
+  host.innerHTML = `
+    <div class="dashboard-onboarding card">
+      <h3 class="dashboard-onboarding-title">Get started</h3>
+      <ol class="dashboard-onboarding-list">
+        <li class="${stepClass(hasEngine)}">
+          <span class="dashboard-onboarding-label">Add your engine</span>
+          ${hasEngine ? '<span class="text-muted">Done</span>' : `<a href="#/boat/${boatId}/engines" class="btn-link dashboard-onboarding-link">Add engine</a>`}
+        </li>
+        <li class="${stepClass(hasService)}">
+          <span class="dashboard-onboarding-label">Log your first service</span>
+          ${hasService ? '<span class="text-muted">Done</span>' : `<a href="#/boat/${boatId}/service/new" class="btn-link dashboard-onboarding-link">Add service entry</a>`}
+        </li>
+        <li class="${stepClass(hasReminderFlow)}">
+          <span class="dashboard-onboarding-label">Set next due date &amp; reminder</span>
+          ${hasReminderFlow ? '<span class="text-muted">Done</span>' : hasService ? `<a href="#/boat/${boatId}/service/${services[0].id}" class="btn-link dashboard-onboarding-link">Open service entry</a>` : '<span class="text-muted">After you add a service</span>'}
+        </li>
+      </ol>
+      ${
+        hasReminderFlow
+          ? `
+      <p class="dashboard-onboarding-success">Service logged and reminder set.</p>
+      <p class="dashboard-onboarding-reinforcement">Your boat is now set up and being tracked</p>
+      <p style="margin-top: 0.75rem;"><a href="#/boat/${boatId}/reminder" class="btn-link dashboard-onboarding-reminder-link">View your reminder</a></p>
+      <div class="dashboard-onboarding-upgrade">
+        <p class="dashboard-onboarding-upgrade-text">Upgrade to track unlimited services, reminders and logs</p>
+        <button type="button" class="btn-primary dashboard-onboarding-trial-btn">Start Free Trial &amp; Keep Tracking</button>
+      </div>
+      `
+          : ''
+      }
+    </div>
+  `;
+
+  host.querySelectorAll('.dashboard-onboarding-link, .dashboard-onboarding-reminder-link').forEach((a) => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      const href = a.getAttribute('href') || '';
+      const path = href.replace(/^#/, '');
+      navigate(path);
+    });
+  });
+
+  const trialBtn = host.querySelector('.dashboard-onboarding-trial-btn');
+  if (trialBtn) {
+    trialBtn.addEventListener('click', () => navigate('/subscription'));
+  }
+}
+
 async function onMount() {
   const hash = window.location.hash;
   const match = hash.match(/\/boat\/([^\/]+)/);
   const boatId = match ? match[1] : null;
 
   if (boatId) {
+    try {
+      sessionStorage.setItem('bm_onboarding_context_boat', boatId);
+    } catch (_) {}
     const b = await getBoat(boatId);
     if (b) {
       boatsStorage.save(b);
@@ -325,19 +414,24 @@ async function onMount() {
     ];
     statusElements.forEach((el, index) => {
       if (cardIds[index]) {
-        el.textContent = getStatusText(cardIds[index], boatId);
+        const cid = cardIds[index];
+        if (!canAccessCard(cid) && PREMIUM_CARD_TEASER[cid]) {
+          el.textContent = PREMIUM_CARD_TEASER[cid];
+          return;
+        }
+        el.textContent = getStatusText(cid, boatId);
       }
     });
 
     const fuelCardStatus = document.querySelector('.dashboard-card[data-card-id="fuel"] .dashboard-card-status');
     const electricalCardStatus = document.querySelector('.dashboard-card[data-card-id="electrical"] .dashboard-card-status');
-    if (fuelCardStatus) {
+    if (fuelCardStatus && canAccessCard('fuel')) {
       const logs = await getFuelLogs(boatId);
       fuelCardStatus.textContent = logs.length > 0
         ? new Date(logs[0].log_date).toLocaleDateString()
         : 'No entries';
     }
-    if (electricalCardStatus) {
+    if (electricalCardStatus && canAccessCard('electrical')) {
       const batteries = await getBatteries(boatId);
       const hasElectrical = await getBoatElectrical(boatId);
       electricalCardStatus.textContent = batteries.length > 0
@@ -345,10 +439,12 @@ async function onMount() {
         : 'Not set';
     }
     const maydayCardStatus = document.querySelector('.dashboard-card[data-card-id="mayday"] .dashboard-card-status');
-    if (maydayCardStatus) {
+    if (maydayCardStatus && canAccessCard('mayday')) {
       const distressInfo = await getBoatDistressInfo(boatId);
       maydayCardStatus.textContent = distressInfo ? 'Ready' : 'Not set';
     }
+
+    renderBoatDashboardOnboarding(boatId);
 
     const inventoryCard = document.querySelector('.dashboard-card[data-card-id="inventory"]');
     if (inventoryCard) {

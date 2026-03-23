@@ -43,6 +43,7 @@ import fuelPage from './pages/fuel.js';
 import electricalPage from './pages/electrical.js';
 import maydayPage from './pages/mayday.js';
 import inventoryPage from './pages/inventory.js';
+import boatReminderPage from './pages/boat-reminder.js';
 
 /**
  * Initialize the app
@@ -62,6 +63,7 @@ export async function init() {
     route('/boat/:id/engines/:engineId', engineEditPage);
     route('/boat/:id/service', servicePage);
     route('/boat/:id/service/:entryId', servicePage);
+    route('/boat/:id/reminder', boatReminderPage);
     route('/boat/:id/haulout', hauloutPage);
     route('/boat/:id/haulout/:entryId', hauloutPage);
     route('/boat/:id/projects', projectsPage);

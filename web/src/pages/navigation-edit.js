@@ -11,6 +11,8 @@ import { confirmAction } from '../components/confirmModal.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getEquipment, createEquipment, updateEquipment } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
+import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
+import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 
 function render(params = {}) {
   const boatId = params?.id || window.routeParams?.id;
@@ -232,6 +234,7 @@ async function onMount(params = {}) {
   document.getElementById('nav-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (archived) return;
+    if (blockPremiumSaveIfNeeded()) return;
     const form = e.target;
     setSaveButtonLoading(form, true);
     try {
@@ -255,6 +258,12 @@ async function onMount(params = {}) {
     } finally {
       setSaveButtonLoading(form, false);
     }
+  });
+
+  insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-navigation'), {
+    headline: 'Preview: Navigation equipment',
+    detail:
+      'Add kit and warranty reminders here. Tap Save when ready — Premium is required to keep navigation equipment on file.'
   });
 }
 

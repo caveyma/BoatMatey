@@ -18,6 +18,8 @@ import {
   updateBattery,
   deleteBattery
 } from '../lib/dataService.js';
+import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
+import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 
 let currentBoatId = null;
 let electricalArchived = false;
@@ -222,6 +224,12 @@ async function onMount(params = {}) {
   }
 
   window.navigate = navigate;
+
+  insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-electrical'), {
+    headline: 'Preview: Electrical & Batteries',
+    detail:
+      'Add batteries and system details, then tap Save. Premium is required to store this data — you can explore the form first.'
+  });
 }
 
 async function loadElectrical() {
@@ -249,6 +257,7 @@ async function loadElectrical() {
 
 async function saveElectrical() {
   if (!currentBoatId) return;
+  if (blockPremiumSaveIfNeeded()) return;
   const form = document.getElementById('electrical-system-form');
   setSaveButtonLoading(form, true);
   try {
@@ -290,6 +299,10 @@ function openEditBattery(battery) {
 async function saveBatteryEntry() {
   const form = document.getElementById('battery-form');
   setSaveButtonLoading(form, true);
+  if (blockPremiumSaveIfNeeded()) {
+    setSaveButtonLoading(form, false);
+    return;
+  }
   const nameEl = document.getElementById('battery_name');
   if (!nameEl?.value?.trim()) {
     showToast('Battery name is required.', 'error');

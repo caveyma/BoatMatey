@@ -23,6 +23,8 @@ import {
   LIMITED_UPLOAD_SIZE_BYTES,
   LIMITED_UPLOADS_PER_ENTITY
 } from '../lib/uploads.js';
+import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
+import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 
 let editingId = null;
 let currentBoatId = null;
@@ -105,11 +107,22 @@ async function onMount(params = {}) {
   if (entryId) {
     editingId = entryId === 'new' ? `haulout_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` : entryId;
     await showHauloutForm();
+    insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-haulout'), {
+      headline: 'Preview: Haul-out maintenance',
+      detail:
+        'Fill in haul-out details and tap Save when ready. Premium is required to keep records and calendar reminders.'
+    });
     return;
   }
 
   const addBtn = document.getElementById('haulout-add-btn');
   if (addBtn && hauloutArchived) addBtn.style.display = 'none';
+
+  insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-haulout'), {
+    headline: 'Preview: Haul-out maintenance',
+    detail:
+        'Fill in haul-out details and tap Save when ready. Premium is required to keep records and calendar reminders.'
+  });
 
   hauloutFileInput = document.getElementById('haulout-file-input');
 
@@ -942,6 +955,7 @@ function initHauloutIssueToggles() {
 
 async function saveHaulout() {
   const form = document.getElementById('haulout-form');
+  if (blockPremiumSaveIfNeeded()) return;
   setSaveButtonLoading(form, true);
   const hauloutDate = document.getElementById('haulout_date').value;
   if (!hauloutDate) {

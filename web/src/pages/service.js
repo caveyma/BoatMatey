@@ -9,6 +9,10 @@ import { showToast } from '../components/toast.js';
 import { confirmAction } from '../components/confirmModal.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getServiceEntries, createServiceEntry, updateServiceEntry, deleteServiceEntry, getEngines } from '../lib/dataService.js';
+import { canAddAnotherServiceEntry, SERVICE_HISTORY_UPGRADE_MESSAGE } from '../lib/access.js';
+import { hasActiveSubscription } from '../lib/subscription.js';
+import { syncCalendarNotifications } from './calendar.js';
+import { showServiceHistoryLimitModal } from '../components/subscriptionUpsellModal.js';
 import { currencySymbol, CURRENCIES } from '../lib/currency.js';
 import { enginesStorage } from '../lib/storage.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
@@ -459,6 +463,20 @@ function sectionAppliesToEngine(sectionId, engine) {
   return fuelMatch && driveMatch;
 }
 
+function reminderLeadLabel(minutes) {
+  const m = Number(minutes);
+  if (!m || m <= 0) return '';
+  if (m === 5) return '5 minutes before';
+  if (m === 15) return '15 minutes before';
+  if (m === 30) return '30 minutes before';
+  if (m === 60) return '1 hour before';
+  if (m === 120) return '2 hours before';
+  if (m === 1440) return '1 day before';
+  if (m === 2880) return '2 days before';
+  if (m === 10080) return '1 week before';
+  return `${m} minutes before`;
+}
+
 function getDIYChecklistStats(entry) {
   const checklist = entry?.diy_checklist || {};
   let total = 0;
@@ -516,11 +534,25 @@ function render(params = {}) {
   filterContainer.className = 'page-actions';
   filterContainer.id = 'service-filter';
 
+  const freeLimitBanner = document.createElement('div');
+  freeLimitBanner.id = 'service-free-limit-banner';
+  freeLimitBanner.className = 'service-free-limit-banner';
+  freeLimitBanner.hidden = true;
+
   const addBtn = document.createElement('button');
   addBtn.className = 'btn-primary';
   addBtn.id = 'service-add-btn';
   addBtn.innerHTML = `${renderIcon('plus')} Add Service Entry`;
-  addBtn.onclick = () => navigate(`/boat/${currentBoatId}/service/new`);
+  addBtn.onclick = () => {
+    void (async () => {
+      const list = currentBoatId ? await getServiceEntries(currentBoatId) : [];
+      if (!canAddAnotherServiceEntry(list.length)) {
+        showServiceHistoryLimitModal();
+        return;
+      }
+      navigate(`/boat/${currentBoatId}/service/new`);
+    })();
+  };
 
   const listContainer = document.createElement('div');
   listContainer.id = 'service-list';
@@ -534,6 +566,7 @@ function render(params = {}) {
   fileInput.style.display = 'none';
 
   container.appendChild(filterContainer);
+  container.appendChild(freeLimitBanner);
   container.appendChild(addBtn);
   container.appendChild(fileInput);
   container.appendChild(listContainer);
@@ -619,6 +652,36 @@ async function onMount(params = {}) {
   loadServices();
 }
 
+function updateServiceFreeLimitUi() {
+  const banner = document.getElementById('service-free-limit-banner');
+  const addBtn = document.getElementById('service-add-btn');
+  if (!banner || !addBtn) return;
+
+  const atFreeLimit =
+    !hasActiveSubscription() && !serviceArchived && allServiceEntries.length >= 1;
+
+  if (atFreeLimit) {
+    banner.hidden = false;
+    banner.innerHTML = `
+      <p class="service-free-limit-banner-message">You've reached your free limit. Upgrade to continue tracking your boat maintenance.</p>
+      <button type="button" class="btn-primary service-free-limit-trial-btn">Start 1 Month Free Trial</button>
+    `;
+    const trialBtn = banner.querySelector('.service-free-limit-trial-btn');
+    if (trialBtn) {
+      trialBtn.onclick = () => navigate('/subscription');
+    }
+    addBtn.disabled = true;
+    addBtn.setAttribute('aria-disabled', 'true');
+    addBtn.title = 'Upgrade to add more service entries';
+  } else {
+    banner.hidden = true;
+    banner.innerHTML = '';
+    addBtn.disabled = false;
+    addBtn.removeAttribute('aria-disabled');
+    addBtn.removeAttribute('title');
+  }
+}
+
 function loadFilters() {
   const filterContainer = document.getElementById('service-filter');
   const engines = enginesStorage.getAll(currentBoatId);
@@ -668,11 +731,12 @@ async function loadServices() {
       <div class="empty-state">
         <div class="empty-state-icon">${renderIcon('wrench')}</div>
         <p>No service entries yet</p>
-        ${!serviceArchived ? `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/service/new')">${renderIcon('plus')} Add Service Entry</button></div>` : ''}
+        ${!serviceArchived ? `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); window.servicePageTryAdd()">${renderIcon('plus')} Add Service Entry</button></div>` : ''}
       </div>
     `
       : `<p class="text-muted">No service entries match your search.</p>`;
     attachHandlers();
+    updateServiceFreeLimitUi();
     return;
   }
 
@@ -713,6 +777,7 @@ async function loadServices() {
         ${service.cost != null ? `<p><strong>Cost:</strong> ${currencySymbol(service.cost_currency)}${Number(service.cost).toFixed(2)}</p>` : ''}
         ${diySummary}
         ${service.notes ? `<p><strong>Notes:</strong> ${service.notes}</p>` : ''}
+        ${service.next_service_due && service.next_service_reminder_minutes > 0 ? `<p class="service-entry-reminder text-muted"><strong>Reminder:</strong> Next due ${new Date(service.next_service_due + 'T12:00:00').toLocaleDateString()} · ${reminderLeadLabel(service.next_service_reminder_minutes)}</p>` : service.next_service_due ? `<p class="text-muted"><strong>Next due:</strong> ${new Date(service.next_service_due + 'T12:00:00').toLocaleDateString()}</p>` : ''}
         <div class="service-attachments" data-service-id="${service.id}">
           <h4 style="margin-top: 0.75rem; margin-bottom: 0.25rem;">Attachments</h4>
           <div class="attachment-list" id="service-attachments-list-${service.id}"></div>
@@ -727,9 +792,19 @@ async function loadServices() {
 
   attachHandlers();
   loadServiceAttachments(services);
+  updateServiceFreeLimitUi();
 }
 
 function attachHandlers() {
+  window.servicePageTryAdd = async () => {
+    const list = currentBoatId ? await getServiceEntries(currentBoatId) : [];
+    if (!canAddAnotherServiceEntry(list.length)) {
+      showServiceHistoryLimitModal();
+      return;
+    }
+    navigate(`/boat/${currentBoatId}/service/new`);
+  };
+
   window.servicePageDelete = async (id) => {
     const ok = await confirmAction({ title: 'Delete this service entry?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
     if (!ok) return;
@@ -740,6 +815,11 @@ function attachHandlers() {
     }
     await loadServices();
     showToast('Service entry removed', 'info');
+    try {
+      await syncCalendarNotifications();
+    } catch (e) {
+      console.warn('[BoatMatey] Reminder notification sync failed:', e);
+    }
   };
 
   window.servicePageAddAttachment = (serviceId) => {
@@ -827,11 +907,18 @@ function attachServiceAttachmentHandlers() {
 async function showServiceForm() {
   if (document.getElementById('service-form-card')) return;
   const services = currentBoatId ? await getServiceEntries(currentBoatId) : [];
+  const routeEntryId = window.routeParams?.entryId;
+  if (routeEntryId === 'new' && !canAddAnotherServiceEntry(services.length)) {
+    showServiceHistoryLimitModal();
+    navigate(`/boat/${currentBoatId}/service`);
+    return;
+  }
   const existingEntry = editingId ? services.find((s) => s.id === editingId) : null;
   if (!editingId) {
     editingId = `service_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
   const entry = existingEntry;
+  const isNewFreeTierEntry = !existingEntry && !hasActiveSubscription();
   const mode = entry?.mode || 'Professional';
   const engines = currentBoatId ? await getEngines(currentBoatId) : [];
   serviceFormEngines = engines;
@@ -876,8 +963,8 @@ async function showServiceForm() {
           <p class="text-muted" style="margin-top: 0.25rem; font-size: 0.875rem;">Use &quot;N/A – Sails & Rigging&quot; for sail and rigging service (no engine).</p>
         </div>
         <div class="form-group">
-          <label for="service_type">Service Type</label>
-          <select id="service_type">
+          <label for="service_type">Service type${isNewFreeTierEntry ? ' *' : ''}</label>
+          <select id="service_type" ${isNewFreeTierEntry ? 'required' : ''}>
             <option value="">Select...</option>
             ${serviceTypes.map(t => `<option value="${t}" ${entry?.service_type === t ? 'selected' : ''}>${t}</option>`).join('')}
           </select>
@@ -953,24 +1040,6 @@ async function showServiceForm() {
             <label for="diy_parts_replaced_notes">Parts replaced (notes)</label>
             <textarea id="diy_parts_replaced_notes" rows="3">${entry?.parts_replaced_notes || ''}</textarea>
           </div>
-          <div class="form-group">
-            <label for="diy_next_service_due">Next service due</label>
-            <input type="date" id="diy_next_service_due" value="${entry?.next_service_due || ''}">
-          </div>
-          <div class="form-group">
-            <label for="diy_next_service_reminder">Reminder</label>
-            <select id="diy_next_service_reminder">
-              <option value="0" ${(entry?.next_service_reminder_minutes ?? 1440) === 0 ? 'selected' : ''}>None</option>
-              <option value="5" ${entry?.next_service_reminder_minutes === 5 ? 'selected' : ''}>5 minutes before</option>
-              <option value="15" ${entry?.next_service_reminder_minutes === 15 ? 'selected' : ''}>15 minutes before</option>
-              <option value="30" ${entry?.next_service_reminder_minutes === 30 ? 'selected' : ''}>30 minutes before</option>
-              <option value="60" ${entry?.next_service_reminder_minutes === 60 ? 'selected' : ''}>1 hour before</option>
-              <option value="120" ${entry?.next_service_reminder_minutes === 120 ? 'selected' : ''}>2 hours before</option>
-              <option value="1440" ${(entry?.next_service_reminder_minutes ?? 1440) === 1440 ? 'selected' : ''}>1 day before</option>
-              <option value="2880" ${entry?.next_service_reminder_minutes === 2880 ? 'selected' : ''}>2 days before</option>
-              <option value="10080" ${entry?.next_service_reminder_minutes === 10080 ? 'selected' : ''}>1 week before</option>
-            </select>
-          </div>
         </div>
 
         <div class="card" id="service-pro-card" style="margin-top: 1rem; ${mode === 'DIY' ? 'display: none;' : 'display: block;'}">
@@ -1010,8 +1079,30 @@ async function showServiceForm() {
         </div>
 
         <div class="form-group">
-          <label for="service_notes">Notes</label>
-          <textarea id="service_notes" rows="4">${entry?.notes || ''}</textarea>
+          <label for="service_notes">Notes${isNewFreeTierEntry ? ' *' : ''}</label>
+          <textarea id="service_notes" rows="4" ${isNewFreeTierEntry ? 'required' : ''}>${entry?.notes || ''}</textarea>
+        </div>
+        <div class="card" id="service-next-due-card" style="margin-top: 1rem;">
+          <h4>Next service due${isNewFreeTierEntry ? '' : ' (optional)'}</h4>
+          <p class="text-muted" style="font-size: 0.875rem;">${isNewFreeTierEntry ? 'Set a due date to create your free reminder (1 day before by default). Full Calendar is a Premium feature.' : `Set a due date to get a reminder on this device before it is due.${!hasActiveSubscription() ? ' Full Calendar &amp; Alerts is a Premium feature.' : ''}`}</p>
+          <div class="form-group">
+            <label for="service_next_due_shared">Next due date${isNewFreeTierEntry ? ' *' : ''}</label>
+            <input type="date" id="service_next_due_shared" value="${entry?.next_service_due || ''}" ${isNewFreeTierEntry ? 'required' : ''}>
+          </div>
+          <div class="form-group">
+            <label for="service_next_reminder_shared">Reminder</label>
+            <select id="service_next_reminder_shared">
+              <option value="0" ${(entry?.next_service_reminder_minutes ?? 1440) === 0 ? 'selected' : ''}>None</option>
+              <option value="5" ${entry?.next_service_reminder_minutes === 5 ? 'selected' : ''}>5 minutes before</option>
+              <option value="15" ${entry?.next_service_reminder_minutes === 15 ? 'selected' : ''}>15 minutes before</option>
+              <option value="30" ${entry?.next_service_reminder_minutes === 30 ? 'selected' : ''}>30 minutes before</option>
+              <option value="60" ${entry?.next_service_reminder_minutes === 60 ? 'selected' : ''}>1 hour before</option>
+              <option value="120" ${entry?.next_service_reminder_minutes === 120 ? 'selected' : ''}>2 hours before</option>
+              <option value="1440" ${(entry?.next_service_reminder_minutes ?? 1440) === 1440 ? 'selected' : ''}>1 day before</option>
+              <option value="2880" ${entry?.next_service_reminder_minutes === 2880 ? 'selected' : ''}>2 days before</option>
+              <option value="10080" ${entry?.next_service_reminder_minutes === 10080 ? 'selected' : ''}>1 week before</option>
+            </select>
+          </div>
         </div>
         <div class="card" id="service-attachments-card" style="margin-top: 1rem;">
           <h4>Attachments & Links</h4>
@@ -1391,7 +1482,6 @@ async function saveService() {
   let seacocksPosition = null;
   let futureItemsNotes = null;
   let partsReplacedNotes = null;
-  let nextServiceDue = null;
   let proMeta = null;
 
   if (serviceMode === 'DIY') {
@@ -1416,7 +1506,6 @@ async function saveService() {
     seacocksPosition = document.querySelector('input[name="diy_seacocks_position"]:checked')?.value || null;
     futureItemsNotes = document.getElementById('diy_future_items_notes')?.value || '';
     partsReplacedNotes = document.getElementById('diy_parts_replaced_notes')?.value || '';
-    nextServiceDue = document.getElementById('diy_next_service_due')?.value || '';
   } else {
     proMeta = {
       workshop_name: document.getElementById('pro_workshop_name')?.value || '',
@@ -1431,6 +1520,39 @@ async function saveService() {
     setSaveButtonLoading(form, false);
     return;
   }
+
+  const nextDueVal = document.getElementById('service_next_due_shared')?.value?.trim() || '';
+  const reminderSelect = document.getElementById('service_next_reminder_shared');
+  let nextReminderMins = nextDueVal
+    ? (parseInt(reminderSelect?.value ?? '1440', 10) || 0)
+    : null;
+
+  const isCreatingEntry = String(editingId || '').startsWith('service_');
+  if (!hasActiveSubscription() && isCreatingEntry) {
+    const typeSel = document.getElementById('service_type')?.value?.trim() || '';
+    const typeCustom = document.getElementById('service_type_custom')?.value?.trim() || '';
+    if (!typeSel && !typeCustom) {
+      showToast('Please choose or enter a service type.', 'error');
+      setSaveButtonLoading(form, false);
+      return;
+    }
+    const notesVal = document.getElementById('service_notes')?.value?.trim() || '';
+    if (!notesVal) {
+      showToast('Please add notes for this service entry.', 'error');
+      setSaveButtonLoading(form, false);
+      return;
+    }
+    if (!nextDueVal) {
+      showToast('Please set a next due date so we can create your reminder.', 'error');
+      setSaveButtonLoading(form, false);
+      return;
+    }
+  }
+
+  if (!hasActiveSubscription() && nextDueVal && (!nextReminderMins || nextReminderMins === 0)) {
+    nextReminderMins = 1440;
+  }
+
   try {
 
   const costEl = document.getElementById('service_cost');
@@ -1450,8 +1572,8 @@ async function saveService() {
     seacocks_position: seacocksPosition,
     future_items_notes: futureItemsNotes,
     parts_replaced_notes: partsReplacedNotes,
-    next_service_due: nextServiceDue,
-    next_service_reminder_minutes: parseInt(document.getElementById('diy_next_service_reminder')?.value || '1440', 10) || null,
+    next_service_due: nextDueVal,
+    next_service_reminder_minutes: nextReminderMins,
     pro_meta: proMeta
   };
 
@@ -1460,9 +1582,19 @@ async function saveService() {
     await updateServiceEntry(editingId, entry);
   } else {
     const created = await createServiceEntry(currentBoatId, entry);
+    if (!created) {
+      showToast(SERVICE_HISTORY_UPGRADE_MESSAGE, 'info');
+      showServiceHistoryLimitModal();
+      return;
+    }
     if (created?.currencyFallback) {
       showToast('Entry saved. For currency labels (e.g. USD), run the database migration: add cost_currency to service_entries.', 'info');
     }
+  }
+  try {
+    await syncCalendarNotifications();
+  } catch (e) {
+    console.warn('[BoatMatey] Reminder notification sync failed:', e);
   }
   const card = document.getElementById('service-form-card');
   if (card) card.remove();

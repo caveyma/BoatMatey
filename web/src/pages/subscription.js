@@ -22,6 +22,7 @@ import { hasPendingSignup, getPendingSignupEmail, completeAccountCreation } from
 import { logInWithAppUserId } from '../services/revenuecat.js';
 import { Capacitor } from '@capacitor/core';
 import { PRIVACY_URL, TERMS_URL, EULA_URL, SUPPORT_URL, openExternalUrl, APP_STORE_URL, GOOGLE_PLAY_URL, APP_STORE_BADGE_URL, GOOGLE_PLAY_BADGE_URL } from '../lib/constants.js';
+import { getEngines, getServiceEntries } from '../lib/dataService.js';
 
 function render() {
   const wrapper = document.createElement('div');
@@ -41,9 +42,14 @@ function render() {
       <div style="display:flex; justify-content:center; margin-bottom: 0.75rem;">
         ${renderLogoFull(220)}
       </div>
-      <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Choose Your Plan</h2>
+      <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem;">You've started tracking your boat — keep it going</h2>
       <p class="text-muted" style="font-size: 0.95rem;">New subscribers get <strong>1 month free</strong>—no charge until your trial ends. Then £29.99/year.</p>
     </div>
+
+    <div id="subscription-progress-summary" class="subscription-progress-wrap" style="margin-bottom: 1rem;"></div>
+
+    <p style="font-size: 0.9rem; margin: 0 0 0.5rem; text-align: center;"><strong>Start your free trial today — no charge for 1 month</strong></p>
+    <p class="text-muted" style="font-size: 0.85rem; margin: 0 0 1rem; text-align: center;">Without Premium, you won't be able to track additional services or reminders</p>
 
     <div class="subscription-plan" style="
       background: linear-gradient(135deg, var(--bm-teal) 0%, var(--bm-teal-2) 100%);
@@ -78,30 +84,26 @@ function render() {
       <div style="text-align: left; font-size: 0.9rem;">
         <div style="margin-bottom: 0.5rem; display: flex; align-items: center;">
           <span style="margin-right: 0.5rem;">✓</span>
-          <span>5 active boats + unlimited archive</span>
+          <span>Never miss a service again</span>
         </div>
         <div style="margin-bottom: 0.5rem; display: flex; align-items: center;">
           <span style="margin-right: 0.5rem;">✓</span>
-          <span>Unlimited engines & equipment</span>
+          <span>Track all maintenance in one place</span>
         </div>
         <div style="margin-bottom: 0.5rem; display: flex; align-items: center;">
           <span style="margin-right: 0.5rem;">✓</span>
-          <span>Complete service history</span>
-        </div>
-        <div style="margin-bottom: 0.5rem; display: flex; align-items: center;">
-          <span style="margin-right: 0.5rem;">✓</span>
-          <span>Digital logbook & calendar</span>
+          <span>Get reminders before things go wrong</span>
         </div>
         <div style="display: flex; align-items: center;">
           <span style="margin-right: 0.5rem;">✓</span>
-          <span>Cloud sync across devices</span>
+          <span>Keep a full service history for resale</span>
         </div>
       </div>
     </div>
 
     ${isNative ? `
       <button type="button" class="btn-primary" id="subscribe-btn" style="width: 100%; padding: 0.875rem; font-size: 1rem; margin-bottom: 0.75rem;">
-        Start Free Trial
+        Start Free Trial &amp; Keep Tracking
       </button>
       
       <button type="button" class="btn-secondary" id="restore-btn" style="width: 100%; padding: 0.75rem; margin-bottom: 0.75rem;">
@@ -235,7 +237,7 @@ function setLoading(loading, buttonText = 'Processing...') {
   
   if (subscribeBtn) {
     subscribeBtn.disabled = loading;
-    subscribeBtn.textContent = loading ? buttonText : 'Start Free Trial';
+    subscribeBtn.textContent = loading ? buttonText : 'Start Free Trial & Keep Tracking';
   }
   
   if (restoreBtn) {
@@ -251,8 +253,43 @@ function setLoading(loading, buttonText = 'Processing...') {
   }
 }
 
+async function fillSubscriptionProgressSummary() {
+  const el = document.getElementById('subscription-progress-summary');
+  if (!el) return;
+  let boatId = null;
+  try {
+    boatId = sessionStorage.getItem('bm_onboarding_context_boat');
+  } catch (_) {}
+  let engineDone = false;
+  let serviceDone = false;
+  let reminderDone = false;
+  if (boatId) {
+    try {
+      const [engines, services] = await Promise.all([getEngines(boatId), getServiceEntries(boatId)]);
+      engineDone = engines.length > 0;
+      serviceDone = services.length > 0;
+      reminderDone = services.some((s) => !!s.next_service_due);
+    } catch (e) {
+      console.warn('[Subscription] progress summary:', e);
+    }
+  }
+  const item = (label, done) =>
+    `<li class="subscription-progress-item${done ? ' subscription-progress-item-done' : ''}" style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem;">` +
+    `<span aria-hidden="true">${done ? '✓' : '○'}</span><span>${label}</span></li>`;
+  el.innerHTML = `
+    <p style="font-size: 0.8rem; font-weight: 600; margin: 0 0 0.35rem; color: var(--bm-navy, #0f172a);">Your progress</p>
+    <ul style="list-style: none; padding: 0; margin: 0; text-align: left; font-size: 0.9rem;">
+      ${item('Engine added', engineDone)}
+      ${item('Service logged', serviceDone)}
+      ${item('Reminder set', reminderDone)}
+    </ul>
+  `;
+}
+
 async function onMount() {
   window.navigate = navigate;
+
+  await fillSubscriptionProgressSummary();
 
   const isNative = Capacitor.isNativePlatform?.() ?? false;
   const isPendingSignup = hasPendingSignup();

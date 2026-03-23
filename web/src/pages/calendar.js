@@ -853,6 +853,8 @@ export async function onMount(params = {}) {
   setTimeout(() => syncCalendarNotifications(), 400);
 }
 
+export { syncCalendarNotifications };
+
 export default {
   render,
   onMount

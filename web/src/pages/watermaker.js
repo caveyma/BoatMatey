@@ -20,6 +20,8 @@ import {
   deleteCalendarEvent
 } from '../lib/dataService.js';
 import { boatsStorage } from '../lib/storage.js';
+import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
+import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 
 const REMINDER_ONE_DAY_MINUTES = 1440;
 
@@ -160,6 +162,7 @@ function renderUnitCard(unit, archived) {
 }
 
 async function saveUnitDetails() {
+  if (blockPremiumSaveIfNeeded()) return;
   const boat = boatsStorage.get(currentBoatId) || { id: currentBoatId };
   const wm = getWatermakerData(boat);
   wm.unit = {
@@ -305,6 +308,10 @@ async function saveWatermakerForm(entryId, isNew) {
     setSaveButtonLoading(form, false);
     return;
   }
+  if (blockPremiumSaveIfNeeded()) {
+    setSaveButtonLoading(form, false);
+    return;
+  }
   try {
   const next_service_due = document.getElementById('wm_next_service_due')?.value || null;
 
@@ -417,6 +424,11 @@ async function onMount(params = {}) {
         if (cancelBtn) cancelBtn.style.display = 'none';
       }
     }
+    insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-watermaker'), {
+      headline: 'Preview: Watermaker service',
+      detail:
+        'Log services and next due dates here. Tap Save when ready — Premium is required to keep watermaker data and calendar links.'
+    });
     return;
   }
 
@@ -427,6 +439,12 @@ async function onMount(params = {}) {
     if (archived) addBtn.style.display = 'none';
   }
   renderServiceList(wm.services, currentBoatId, archived);
+
+  insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-watermaker'), {
+    headline: 'Preview: Watermaker service',
+    detail:
+      'Log services and next due dates here. Tap Save when ready — Premium is required to keep watermaker data and calendar links.'
+  });
 }
 
 export default {

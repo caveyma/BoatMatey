@@ -54,6 +54,7 @@ function applyPageColor(path) {
   else if (path.includes('/mayday')) key = 'mayday';
   else if (path.includes('/projects')) key = 'projects';
   else if (path.includes('/inventory')) key = 'inventory';
+  else if (path.includes('/reminder')) key = 'calendar';
 
   if (key) document.body.classList.add(`page-color-${key}`);
 }

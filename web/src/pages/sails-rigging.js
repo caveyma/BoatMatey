@@ -10,6 +10,8 @@ import { showToast } from '../components/toast.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { getBoat, updateBoat, isBoatArchived } from '../lib/dataService.js';
 import { boatsStorage } from '../lib/storage.js';
+import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
+import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 
 let currentBoatId = null;
 let currentBoat = null;
@@ -150,10 +152,17 @@ async function onMount(params = {}) {
   if (cancelBtn) {
     cancelBtn.addEventListener('click', () => window.history.back());
   }
+
+  insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-sails-rigging'), {
+    headline: 'Preview: Sails & Rigging',
+    detail:
+      'Capture rig details here. Tap Save when ready — Premium is required to keep this information on your boat.'
+  });
 }
 
 function saveSailsRigging() {
   const form = document.getElementById('sails-rigging-form');
+  if (blockPremiumSaveIfNeeded()) return;
   setSaveButtonLoading(form, true);
   const data = {
     mainsail_details: document.getElementById('mainsail_details')?.value?.trim() || '',

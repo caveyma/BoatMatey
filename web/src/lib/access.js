@@ -12,11 +12,15 @@ import { hasActiveSubscription } from './subscription.js';
 // On boat dashboard: boat (Boat Details), engines, mayday, links
 // Settings = /account, User Guide = /guide (handled by route, not dashboard card)
 // ---------------------------------------------------------------------------
-export const FREE_DASHBOARD_CARD_IDS = ['boat', 'engines', 'mayday', 'links'];
+// Free: boat details, engines, one service entry per boat (enforced in UI + DB), mayday, links
+export const FREE_DASHBOARD_CARD_IDS = ['boat', 'engines', 'service', 'mayday', 'links'];
 
 // Route path segments for boat routes: /boat/:id/:segment
-// Free segments: details (Boat Details), engines, mayday, links
-export const FREE_BOAT_ROUTE_SEGMENTS = ['details', 'engines', 'mayday', 'links'];
+// Free segments: details (Boat Details), engines, service history, mayday, links, single reminder view
+export const FREE_BOAT_ROUTE_SEGMENTS = ['details', 'engines', 'service', 'mayday', 'links', 'reminder'];
+
+/** Max service history entries per boat on the free plan (premium: unlimited). */
+export const FREE_PLAN_SERVICE_ENTRIES_PER_BOAT = 1;
 
 // Top-level routes always allowed (no subscription required)
 const FREE_TOP_LEVEL_ROUTES = ['/account', '/guide', '/'];
@@ -51,6 +55,19 @@ export function canAccessPremiumFeature() {
   return hasActiveSubscription();
 }
 
+/** Shown at service history limits and in upgrade prompts. */
+export const SERVICE_HISTORY_UPGRADE_MESSAGE =
+  "You've reached your free limit. Upgrade to continue tracking your boat maintenance.";
+
+/**
+ * Whether the user may create another service entry for this boat (free = 1 per boat).
+ * @param {number} existingCount - Current number of service entries for the boat
+ */
+export function canAddAnotherServiceEntry(existingCount) {
+  if (hasActiveSubscription()) return true;
+  return existingCount < FREE_PLAN_SERVICE_ENTRIES_PER_BOAT;
+}
+
 /**
  * Whether the user can access this route. Used by router and home-screen cards.
  * @param {string} path - e.g. '/', '/account', '/guide', '/calendar', '/boat/xyz/service'
@@ -61,13 +78,9 @@ export function canAccessRoute(path) {
   const norm = (path || '/').replace(/^#?\/?/, '/').split('?')[0];
   if (FREE_TOP_LEVEL_ROUTES.includes(norm)) return true;
   if (norm === '/calendar') return false;
-  // /boat/:id/:segment
-  const boatMatch = norm.match(/^\/boat\/[^/]+\/([^/]+)/);
-  if (boatMatch) {
-    const segment = boatMatch[1];
-    return FREE_BOAT_ROUTE_SEGMENTS.includes(segment);
-  }
-  // /boat/:id only (dashboard) - allow, dashboard will show locked cards
+  // /boat/:id/:segment — allow navigation into all boat modules (free users preview; saves are gated in UI)
+  if (/^\/boat\/[^/]+\//.test(norm)) return true;
+  // /boat/:id only (dashboard)
   if (/^\/boat\/[^/]+$/.test(norm)) return true;
   return true;
 }

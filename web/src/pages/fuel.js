@@ -19,6 +19,8 @@ import {
   deleteFuelLog
 } from '../lib/dataService.js';
 import { currencySymbol, CURRENCIES } from '../lib/currency.js';
+import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
+import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 
 let currentBoatId = null;
 let fuelArchived = false;
@@ -197,6 +199,12 @@ async function onMount(params = {}) {
   }
 
   window.navigate = navigate;
+
+  insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-fuel'), {
+    headline: 'Preview: Fuel & Performance',
+    detail:
+      'Try logging fuel and performance data here. When you tap Save, Premium is required to keep it — explore freely first.'
+  });
 }
 
 async function loadFuelPerformance() {
@@ -220,6 +228,7 @@ async function loadFuelPerformance() {
 
 async function saveFuelPerformance() {
   if (!currentBoatId) return;
+  if (blockPremiumSaveIfNeeded()) return;
   const form = document.getElementById('fuel-performance-form');
   setSaveButtonLoading(form, true);
   try {
@@ -263,6 +272,10 @@ async function saveFuelLogEntry() {
   const dateEl = document.getElementById('fuel_log_date');
   if (!dateEl?.value?.trim()) {
     showToast('Date is required.', 'error');
+    setSaveButtonLoading(form, false);
+    return;
+  }
+  if (blockPremiumSaveIfNeeded()) {
     setSaveButtonLoading(form, false);
     return;
   }

@@ -8,6 +8,8 @@ import { navigate } from '../router.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getLogbook, createLogEntry, updateLogEntry } from '../lib/dataService.js';
+import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
+import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 
 const MAX_DAILY_DAYS = 60;
 
@@ -278,6 +280,7 @@ async function onMount(params = {}) {
   document.getElementById('log-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (archived) return;
+    if (blockPremiumSaveIfNeeded()) return;
     const form = e.target;
     setSaveButtonLoading(form, true);
     try {
@@ -322,6 +325,12 @@ async function onMount(params = {}) {
     } finally {
       setSaveButtonLoading(form, false);
     }
+  });
+
+  insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-log'), {
+    headline: 'Preview: Passage log',
+    detail:
+      'Record trips and passages here. Tap Save when ready — Premium is required to keep your logbook.'
   });
 }
 

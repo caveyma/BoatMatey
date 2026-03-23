@@ -97,7 +97,13 @@ function render() {
   addBtn.id = 'boats-add-btn';
   addBtn.innerHTML = `${renderIcon('plus')} Add Boat`;
   addBtn.onclick = () => onAddBoatClick();
-  addBtn.style.marginBottom = 'var(--spacing-lg)';
+  addBtn.style.marginBottom = 'var(--spacing-md)';
+
+  const gridHint = document.createElement('p');
+  gridHint.className = 'boats-grid-helper text-muted';
+  gridHint.id = 'boats-grid-helper';
+  gridHint.hidden = true;
+  gridHint.textContent = 'Tap your boat to open the dashboard';
 
   const grid = document.createElement('div');
   grid.className = 'dashboard-grid';
@@ -105,6 +111,7 @@ function render() {
 
   container.appendChild(pageHeader);
   container.appendChild(addBtn);
+  container.appendChild(gridHint);
   container.appendChild(grid);
   
   pageContent.appendChild(container);
@@ -211,6 +218,9 @@ async function loadBoats() {
 
   grid.innerHTML = '';
 
+  const gridHelper = document.getElementById('boats-grid-helper');
+  if (gridHelper) gridHelper.hidden = boats.length === 0;
+
   if (boats.length === 0) {
     const emptyState = document.createElement('div');
     emptyState.className = 'empty-state';
@@ -258,6 +268,7 @@ async function loadBoats() {
           ${statusBadge}
         </div>
         <div class="boat-card-subtitle">${boat.make_model || 'No details'}</div>
+        <div class="boat-card-cta">Open Dashboard</div>
       </div>
       <div class="boat-card-actions">
         ${!isArchived ? `<button class="boat-card-action-btn" onclick="event.stopPropagation(); boatsPageEdit('${boat.id}')" title="Edit">${renderIcon('edit')}</button>` : ''}
@@ -415,7 +426,7 @@ function showUpgradeForMoreBoatsModal() {
     <div class="confirm-modal" style="max-width: 380px;">
       <h2 id="upgrade-modal-title" class="confirm-modal-title">Additional boats require a subscription</h2>
       <p class="confirm-modal-message" style="margin-bottom: 1rem;">
-        The free plan includes 1 boat. Upgrade to Premium to add more boats and unlock all features: 5 active boats, unlimited archive, service history, logbook, calendar and cloud sync.
+        The free plan includes 1 boat plus your first service entry per boat with a linked reminder. Upgrade to Premium for 5 active boats, unlimited archive, unlimited service history, full Calendar &amp; Alerts, logbook, and cloud sync.
       </p>
       <p class="text-muted" style="font-size: 0.9rem; margin-bottom: 1rem;">
         <strong>£29.99/year</strong> including VAT · 1 month free trial
@@ -672,6 +683,9 @@ async function saveBoat() {
     return;
   }
 
+  const countsBeforeCreate = await getBoatCounts();
+  const isFirstBoat = countsBeforeCreate.total === 0;
+
   const result = await createBoatApi({ boat_name: boat.boat_name, boat_type: boat.boat_type, make_model: boat.make_model });
   if (result && result.error === 'active_limit') {
     const limit = getActiveBoatLimit();
@@ -702,10 +716,16 @@ async function saveBoat() {
     boatsStorage.save(boat);
   }
 
+  const newBoatId = dbBoat?.id ?? boat.id;
+
   setSaveButtonLoading(form, false);
   document.getElementById('boat-form-card').remove();
   editingBoatId = null;
   boatFormNativePhotoFile = null;
+  if (isFirstBoat && newBoatId) {
+    navigate(`/boat/${newBoatId}`);
+    return;
+  }
   loadBoats();
   } finally {
     setSaveButtonLoading(form, false);

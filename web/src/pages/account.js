@@ -84,7 +84,7 @@ function render() {
         <p><strong>Price:</strong> <span id="account-subscription-price">${displayPrice}</span></p>
         <p id="account-subscription-renew" style="${status.expires_at ? '' : 'display: none;'}"><strong>${isPromo ? 'Access ends:' : 'Renews:'}</strong> <span id="account-subscription-renew-date">${status.expires_at ? new Date(status.expires_at).toLocaleDateString() : ''}</span></p>
       </div>
-      <p class="text-muted">BoatMatey subscription includes 5 active boats, unlimited archived boats, unlimited engines, service entries, and uploads.</p>
+      <p class="text-muted">Free plan: 1 active boat and 1 service entry per boat (with a linked reminder). Premium: 5 active boats, unlimited archive, unlimited service history, full Calendar &amp; Alerts, and uploads.</p>
       <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.75rem;">
         <div id="account-subscribe-restore-buttons" style="${showSubscribeAndRestore ? '' : 'display: none;'}">
           <button class="btn-primary" id="subscribe-btn" style="width: 100%;">
