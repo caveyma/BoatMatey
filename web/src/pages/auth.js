@@ -287,14 +287,26 @@ function validatePasswordForSignup(password) {
   return { valid: true };
 }
 
-function friendlyAuthError(message) {
+/**
+ * @param {'signin' | 'signup'} [mode] Sign-up uses different copy; sign-in errors that mention "password" must not be shown as a generic wrong-password message during signup.
+ */
+function friendlyAuthError(message, mode = 'signin') {
   if (!message || typeof message !== 'string') return message;
   const m = message.toLowerCase();
-  if (m.includes('invalid login credentials') || m.includes('invalid_credentials')) return 'Wrong email or password. Please try again.';
+  if (m.includes('invalid login credentials') || m.includes('invalid_credentials')) {
+    if (mode === 'signup') {
+      return 'Could not create an account with these details. If you already registered, use Sign in. Otherwise try again or use a different email.';
+    }
+    return 'Wrong email or password. Please try again.';
+  }
   if (m.includes('email not confirmed')) return 'Please check your email and confirm your account before signing in.';
   if (m.includes('user not found')) return 'No account found with this email.';
-  if (m.includes('already registered') || m.includes('already exists') || m.includes('duplicate')) return 'An account with this email already exists. Sign in or use a different email.';
-  if (m.includes('password')) return 'Wrong email or password. Please try again.';
+  if (m.includes('already registered') || m.includes('already exists') || m.includes('duplicate')) {
+    return 'An account with this email already exists. Sign in or use a different email.';
+  }
+  if (mode === 'signin' && m.includes('password')) {
+    return 'Wrong email or password. Please try again.';
+  }
   if (m.includes('too many requests') || m.includes('rate limit')) return 'Too many attempts. Please wait a moment and try again.';
   return message;
 }
@@ -419,10 +431,25 @@ async function onMount() {
     }
   }
 
-  // Form submit: default to Sign in (e.g. Enter on password field)
+  // Form submit: Enter key — if "Confirm password" is filled and matches, treat as create-account intent (not sign-in).
   if (authForm) {
     authForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const password = document.getElementById('auth-password')?.value ?? '';
+      const confirm = document.getElementById('auth-confirm')?.value ?? '';
+      if (confirm.length > 0) {
+        if (password !== confirm) {
+          showMessage('Passwords do not match.', true);
+          return;
+        }
+        const pwdCheck = validatePasswordForSignup(password);
+        if (!pwdCheck.valid) {
+          showMessage(pwdCheck.message, true);
+          return;
+        }
+        await handleCreateAccount();
+        return;
+      }
       await doSignIn();
     });
   }
@@ -549,7 +576,7 @@ async function onMount() {
     try {
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email, password });
       if (signUpError) {
-        const errMsg = friendlyAuthError(signUpError.message) || 'Could not create account. Try another email or sign in.';
+        const errMsg = friendlyAuthError(signUpError.message, 'signup') || 'Could not create account. Try another email or sign in.';
         showMessage(errMsg, true);
         createAccountBtn.disabled = false;
         createAccountBtn.textContent = 'Create account';
