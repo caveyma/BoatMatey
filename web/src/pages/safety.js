@@ -269,7 +269,7 @@ function attachSafetyAttachmentHandlers() {
       const uploadId = btn.dataset.uploadId;
       const ok = await confirmAction({ title: 'Delete this attachment?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
       if (!ok) return;
-      deleteUpload(uploadId);
+      await deleteUpload(uploadId);
       loadSafetyEquipment();
       showToast('Attachment removed', 'info');
     });

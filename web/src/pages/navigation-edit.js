@@ -145,7 +145,7 @@ function loadNavFormAttachments(boatId, navId) {
     btn.addEventListener('click', async () => {
       const ok = await confirmAction({ title: 'Delete this attachment?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
       if (!ok) return;
-      deleteUpload(btn.dataset.uploadId);
+      await deleteUpload(btn.dataset.uploadId);
       loadNavFormAttachments(boatId, navId);
       showToast('Attachment removed', 'info');
     });

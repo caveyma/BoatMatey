@@ -788,6 +788,29 @@ begin
         )
       );
   end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'attachments' and policyname = 'attachments_update_own'
+  ) then
+    create policy attachments_update_own
+      on public.attachments
+      for update
+      using (
+        owner_id = (select auth.uid())
+        and exists (
+          select 1 from public.boats b
+          where b.id = boat_id and b.owner_id = (select auth.uid())
+        )
+      )
+      with check (
+        owner_id = (select auth.uid())
+        and exists (
+          select 1 from public.boats b
+          where b.id = boat_id and b.owner_id = (select auth.uid())
+        )
+      );
+  end if;
 end $$;
 
 -- Storage bucket and policies -------------------------------------------------

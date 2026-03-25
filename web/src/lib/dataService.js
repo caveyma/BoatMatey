@@ -1137,6 +1137,32 @@ export async function deleteLogEntry(logId) {
 
 // ----------------- Haulout entries -----------------
 
+// True if the string looks like a Supabase UUID (used to avoid sending client-generated ids to the API)
+function isSupabaseUuid(id) {
+  if (!id || typeof id !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
+/** After create, move attachments from local temp entity id (haulout_…) to the real UUID in Supabase and local storage. */
+async function repatchAttachmentsEntityId(boatId, entityType, oldEntityId, newEntityId) {
+  if (!boatId || !entityType || !oldEntityId || !newEntityId || oldEntityId === newEntityId) return;
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    uploadsStorage.rekeyEntity(entityType, oldEntityId, newEntityId, boatId);
+    return;
+  }
+  const { error } = await supabase
+    .from('attachments')
+    .update({ entity_id: newEntityId })
+    .eq('boat_id', boatId)
+    .eq('entity_type', entityType)
+    .eq('entity_id', oldEntityId);
+  if (error) {
+    console.error('repatchAttachmentsEntityId error:', error);
+  }
+  uploadsStorage.rekeyEntity(entityType, oldEntityId, newEntityId, boatId);
+}
+
 export async function getHaulouts(boatId) {
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
@@ -1233,6 +1259,14 @@ export async function createHaulout(boatId, payload) {
       logSupabaseFallback('haulout_entries', result.error);
       return null;
     }
+    if (
+      result.data &&
+      payload.id &&
+      !isSupabaseUuid(payload.id) &&
+      isSupabaseUuid(result.data.id)
+    ) {
+      await repatchAttachmentsEntityId(boatId, 'haulout', payload.id, result.data.id);
+    }
     return { ...result.data, currencyFallback: true };
   }
   // If 400 or schema/column error, retry with base-schema columns only
@@ -1257,13 +1291,10 @@ export async function createHaulout(boatId, payload) {
     logSupabaseFallback('haulout_entries', error);
     return null;
   }
+  if (data && payload.id && !isSupabaseUuid(payload.id) && isSupabaseUuid(data.id)) {
+    await repatchAttachmentsEntityId(boatId, 'haulout', payload.id, data.id);
+  }
   return data;
-}
-
-// True if the string looks like a Supabase UUID (used to avoid sending client-generated ids to the API)
-function isSupabaseUuid(id) {
-  if (!id || typeof id !== 'string') return false;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 }
 
 export async function updateHaulout(hauloutId, payload) {
@@ -1689,6 +1720,58 @@ export async function uploadAttachment(boatId, file, entityType, entityId) {
   }
 
   return data ?? null;
+}
+
+/**
+ * Removes an attachment row and its storage object when the signed-in user owns the boat row.
+ * @param {string} boatId
+ * @param {{ cloud_attachment_id?: string, path?: string, bucket?: string }} upload Local upload metadata (from uploadsStorage).
+ */
+export async function deleteAttachment(boatId, upload) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled() || !boatId || !upload) {
+    return;
+  }
+
+  let bucket = upload.bucket || 'boatmatey-attachments';
+  let pathToRemove = upload.path || null;
+
+  if (upload.cloud_attachment_id) {
+    const { data, error } = await supabase
+      .from('attachments')
+      .delete()
+      .eq('id', upload.cloud_attachment_id)
+      .eq('boat_id', boatId)
+      .select('path, bucket')
+      .maybeSingle();
+
+    if (error) {
+      console.error('attachments delete error:', error);
+    }
+    if (data?.path) pathToRemove = data.path;
+    if (data?.bucket) bucket = data.bucket;
+  } else if (pathToRemove) {
+    const { data, error } = await supabase
+      .from('attachments')
+      .delete()
+      .eq('boat_id', boatId)
+      .eq('path', pathToRemove)
+      .select('path, bucket')
+      .maybeSingle();
+
+    if (error) {
+      console.error('attachments delete by path error:', error);
+    }
+    if (data?.path) pathToRemove = data.path;
+    if (data?.bucket) bucket = data.bucket;
+  }
+
+  if (pathToRemove) {
+    const { error: storageError } = await supabase.storage.from(bucket).remove([pathToRemove]);
+    if (storageError) {
+      console.error('storage remove error:', storageError);
+    }
+  }
 }
 
 export async function listAttachments(boatId) {

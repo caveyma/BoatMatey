@@ -372,7 +372,7 @@ function loadProjectAttachments(projects) {
     btn.addEventListener('click', async () => {
       const ok = await confirmAction({ title: 'Delete this attachment?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
       if (!ok) return;
-      deleteUpload(btn.dataset.uploadId);
+      await deleteUpload(btn.dataset.uploadId);
       loadProjects();
       showToast('Attachment removed', 'info');
     });
@@ -596,7 +596,7 @@ async function showProjectForm() {
       btn.addEventListener('click', async () => {
         const ok = await confirmAction({ title: 'Delete this attachment?', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
         if (!ok) return;
-        deleteUpload(btn.dataset.uploadId);
+        await deleteUpload(btn.dataset.uploadId);
         renderFormAttachments();
       });
     });

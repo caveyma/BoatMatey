@@ -657,6 +657,27 @@ export const uploadsStorage = {
     return storage.set(STORAGE_KEYS.UPLOADS, filtered);
   },
 
+  /** Update entity_id for uploads (e.g. after a new haul-out record gets a real UUID from the server). */
+  rekeyEntity(entityType, oldEntityId, newEntityId, boatId = null) {
+    if (!oldEntityId || !newEntityId || oldEntityId === newEntityId) return;
+    const uploads = this.getAll();
+    let changed = false;
+    const next = uploads.map((u) => {
+      if (
+        u.entity_type === entityType &&
+        String(u.entity_id) === String(oldEntityId) &&
+        (!boatId || u.boat_id === boatId)
+      ) {
+        changed = true;
+        return { ...u, entity_id: newEntityId, updated_at: new Date().toISOString() };
+      }
+      return u;
+    });
+    if (changed) {
+      storage.set(STORAGE_KEYS.UPLOADS, next);
+    }
+  },
+
   count(boatId = null) {
     return this.getAll(boatId).length;
   }

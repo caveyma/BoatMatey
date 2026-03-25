@@ -400,7 +400,7 @@ function attachEventHandlers() {
         danger: true
       });
       if (!ok) return;
-      deleteUpload(uploadId);
+      await deleteUpload(uploadId);
       loadAttachments();
       attachEventHandlers();
       showToast('Attachment removed', 'info');

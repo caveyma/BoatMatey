@@ -568,7 +568,7 @@ function renderInventoryAttachments(container) {
     btn.addEventListener('click', async () => {
       const ok = await confirmAction({ title: 'Remove this photo?', confirmLabel: 'Remove', cancelLabel: 'Cancel', danger: true });
       if (!ok) return;
-      deleteUpload(btn.dataset.uploadId);
+      await deleteUpload(btn.dataset.uploadId);
       renderInventoryAttachments(container);
     });
   });

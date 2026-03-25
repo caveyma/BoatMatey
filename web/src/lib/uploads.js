@@ -5,7 +5,7 @@
  */
 
 import { uploadsStorage } from './storage.js';
-import { uploadAttachment, listAttachments } from './dataService.js';
+import { uploadAttachment, listAttachments, deleteAttachment } from './dataService.js';
 import { supabase } from './supabaseClient.js';
 
 const MAX_BASE64_SIZE = 500 * 1024; // 500KB - only store small images as base64
@@ -112,10 +112,18 @@ export function getUploads(entityType, entityId, boatId = null) {
 }
 
 /**
- * Delete an upload
+ * Delete an upload (local metadata and, when present, the Supabase attachments row + storage object).
  */
-export function deleteUpload(uploadId) {
-  return uploadsStorage.delete(uploadId);
+export async function deleteUpload(uploadId) {
+  const upload = uploadsStorage.get(uploadId);
+  if (upload?.boat_id && (upload.cloud_attachment_id || upload.path)) {
+    try {
+      await deleteAttachment(upload.boat_id, upload);
+    } catch (e) {
+      console.error('deleteAttachment error:', e);
+    }
+  }
+  uploadsStorage.delete(uploadId);
 }
 
 /**
