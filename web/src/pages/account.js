@@ -15,8 +15,8 @@ import {
   refreshSubscriptionStatus
 } from '../lib/subscription.js';
 import { PRIVACY_URL, TERMS_URL, EULA_URL, SUPPORT_URL, openExternalUrl } from '../lib/constants.js';
-import { storage, boatStorage, boatsStorage, enginesStorage, serviceHistoryStorage, uploadsStorage } from '../lib/storage.js';
-import { getBoats, getEngines, getServiceEntries, getHaulouts, getEquipment, getLogbook, getLinks, listAttachments } from '../lib/dataService.js';
+import { storage } from '../lib/storage.js';
+import { getBoats, listAttachments } from '../lib/dataService.js';
 import { supabase } from '../lib/supabaseClient.js';
 import { getSession } from '../lib/dataService.js';
 import { Capacitor } from '@capacitor/core';
@@ -105,16 +105,6 @@ function render() {
     </div>
 
     <div class="card">
-      <h3>Usage</h3>
-      <div>
-        <p><strong>Boats:</strong> <span id="account-usage-boats">${boatsStorage.getAll().length}</span></p>
-        <p><strong>Engines:</strong> <span id="account-usage-engines">${enginesStorage.getAll().length}</span></p>
-        <p><strong>Service Entries:</strong> <span id="account-usage-service">${serviceHistoryStorage.getAll().length}</span></p>
-        <p><strong>Uploads:</strong> <span id="account-usage-uploads">${uploadsStorage.count()}</span></p>
-      </div>
-    </div>
-
-    <div class="card">
       <h3>Support & Legal</h3>
       <div style="display: flex; flex-direction: column; gap: 0.5rem;">
         <button type="button" class="btn-link account-legal-link" data-url="${SUPPORT_URL}" style="width: 100%; text-align: left; text-decoration: none; color: inherit; background: none; border: none; cursor: pointer; padding: 0.25rem 0;">
@@ -164,28 +154,6 @@ function render() {
 
 async function onMount() {
   window.navigate = navigate;
-
-  // Sync all boat data so Usage counts are correct (e.g. when using Supabase)
-  const boats = await getBoats();
-  for (const boat of boats) {
-    await Promise.all([
-      getEngines(boat.id),
-      getServiceEntries(boat.id),
-      getHaulouts(boat.id),
-      getEquipment(boat.id, 'navigation'),
-      getEquipment(boat.id, 'safety'),
-      getLogbook(boat.id),
-      getLinks(boat.id)
-    ]);
-  }
-  const boatsEl = document.getElementById('account-usage-boats');
-  const enginesEl = document.getElementById('account-usage-engines');
-  const serviceEl = document.getElementById('account-usage-service');
-  const uploadsEl = document.getElementById('account-usage-uploads');
-  if (boatsEl) boatsEl.textContent = boats.length;
-  if (enginesEl) enginesEl.textContent = enginesStorage.getAll().length;
-  if (serviceEl) serviceEl.textContent = serviceHistoryStorage.getAll().length;
-  if (uploadsEl) uploadsEl.textContent = uploadsStorage.count();
 
   // Refresh subscription status on mount (native: RevenueCat; web: profile for renewal date)
   const isNative = Capacitor.isNativePlatform?.() ?? false;

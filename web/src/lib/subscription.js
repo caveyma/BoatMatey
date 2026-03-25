@@ -54,6 +54,17 @@ function getDefaultSubscriptionState() {
 }
 let subscriptionState = getDefaultSubscriptionState();
 
+/** Notifies UI (e.g. header plan pill) that entitlement state may have changed. */
+function notifySubscriptionStateChanged() {
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('boatmatey:subscription-updated'));
+    }
+  } catch (_) {
+    /* ignore */
+  }
+}
+
 /**
  * Initialize RevenueCat on native platforms.
  * Safe to call multiple times; it will no-op after the first call.
@@ -134,90 +145,94 @@ async function getSubscriptionFromProfile() {
  * correct status even if RevenueCat app user ID is out of sync (e.g. after Google sign-in).
  */
 export async function refreshSubscriptionStatus() {
-  const isNative = Capacitor.isNativePlatform?.() ?? false;
-  if (!isNative) {
-    const profileSub = await getSubscriptionFromProfile();
-    if (profileSub) {
-      subscriptionState = {
-        active: profileSub.active,
-        isPromo: profileSub.isPromo || false,
-        promo_source: profileSub.promo_source || null,
-        plan: profileSub.plan,
-        price: profileSub.isPromo ? null : (profileSub.active ? DISPLAY_PRICE : null),
-        expires_at: profileSub.expires_at
-      };
-    } else {
-      subscriptionState = { active: false, isPromo: false, promo_source: null, plan: 'None', price: null, expires_at: null };
-    }
-    return subscriptionState;
-  }
-
-  // Native: assume no subscription until we get a positive result from RevenueCat or profile
-  subscriptionState = {
-    active: false,
-    plan: 'None',
-    price: DISPLAY_PRICE,
-    expires_at: null
-  };
-
-  await initRevenueCat();
-
   try {
-    const getCustomerInfoWithTimeout = (ms = 8000) =>
-      Promise.race([
-        Purchases.getCustomerInfo(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('RevenueCat getCustomerInfo timeout')), ms))
-      ]);
-    const { customerInfo } = await getCustomerInfoWithTimeout();
-    console.log('[Subscription] Raw customerInfo.entitlements:', JSON.stringify(customerInfo?.entitlements, null, 2));
+    const isNative = Capacitor.isNativePlatform?.() ?? false;
+    if (!isNative) {
+      const profileSub = await getSubscriptionFromProfile();
+      if (profileSub) {
+        subscriptionState = {
+          active: profileSub.active,
+          isPromo: profileSub.isPromo || false,
+          promo_source: profileSub.promo_source || null,
+          plan: profileSub.plan,
+          price: profileSub.isPromo ? null : (profileSub.active ? DISPLAY_PRICE : null),
+          expires_at: profileSub.expires_at
+        };
+      } else {
+        subscriptionState = { active: false, isPromo: false, promo_source: null, plan: 'None', price: null, expires_at: null };
+      }
+      return subscriptionState;
+    }
 
-    const entitlement = getActiveEntitlement(customerInfo);
-    const rcActive = !!entitlement;
-    console.log('[Subscription] Active entitlement:', entitlement ? 'yes' : 'no', entitlement ? '(expires: ' + (entitlement.expirationDate || 'n/a') + ')' : '');
-
+    // Native: assume no subscription until we get a positive result from RevenueCat or profile
     subscriptionState = {
-      active: rcActive,
-      isPromo: false,
-      promo_source: null,
-      plan: rcActive ? 'BoatMatey Yearly' : 'None',
+      active: false,
+      plan: 'None',
       price: DISPLAY_PRICE,
-      expires_at: entitlement?.expirationDate ?? null
+      expires_at: null
     };
 
-    // When signed in, use Supabase profile as fallback: if profile says active and not expired, trust it
-    const profileSub = await getSubscriptionFromProfile();
-    if (profileSub && (profileSub.active || subscriptionState.active)) {
-      const useProfile = profileSub.active;
-      if (useProfile) {
+    await initRevenueCat();
+
+    try {
+      const getCustomerInfoWithTimeout = (ms = 8000) =>
+        Promise.race([
+          Purchases.getCustomerInfo(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('RevenueCat getCustomerInfo timeout')), ms))
+        ]);
+      const { customerInfo } = await getCustomerInfoWithTimeout();
+      console.log('[Subscription] Raw customerInfo.entitlements:', JSON.stringify(customerInfo?.entitlements, null, 2));
+
+      const entitlement = getActiveEntitlement(customerInfo);
+      const rcActive = !!entitlement;
+      console.log('[Subscription] Active entitlement:', entitlement ? 'yes' : 'no', entitlement ? '(expires: ' + (entitlement.expirationDate || 'n/a') + ')' : '');
+
+      subscriptionState = {
+        active: rcActive,
+        isPromo: false,
+        promo_source: null,
+        plan: rcActive ? 'BoatMatey Yearly' : 'None',
+        price: DISPLAY_PRICE,
+        expires_at: entitlement?.expirationDate ?? null
+      };
+
+      // When signed in, use Supabase profile as fallback: if profile says active and not expired, trust it
+      const profileSub = await getSubscriptionFromProfile();
+      if (profileSub && (profileSub.active || subscriptionState.active)) {
+        const useProfile = profileSub.active;
+        if (useProfile) {
+          subscriptionState = {
+            active: true,
+            isPromo: profileSub.isPromo || false,
+            promo_source: profileSub.promo_source || null,
+            plan: profileSub.plan ?? 'None',
+            price: profileSub.isPromo ? null : DISPLAY_PRICE,
+            expires_at: profileSub.expires_at ?? subscriptionState.expires_at
+          };
+          console.log('[Subscription] Using profile subscription (active, expires:', subscriptionState.expires_at, ')');
+        }
+      }
+    } catch (error) {
+      console.error('[Subscription] Failed to refresh customer info from RevenueCat:', error);
+      // Still try profile as fallback when RevenueCat fails
+      const profileSub = await getSubscriptionFromProfile();
+      if (profileSub?.active) {
         subscriptionState = {
           active: true,
           isPromo: profileSub.isPromo || false,
           promo_source: profileSub.promo_source || null,
           plan: profileSub.plan ?? 'None',
           price: profileSub.isPromo ? null : DISPLAY_PRICE,
-          expires_at: profileSub.expires_at ?? subscriptionState.expires_at
+          expires_at: profileSub.expires_at ?? null
         };
-        console.log('[Subscription] Using profile subscription (active, expires:', subscriptionState.expires_at, ')');
+        console.log('[Subscription] Using profile subscription after RevenueCat failure');
       }
     }
-  } catch (error) {
-    console.error('[Subscription] Failed to refresh customer info from RevenueCat:', error);
-    // Still try profile as fallback when RevenueCat fails
-    const profileSub = await getSubscriptionFromProfile();
-    if (profileSub?.active) {
-      subscriptionState = {
-        active: true,
-        isPromo: profileSub.isPromo || false,
-        promo_source: profileSub.promo_source || null,
-        plan: profileSub.plan ?? 'None',
-        price: profileSub.isPromo ? null : DISPLAY_PRICE,
-        expires_at: profileSub.expires_at ?? null
-      };
-      console.log('[Subscription] Using profile subscription after RevenueCat failure');
-    }
-  }
 
-  return subscriptionState;
+    return subscriptionState;
+  } finally {
+    notifySubscriptionStateChanged();
+  }
 }
 
 /**

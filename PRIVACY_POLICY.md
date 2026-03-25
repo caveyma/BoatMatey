@@ -2,7 +2,7 @@
 
 **Last updated:** 9 February 2025
 
-This Privacy Policy explains how **BoatMatey** ("**we**", "**us**", or "**our**") collects, uses, and shares information about you when you use our mobile and web applications and related services (the "**Services**"). BoatMatey is operated by **Donkey Labs**.
+This Privacy Policy explains how **BoatMatey** ("**we**", "**us**", or "**our**") collects, uses, and shares information about you when you use our mobile and web applications and related services (the "**Services**"). BoatMatey is a product of **Donkey Labs**.
 
 By using the Services, you agree to the collection and use of information in accordance with this Privacy Policy.
 
@@ -11,7 +11,7 @@ By using the Services, you agree to the collection and use of information in acc
 ## 1. Who We Are and How to Contact Us
 
 **Data Controller:**  
-Donkey Labs  
+Martin Cavey  
 Email: [Pmdonkeylabs@gmail.com](mailto:Pmdonkeylabs@gmail.com)
 
 If you have questions about this Privacy Policy or our data practices, please contact us at the email address above.

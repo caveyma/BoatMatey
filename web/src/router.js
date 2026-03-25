@@ -5,6 +5,7 @@
 import { supabase } from './lib/supabaseClient.js';
 import { getSessionWithTimeout } from './lib/dataService.js';
 import { canAccessRoute } from './lib/access.js';
+import { refreshBoatUploadsFromCloud } from './lib/uploads.js';
 // Note: subscription check moved to auth flow, not route access
 
 let routes = {};
@@ -138,7 +139,6 @@ async function loadRoute(path) {
   const pathForMatch = path.includes('?') ? path.split('?')[0] : path;
   const pathNorm = pathForMatch || '/';
 
-  if (pathForMatch === (currentRoute?.split('?')[0])) return;
   currentRoute = path;
 
   const app = document.querySelector('#app');
@@ -168,6 +168,10 @@ async function loadRoute(path) {
   const route = match.route;
   const params = match.params;
   applyPageColor(path);
+
+  if (params?.id) {
+    await refreshBoatUploadsFromCloud(params.id);
+  }
 
   // Clean up previous page
   if (currentPage && typeof currentPage.cleanup === 'function') {

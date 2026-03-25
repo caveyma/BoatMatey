@@ -6,6 +6,54 @@
 
 import { navigate } from '../router.js';
 import { supabase } from '../lib/supabaseClient.js';
+import { hasActiveSubscription } from '../lib/subscription.js';
+
+let planPillSyncListenerAttached = false;
+
+function attachPlanPillSyncListener() {
+  if (planPillSyncListenerAttached) return;
+  planPillSyncListenerAttached = true;
+  window.addEventListener('boatmatey:subscription-updated', () => {
+    document.querySelectorAll('.header-plan-pill').forEach((el) => syncPlanPillElement(el));
+  });
+}
+
+/**
+ * @param {HTMLButtonElement} btn
+ */
+function syncPlanPillElement(btn) {
+  if (!btn) return;
+  const active = hasActiveSubscription();
+  btn.classList.toggle('header-plan-pill--premium', active);
+  btn.classList.toggle('header-plan-pill--free', !active);
+  const label = btn.querySelector('.header-plan-pill-label');
+  const chev = btn.querySelector('.header-plan-pill-chevron');
+  if (label) label.textContent = active ? 'Premium' : 'Free Plan';
+  if (chev) chev.hidden = active;
+  btn.setAttribute(
+    'aria-label',
+    active ? 'Premium — open subscription details in Settings' : 'Free Plan — view upgrade options'
+  );
+}
+
+function createPlanPillButton() {
+  attachPlanPillSyncListener();
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'header-plan-pill';
+  btn.innerHTML =
+    '<span class="header-plan-pill-label">Free Plan</span><span class="header-plan-pill-chevron" aria-hidden="true">›</span>';
+  syncPlanPillElement(btn);
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (hasActiveSubscription()) {
+      navigate('/account');
+    } else {
+      navigate('/subscription');
+    }
+  });
+  return btn;
+}
 
 /**
  * Back button for the top-left of the main body.
@@ -77,11 +125,8 @@ export function createYachtHeader(title, options = {}) {
   const actionsSection = document.createElement('nav');
   actionsSection.className = 'yacht-header-actions';
   actionsSection.setAttribute('aria-label', 'Main navigation');
-  actionsSection.style.marginLeft = 'auto';
-  actionsSection.style.display = 'flex';
-  actionsSection.style.flexDirection = 'row';
-  actionsSection.style.alignItems = 'center';
-  actionsSection.style.gap = 'var(--spacing-md)';
+
+  actionsSection.appendChild(createPlanPillButton());
 
   const baseButtonStyles = (btn) => {
     btn.className = 'btn-link header-action-btn';

@@ -150,9 +150,11 @@ html, body {
 /* Centre section that holds the page / boat name */
 .yacht-header-center {
   flex: 1;
+  min-width: 0;
   display: flex;
   justify-content: center;
   align-items: center;
+  padding: 0 0.35rem;
   pointer-events: none; /* keep clicks going to logo/actions */
 }
 
@@ -242,16 +244,81 @@ html, body {
 
 
 
+/* Right-side nav: Home / Settings + plan pill */
+.yacht-header-actions {
+  margin-left: auto;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: clamp(6px, 1.5vw, 12px);
+  row-gap: 6px;
+  max-width: min(56%, 20rem);
+  min-width: 0;
+}
+
+/* Plan status — subtle badge, not a primary CTA */
+.header-plan-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-shrink: 0;
+  margin: 0;
+  border-radius: 999px;
+  padding: 0.2rem 0.45rem 0.2rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.2;
+  min-height: 28px;
+  box-sizing: border-box;
+  cursor: pointer;
+  pointer-events: auto;
+  border: 1px solid rgba(11, 31, 59, 0.12);
+  background: rgba(11, 60, 93, 0.06);
+  color: rgba(11, 60, 93, 0.92);
+  box-shadow: none;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.header-plan-pill:hover {
+  background: rgba(11, 60, 93, 0.1);
+  border-color: rgba(11, 31, 59, 0.18);
+}
+
+.header-plan-pill:focus-visible {
+  outline: 2px solid rgba(28, 111, 184, 0.45);
+  outline-offset: 2px;
+}
+
+.header-plan-pill--premium {
+  background: rgba(10, 166, 166, 0.08);
+  border-color: rgba(10, 166, 166, 0.22);
+  color: #0b5c5c;
+}
+
+.header-plan-pill--premium:hover {
+  background: rgba(10, 166, 166, 0.12);
+  border-color: rgba(10, 166, 166, 0.28);
+}
+
+.header-plan-pill-chevron {
+  font-size: 0.85em;
+  opacity: 0.5;
+  line-height: 1;
+  font-weight: 500;
+}
+
 /* Header action links (Settings / Home) */
 .yacht-header a,
-.yacht-header button,
+.yacht-header button:not(.header-plan-pill),
 .yacht-header .header-action,
 .yacht-header .nav-link {
   color: #1C6FB8;
   font-weight: 700;
 }
 .yacht-header a:hover,
-.yacht-header button:hover {
+.yacht-header button:not(.header-plan-pill):hover {
   opacity: 0.9;
 }
 /* =========================================================
