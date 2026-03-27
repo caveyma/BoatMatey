@@ -492,10 +492,10 @@ export async function reactivateBoat(boatId) {
 
 /** Default links seeded when a boat has no links (local and Supabase). */
 const DEFAULT_LINKS = [
+  { name: 'BoatMatey', url: 'https://boatmatey.com' },
   { name: 'Navionics', url: 'https://www.navionics.com' },
   { name: 'Met Office Marine', url: 'https://www.metoffice.gov.uk/weather/marine' },
-  { name: 'Windy', url: 'https://www.windy.com' },
-  { name: 'Local Marina', url: 'https://example.com' }
+  { name: 'Windy', url: 'https://www.windy.com' }
 ];
 
 export async function getLinks(boatId) {
@@ -513,23 +513,39 @@ export async function getLinks(boatId) {
     return linksStorage.getAll(boatId);
   }
   let rows = data || [];
-  // Seed default links when boat has none (same behaviour as local storage)
-  if (rows.length === 0) {
-    const ownerId = session.user.id;
-    const { data: inserted, error: insertError } = await supabase
+  const ownerId = session.user.id;
+
+  // Remove retired legacy default if present.
+  const legacy = rows.filter((r) => r?.name === 'Local Marina' && r?.url === 'https://example.com');
+  if (legacy.length > 0) {
+    await Promise.all(legacy.map((r) => supabase.from('boat_links').delete().eq('id', r.id)));
+    rows = rows.filter((r) => !(r?.name === 'Local Marina' && r?.url === 'https://example.com'));
+  }
+
+  // Ensure missing defaults are added for both new and existing boats.
+  const existingUrls = new Set(rows.map((r) => (r.url || '').toLowerCase()));
+  const missing = DEFAULT_LINKS.filter((l) => !existingUrls.has((l.url || '').toLowerCase()));
+  if (missing.length > 0) {
+    const { data: inserted } = await supabase
       .from('boat_links')
-      .insert(DEFAULT_LINKS.map((link) => ({
+      .insert(missing.map((link) => ({
         boat_id: boatId,
         owner_id: ownerId,
         name: link.name,
         url: link.url
       })))
-      .select('*')
-      .order('created_at', { ascending: true });
-    if (!insertError && inserted?.length) {
-      rows = inserted;
-    }
+      .select('*');
+    if (inserted?.length) rows = rows.concat(inserted);
   }
+
+  // Keep a predictable order matching DEFAULT_LINKS first.
+  const desiredOrder = new Map(DEFAULT_LINKS.map((l, idx) => [l.url.toLowerCase(), idx]));
+  rows = [...rows].sort((a, b) => {
+    const ao = desiredOrder.has((a.url || '').toLowerCase()) ? desiredOrder.get((a.url || '').toLowerCase()) : 999;
+    const bo = desiredOrder.has((b.url || '').toLowerCase()) ? desiredOrder.get((b.url || '').toLowerCase()) : 999;
+    if (ao !== bo) return ao - bo;
+    return (a.created_at || '').localeCompare(b.created_at || '');
+  });
   const mapped = rows.map((row) => ({ id: row.id, boat_id: boatId, name: row.name, url: row.url, created_at: row.created_at }));
   linksStorage.replaceForBoat(boatId, mapped);
   return mapped;
@@ -1418,10 +1434,65 @@ export async function deleteHaulout(hauloutId) {
 
 // ----------------- Boat projects -----------------
 
+function toLegacyProjectStatus(status) {
+  if (status === 'Planned') return 'Planning';
+  if (status === 'Closed') return 'Cancelled';
+  if (status === 'Open' || status === 'Under Review' || status === 'Waiting Parts') return 'Planning';
+  if (status === 'Resolved') return 'Completed';
+  return status;
+}
+
+const ACTIVE_ISSUE_STATUSES = ['Open', 'Under Review', 'In Progress', 'Waiting Parts'];
+
+export async function getActiveIssueCountsByBoat(boatIds = []) {
+  const ids = Array.isArray(boatIds) ? boatIds.filter(Boolean) : [];
+  if (ids.length === 0) return {};
+
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    const counts = {};
+    ids.forEach((boatId) => {
+      const items = projectsStorage.getAll(boatId) || [];
+      counts[boatId] = items.filter((p) => (p.type || 'Project') === 'Issue'
+        && !p.archived_at
+        && ACTIVE_ISSUE_STATUSES.includes(p.status || '')).length;
+    });
+    return counts;
+  }
+
+  const { data, error } = await supabase
+    .from('boat_projects')
+    .select('boat_id')
+    .in('boat_id', ids)
+    .eq('type', 'Issue')
+    .in('status', ACTIVE_ISSUE_STATUSES)
+    .is('archived_at', null);
+
+  if (error) {
+    logSupabaseFallback('boat_projects_active_issue_counts', error);
+    const counts = {};
+    ids.forEach((boatId) => {
+      const items = projectsStorage.getAll(boatId) || [];
+      counts[boatId] = items.filter((p) => (p.type || 'Project') === 'Issue'
+        && !p.archived_at
+        && ACTIVE_ISSUE_STATUSES.includes(p.status || '')).length;
+    });
+    return counts;
+  }
+
+  const counts = {};
+  ids.forEach((id) => { counts[id] = 0; });
+  (data || []).forEach((row) => {
+    if (!row?.boat_id) return;
+    counts[row.boat_id] = (counts[row.boat_id] || 0) + 1;
+  });
+  return counts;
+}
+
 export async function getProjects(boatId) {
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
-    return projectsStorage.getAll(boatId);
+    return projectsStorage.getAll(boatId).map((row) => ({ ...row, type: row.type || 'Project', archived_at: row.archived_at || null }));
   }
 
   const { data, error } = await supabase
@@ -1433,12 +1504,17 @@ export async function getProjects(boatId) {
 
   if (error) {
     logSupabaseFallback('boat_projects', error);
-    return projectsStorage.getAll(boatId);
+    return projectsStorage.getAll(boatId).map((row) => ({ ...row, type: row.type || 'Project', archived_at: row.archived_at || null }));
   }
 
-  const list = (data || []).map((row) => ({ ...row, boat_id: boatId }));
-  projectsStorage.replaceForBoat(boatId, list);
-  return list;
+  const cloud = (data || []).map((row) => ({ ...row, boat_id: boatId, type: row.type || 'Project', archived_at: row.archived_at || null }));
+  const localUnsynced = projectsStorage
+    .getAll(boatId)
+    .filter((p) => !isSupabaseUuid(p.id))
+    .map((row) => ({ ...row, type: row.type || 'Project', archived_at: row.archived_at || null }));
+  const merged = cloud.concat(localUnsynced.filter((p) => !cloud.some((c) => c.id === p.id)));
+  projectsStorage.replaceForBoat(boatId, merged);
+  return merged;
 }
 
 export async function createProject(boatId, payload) {
@@ -1453,10 +1529,15 @@ export async function createProject(boatId, payload) {
     boat_id: boatId,
     owner_id: session.user.id,
     project_name: payload.project_name || '',
+    type: payload.type || 'Project',
     category: payload.category || null,
     description: payload.description || null,
     status: payload.status || null,
     priority: payload.priority || null,
+    reported_by: payload.reported_by || null,
+    date_reported: payload.date_reported || null,
+    severity: payload.severity || null,
+    archived_at: payload.archived_at || null,
     target_date: payload.target_date || null,
     completed_date: payload.completed_date || null,
     estimated_cost: payload.estimated_cost ?? null,
@@ -1467,18 +1548,56 @@ export async function createProject(boatId, payload) {
     notes: payload.notes || null
   };
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('boat_projects')
     .insert(row)
     .select('*')
     .single();
+
+  const schemaFallbackError = error && (error.status === 400 || error.code === '42703' || (error.message && error.message.includes('column')));
+  if (schemaFallbackError) {
+    const {
+      type: _type,
+      reported_by: _reportedBy,
+      date_reported: _dateReported,
+      severity: _severity,
+      archived_at: _archivedAt,
+      ...rowWithoutIssueFields
+    } = row;
+    ({ data, error } = await supabase
+      .from('boat_projects')
+      .insert(rowWithoutIssueFields)
+      .select('*')
+      .single());
+  }
+
+  const statusConstraintError = error && (
+    error.code === '23514' ||
+    (typeof error.message === 'string' && /status|check/i.test(error.message))
+  );
+  if (statusConstraintError) {
+    const {
+      type: _type,
+      reported_by: _reportedBy,
+      date_reported: _dateReported,
+      severity: _severity,
+      archived_at: _archivedAt,
+      ...legacyRow
+    } = row;
+    legacyRow.status = toLegacyProjectStatus(legacyRow.status);
+    ({ data, error } = await supabase
+      .from('boat_projects')
+      .insert(legacyRow)
+      .select('*')
+      .single());
+  }
 
   if (error) {
     logSupabaseFallback('boat_projects', error);
     projectsStorage.save({ ...payload, boat_id: boatId }, boatId);
     return projectsStorage.get(payload.id) || payload;
   }
-  const out = { ...data, boat_id: boatId };
+  const out = { ...data, boat_id: boatId, type: data?.type || payload.type || 'Project', archived_at: data?.archived_at || null };
   projectsStorage.save(out, boatId);
   return out;
 }
@@ -1499,26 +1618,78 @@ export async function updateProject(projectId, payload) {
     return;
   }
 
+  // Support partial updates (e.g. archive/unarchive) without nulling required columns.
+  let existingDbRow = null;
+  const { data: existingData } = await supabase
+    .from('boat_projects')
+    .select('*')
+    .eq('id', projectId)
+    .maybeSingle();
+  if (existingData) existingDbRow = existingData;
+  const existingLocal = projectsStorage.get(projectId) || null;
+  const base = existingDbRow || existingLocal || {};
+
   const updateRow = {
-    project_name: payload.project_name ?? null,
-    category: payload.category ?? null,
-    description: payload.description ?? null,
-    status: payload.status ?? null,
-    priority: payload.priority ?? null,
-    target_date: payload.target_date ?? null,
-    completed_date: payload.completed_date ?? null,
-    estimated_cost: payload.estimated_cost ?? null,
-    estimated_cost_currency: payload.estimated_cost_currency ?? 'GBP',
-    actual_cost: payload.actual_cost ?? null,
-    actual_cost_currency: payload.actual_cost_currency ?? 'GBP',
-    supplier_installer: payload.supplier_installer ?? null,
-    notes: payload.notes ?? null
+    project_name: payload.project_name ?? base.project_name ?? null,
+    type: payload.type ?? base.type ?? 'Project',
+    category: payload.category ?? base.category ?? null,
+    description: payload.description ?? base.description ?? null,
+    status: payload.status ?? base.status ?? null,
+    priority: payload.priority ?? base.priority ?? null,
+    reported_by: payload.reported_by ?? base.reported_by ?? null,
+    date_reported: payload.date_reported ?? base.date_reported ?? null,
+    severity: payload.severity ?? base.severity ?? null,
+    archived_at: Object.prototype.hasOwnProperty.call(payload, 'archived_at') ? payload.archived_at : (base.archived_at ?? null),
+    target_date: payload.target_date ?? base.target_date ?? null,
+    completed_date: payload.completed_date ?? base.completed_date ?? null,
+    estimated_cost: payload.estimated_cost ?? base.estimated_cost ?? null,
+    estimated_cost_currency: payload.estimated_cost_currency ?? base.estimated_cost_currency ?? 'GBP',
+    actual_cost: payload.actual_cost ?? base.actual_cost ?? null,
+    actual_cost_currency: payload.actual_cost_currency ?? base.actual_cost_currency ?? 'GBP',
+    supplier_installer: payload.supplier_installer ?? base.supplier_installer ?? null,
+    notes: payload.notes ?? base.notes ?? null
   };
 
-  const { error } = await supabase
+  let { error } = await supabase
     .from('boat_projects')
     .update(updateRow)
     .eq('id', projectId);
+
+  const schemaFallbackError = error && (error.status === 400 || error.code === '42703' || (error.message && error.message.includes('column')));
+  if (schemaFallbackError) {
+    const {
+      type: _type,
+      reported_by: _reportedBy,
+      date_reported: _dateReported,
+      severity: _severity,
+      archived_at: _archivedAt,
+      ...rowWithoutIssueFields
+    } = updateRow;
+    ({ error } = await supabase
+      .from('boat_projects')
+      .update(rowWithoutIssueFields)
+      .eq('id', projectId));
+  }
+
+  const statusConstraintError = error && (
+    error.code === '23514' ||
+    (typeof error.message === 'string' && /status|check/i.test(error.message))
+  );
+  if (statusConstraintError) {
+    const {
+      type: _type,
+      reported_by: _reportedBy,
+      date_reported: _dateReported,
+      severity: _severity,
+      archived_at: _archivedAt,
+      ...legacyRow
+    } = updateRow;
+    legacyRow.status = toLegacyProjectStatus(legacyRow.status);
+    ({ error } = await supabase
+      .from('boat_projects')
+      .update(legacyRow)
+      .eq('id', projectId));
+  }
 
   if (error) {
     logSupabaseFallback('boat_projects', error);

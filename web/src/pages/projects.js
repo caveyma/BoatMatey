@@ -1,6 +1,6 @@
 /**
- * Projects Page
- * Plan and track boat projects/upgrades (planned or in-progress, not completed maintenance).
+ * Projects & Issues Page
+ * Plan and track boat projects/upgrades and logged issues.
  */
 
 import { navigate } from '../router.js';
@@ -18,6 +18,7 @@ import {
   openUpload,
   formatFileSize,
   getUpload,
+  refreshBoatUploadsFromCloud,
   LIMITED_UPLOAD_SIZE_BYTES,
   LIMITED_UPLOADS_PER_ENTITY
 } from '../lib/uploads.js';
@@ -25,8 +26,12 @@ import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
 import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 
 const CATEGORIES = ['Electronics', 'Mechanical', 'Plumbing', 'Electrical', 'Hull / Deck', 'Interior', 'Safety', 'Other'];
-const STATUSES = ['Idea', 'Planning', 'Parts Ordered', 'Scheduled', 'In Progress', 'Completed', 'Cancelled'];
+const TYPES = ['Project', 'Issue'];
+const PROJECT_STATUSES = ['Planned', 'In Progress', 'Completed'];
+const ISSUE_STATUSES = ['Open', 'Under Review', 'In Progress', 'Waiting Parts', 'Resolved', 'Closed'];
+const ALL_STATUSES = Array.from(new Set([...PROJECT_STATUSES, ...ISSUE_STATUSES]));
 const PRIORITIES = ['Low', 'Medium', 'High'];
+const SEVERITIES = ['Low', 'Medium', 'High', 'Critical'];
 
 let editingId = null;
 let currentBoatId = null;
@@ -34,9 +39,16 @@ let projectsArchived = false;
 let filterStatus = '';
 let filterPriority = '';
 let filterCategory = '';
+let filterType = '';
+let filterArchivedView = 'active'; // active | archived | all
+let filterIssueActiveOnly = false;
+let viewMode = 'compact'; // compact | expanded
+const expandedItemIds = new Set(); // used in compact mode
+const collapsedItemIds = new Set(); // used in expanded mode
 let sortBy = 'target_date'; // target_date | status | priority | category
 let projectFileInput = null;
 let currentProjectIdForUpload = null;
+let quickIssueModalEl = null;
 
 function escapeHtml(s) {
   if (s == null || s === '') return '';
@@ -59,7 +71,7 @@ function render(params = {}) {
 
   const wrapper = document.createElement('div');
   const yachtHeader = createYachtHeader(
-    isEditPage ? (projectId === 'new' ? 'Add Project' : 'Edit Project') : 'Projects'
+    isEditPage ? (projectId === 'new' ? 'Add Project or Issue' : 'Edit Project or Issue') : 'Projects & Issues'
   );
   wrapper.appendChild(yachtHeader);
 
@@ -80,8 +92,24 @@ function render(params = {}) {
   const addBtn = document.createElement('button');
   addBtn.className = 'btn-primary';
   addBtn.id = 'projects-add-btn';
-  addBtn.innerHTML = `${renderIcon('plus')} Add Project`;
+  addBtn.innerHTML = `${renderIcon('plus')} Add Project or Issue`;
   addBtn.onclick = () => navigate(`/boat/${currentBoatId}/projects/new`);
+
+  const quickAddBtn = document.createElement('button');
+  quickAddBtn.className = 'btn-secondary projects-quick-add-btn';
+  quickAddBtn.id = 'projects-quick-add-btn';
+  quickAddBtn.type = 'button';
+  quickAddBtn.innerHTML = `${renderIcon('plus')} Quick Add Issue`;
+  quickAddBtn.onclick = () => openQuickAddIssueModal();
+
+  const actionsRow = document.createElement('div');
+  actionsRow.className = 'page-actions';
+  actionsRow.style.marginBottom = '1rem';
+  actionsRow.appendChild(addBtn);
+  actionsRow.appendChild(quickAddBtn);
+
+  const quickAddHost = document.createElement('div');
+  quickAddHost.id = 'projects-quick-add-host';
 
   const filtersRow = document.createElement('div');
   filtersRow.className = 'form-row';
@@ -93,7 +121,7 @@ function render(params = {}) {
       <label for="filter-status">Status</label>
       <select id="filter-status">
         <option value="">All</option>
-        ${STATUSES.map((s) => `<option value="${s}">${s}</option>`).join('')}
+        ${ALL_STATUSES.map((s) => `<option value="${s}">${s}</option>`).join('')}
       </select>
     </div>
     <div class="form-group" style="margin-bottom:0;min-width:120px">
@@ -111,12 +139,34 @@ function render(params = {}) {
       </select>
     </div>
     <div class="form-group" style="margin-bottom:0;min-width:140px">
+      <label for="filter-type">Type</label>
+      <select id="filter-type">
+        <option value="">All</option>
+        ${TYPES.map((t) => `<option value="${t}">${t}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:0;min-width:140px">
       <label for="sort-by">Sort by</label>
       <select id="sort-by">
-        <option value="target_date">Target date</option>
+        <option value="target_date">Target date / Date reported</option>
         <option value="status">Status</option>
         <option value="priority">Priority</option>
         <option value="category">Category</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:0;min-width:140px">
+      <label for="filter-archived">View</label>
+      <select id="filter-archived">
+        <option value="active">Active</option>
+        <option value="archived">Archived</option>
+        <option value="all">All</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:0;min-width:140px">
+      <label for="view-mode">List view</label>
+      <select id="view-mode">
+        <option value="compact">Compact View</option>
+        <option value="expanded">Expanded View</option>
       </select>
     </div>
   `;
@@ -131,7 +181,8 @@ function render(params = {}) {
   fileInput.accept = '.pdf,.jpg,.jpeg,.png';
   fileInput.style.display = 'none';
 
-  container.appendChild(addBtn);
+  container.appendChild(actionsRow);
+  container.appendChild(quickAddHost);
   container.appendChild(filtersRow);
   container.appendChild(fileInput);
   container.appendChild(listContainer);
@@ -149,20 +200,33 @@ async function onMount(params = {}) {
 
   window.navigate = navigate;
   projectsArchived = currentBoatId ? await isBoatArchived(currentBoatId) : false;
+  if (currentBoatId) {
+    await refreshBoatUploadsFromCloud(currentBoatId);
+  }
 
   if (projectId) {
     editingId = projectId === 'new' ? `project_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` : projectId;
     await showProjectForm();
     insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-projects'), {
-      headline: 'Preview: Projects',
+      headline: 'Preview: Projects & Issues',
       detail:
-        'Plan refits and jobs here. Tap Save when ready — Premium is required to keep your projects and attachments.'
+        'Plan refits and log issues here. Tap Save when ready — Premium is required to keep your items and attachments.'
     });
     return;
   }
 
   const addBtn = document.getElementById('projects-add-btn');
+  const quickAddBtn = document.getElementById('projects-quick-add-btn');
   if (addBtn && projectsArchived) addBtn.style.display = 'none';
+  if (quickAddBtn && projectsArchived) quickAddBtn.style.display = 'none';
+  if (quickAddBtn) {
+    quickAddBtn.type = 'button';
+    quickAddBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      openQuickAddIssueModal();
+    });
+  }
+  window.projectsPageQuickAddIssue = () => openQuickAddIssueModal();
 
   projectFileInput = document.getElementById('projects-file-input');
   if (projectFileInput) {
@@ -172,7 +236,7 @@ async function onMount(params = {}) {
       const existing = getUploads('project', currentProjectIdForUpload, currentBoatId);
       const remainingSlots = LIMITED_UPLOADS_PER_ENTITY - existing.length;
       if (remainingSlots <= 0) {
-        showToast(`You can only upload up to ${LIMITED_UPLOADS_PER_ENTITY} files for this project.`, 'error');
+        showToast(`You can only upload up to ${LIMITED_UPLOADS_PER_ENTITY} files for this item.`, 'error');
         projectFileInput.value = '';
         return;
       }
@@ -197,16 +261,28 @@ async function onMount(params = {}) {
   const filterStatusEl = document.getElementById('filter-status');
   const filterPriorityEl = document.getElementById('filter-priority');
   const filterCategoryEl = document.getElementById('filter-category');
+  const filterTypeEl = document.getElementById('filter-type');
+  const filterArchivedEl = document.getElementById('filter-archived');
+  const viewModeEl = document.getElementById('view-mode');
   const sortByEl = document.getElementById('sort-by');
+  const hash = window.location.hash || '';
+  const queryString = hash.includes('?') ? hash.split('?')[1] : '';
+  const query = new URLSearchParams(queryString);
+  if (query.get('type') === 'Issue') filterType = 'Issue';
+  if (query.get('status') === 'active') filterIssueActiveOnly = true;
+  if (query.get('archived') === 'active') filterArchivedView = 'active';
   if (filterStatusEl) filterStatusEl.addEventListener('change', () => { filterStatus = filterStatusEl.value; loadProjects(); });
   if (filterPriorityEl) filterPriorityEl.addEventListener('change', () => { filterPriority = filterPriorityEl.value; loadProjects(); });
   if (filterCategoryEl) filterCategoryEl.addEventListener('change', () => { filterCategory = filterCategoryEl.value; loadProjects(); });
+  if (filterTypeEl) filterTypeEl.addEventListener('change', () => { filterType = filterTypeEl.value; filterIssueActiveOnly = false; loadProjects(); });
+  if (filterArchivedEl) filterArchivedEl.addEventListener('change', () => { filterArchivedView = filterArchivedEl.value || 'active'; loadProjects(); });
+  if (viewModeEl) viewModeEl.addEventListener('change', () => { viewMode = viewModeEl.value || 'compact'; loadProjects(); });
   if (sortByEl) sortByEl.addEventListener('change', () => { sortBy = sortByEl.value; loadProjects(); });
 
   insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-projects'), {
-    headline: 'Preview: Projects',
+    headline: 'Preview: Projects & Issues',
     detail:
-      'Plan refits and jobs here. Tap Save when ready — Premium is required to keep your projects and attachments.'
+      'Plan refits and log issues here. Tap Save when ready — Premium is required to keep your items and attachments.'
   });
 
   loadProjects();
@@ -222,30 +298,67 @@ function statusBadgeClass(status) {
   return 'project-badge project-badge-other';
 }
 
+function typeBadgeClass(type) {
+  return type === 'Issue' ? 'project-badge project-badge-cancelled' : 'project-badge project-badge-planned';
+}
+
 function priorityClass(priority) {
   if (priority === 'High') return 'priority-high';
   if (priority === 'Medium') return 'priority-medium';
   return 'priority-low';
 }
 
+function isItemExpanded(id) {
+  if (viewMode === 'expanded') return !collapsedItemIds.has(id);
+  return expandedItemIds.has(id);
+}
+
 async function loadProjects() {
   const listContainer = document.getElementById('projects-list');
   let projects = currentBoatId ? await getProjects(currentBoatId) : [];
+  projects = projects.map((p) => ({ ...p, type: p.type || 'Project' }));
+
+  if (filterArchivedView === 'active') {
+    projects = projects.filter((p) => !p.archived_at);
+  } else if (filterArchivedView === 'archived') {
+    projects = projects.filter((p) => !!p.archived_at);
+  }
 
   if (filterStatus) projects = projects.filter((p) => p.status === filterStatus);
   if (filterPriority) projects = projects.filter((p) => p.priority === filterPriority);
   if (filterCategory) projects = projects.filter((p) => p.category === filterCategory);
+  if (filterType) projects = projects.filter((p) => (p.type || 'Project') === filterType);
+  if (filterIssueActiveOnly) {
+    const activeIssueStatuses = new Set(['Open', 'Under Review', 'In Progress', 'Waiting Parts']);
+    projects = projects.filter((p) => (p.type || 'Project') === 'Issue' && activeIssueStatuses.has(p.status || '') && !p.archived_at);
+  }
 
-  if (sortBy === 'target_date') {
+  if (filterArchivedView === 'archived') {
     projects = [...projects].sort((a, b) => {
+      const da = a.archived_at ? new Date(a.archived_at).getTime() : 0;
+      const db = b.archived_at ? new Date(b.archived_at).getTime() : 0;
+      if (da !== db) return db - da;
+      return (b.updated_at || b.created_at || '').localeCompare(a.updated_at || a.created_at || '');
+    });
+  } else if (sortBy === 'target_date') {
+    const projectsOnly = projects.filter((p) => (p.type || 'Project') !== 'Issue');
+    const issuesOnly = projects.filter((p) => (p.type || 'Project') === 'Issue');
+    const sortedProjects = [...projectsOnly].sort((a, b) => {
       const da = a.target_date ? new Date(a.target_date).getTime() : 0;
       const db = b.target_date ? new Date(b.target_date).getTime() : 0;
       if (da !== db) return da - db;
       return (b.created_at || '').localeCompare(a.created_at || '');
     });
+    const sortedIssues = [...issuesOnly].sort((a, b) => {
+      const da = a.date_reported ? new Date(a.date_reported).getTime() : 0;
+      const db = b.date_reported ? new Date(b.date_reported).getTime() : 0;
+      if (da !== db) return db - da;
+      return (b.created_at || '').localeCompare(a.created_at || '');
+    });
+    projects = [...sortedIssues, ...sortedProjects];
   } else if (sortBy === 'status') {
-    const order = { Idea: 0, Planning: 1, 'Parts Ordered': 2, Scheduled: 3, 'In Progress': 4, Completed: 5, Cancelled: 6 };
-    projects = [...projects].sort((a, b) => (order[a.status] ?? 7) - (order[b.status] ?? 7));
+    const order = { Planned: 0, Open: 1, 'Under Review': 2, 'In Progress': 3, 'Waiting Parts': 4, Resolved: 5, Completed: 6, Closed: 7 };
+    projects = [...projects].sort((a, b) => (order[a.status] ?? 8) - (order[b.status] ?? 8));
   } else if (sortBy === 'priority') {
     const order = { High: 0, Medium: 1, Low: 2 };
     projects = [...projects].sort((a, b) => (order[a.priority] ?? 3) - (order[b.priority] ?? 3));
@@ -256,18 +369,24 @@ async function loadProjects() {
   const filterStatusEl = document.getElementById('filter-status');
   const filterPriorityEl = document.getElementById('filter-priority');
   const filterCategoryEl = document.getElementById('filter-category');
+  const filterTypeEl = document.getElementById('filter-type');
+  const filterArchivedEl = document.getElementById('filter-archived');
+  const viewModeEl = document.getElementById('view-mode');
   const sortByEl = document.getElementById('sort-by');
   if (filterStatusEl) filterStatusEl.value = filterStatus;
   if (filterPriorityEl) filterPriorityEl.value = filterPriority;
   if (filterCategoryEl) filterCategoryEl.value = filterCategory;
+  if (filterTypeEl) filterTypeEl.value = filterType;
+  if (filterArchivedEl) filterArchivedEl.value = filterArchivedView;
+  if (viewModeEl) viewModeEl.value = viewMode;
   if (sortByEl) sortByEl.value = sortBy;
 
   if (!projects || projects.length === 0) {
     listContainer.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">${renderIcon('clipboard')}</div>
-        <p>No projects yet</p>
-        ${!projectsArchived ? `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/projects/new')">${renderIcon('plus')} Add Project</button></div>` : ''}
+        <p>${filterArchivedView === 'archived' ? 'No archived Projects or Issues' : 'No Projects or Issues yet'}</p>
+        ${!projectsArchived ? `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/projects/new')">${renderIcon('plus')} Add Project or Issue</button></div>` : ''}
       </div>
     `;
     return;
@@ -277,27 +396,59 @@ async function loadProjects() {
     .map((p) => {
       const targetStr = p.target_date ? new Date(p.target_date).toLocaleDateString() : '';
       const completedStr = p.completed_date ? new Date(p.completed_date).toLocaleDateString() : '';
+      const dateReportedStr = p.date_reported ? new Date(p.date_reported).toLocaleDateString() : '';
+      const archivedStr = p.archived_at ? new Date(p.archived_at).toLocaleDateString() : '';
       const estCost = p.estimated_cost != null ? `${currencySymbol(p.estimated_cost_currency)}${Number(p.estimated_cost).toFixed(2)}` : '';
       const actCost = p.actual_cost != null ? `${currencySymbol(p.actual_cost_currency)}${Number(p.actual_cost).toFixed(2)}` : '';
       const prioritySpan = p.priority ? `<span class="project-priority ${priorityClass(p.priority)}">${escapeHtml(p.priority)}</span>` : '';
+      const itemType = p.type || 'Project';
+      const expanded = isItemExpanded(p.id);
+      const compactSecondaryLine = itemType === 'Issue'
+        ? (dateReportedStr ? `Reported ${dateReportedStr}` : 'No report date')
+        : (targetStr ? `Target ${targetStr}` : 'No target date');
+      const compactPriorityOrSeverity = itemType === 'Issue'
+        ? (p.severity ? `Severity: ${escapeHtml(p.severity)}` : 'Severity: —')
+        : (p.priority ? `Priority: ${escapeHtml(p.priority)}` : 'Priority: —');
       return `
       <div class="card">
         <div class="card-header">
-          <div>
-            <h3 class="card-title">${escapeHtml(p.project_name)}</h3>
+          <div style="display:flex;align-items:flex-start;gap:0.5rem;flex:1;min-width:0">
+            <button
+              type="button"
+              class="projects-expand-toggle"
+              aria-expanded="${expanded ? 'true' : 'false'}"
+              aria-label="${expanded ? 'Collapse details' : 'Expand details'}"
+              title="${expanded ? 'Click to collapse' : 'Click to expand'}"
+              onclick="projectsPageToggleExpand('${p.id}')"
+            >
+              <span class="projects-expand-chevron ${expanded ? 'is-expanded' : ''}" aria-hidden="true">▶</span>
+              <span style="min-width:0">
+                <span class="card-title" style="display:block">${escapeHtml(p.project_name)}</span>
+              </span>
+            </button>
+            <div style="min-width:0;flex:1">
             <p class="text-muted">${escapeHtml(p.category || '')} ${prioritySpan ? ' · ' : ''} ${prioritySpan}</p>
+              <p class="text-muted" style="margin:0.2rem 0 0 0;font-size:0.85rem">${compactPriorityOrSeverity} · ${compactSecondaryLine}</p>
+            </div>
           </div>
           <div style="display:flex;align-items:center;gap:0.5rem">
+            <span class="${typeBadgeClass(itemType)}">${escapeHtml(itemType)}</span>
             <span class="${statusBadgeClass(p.status)}">${escapeHtml(p.status || '—')}</span>
+            ${p.archived_at ? `<span class="project-badge project-badge-other">Archived</span>` : ''}
             ${!projectsArchived ? `
+            <button class="btn-link" onclick="projectsPageToggleArchive('${p.id}', ${p.archived_at ? 'false' : 'true'})">${p.archived_at ? 'Unarchive' : 'Archive'}</button>
             <a href="#/boat/${currentBoatId}/projects/${p.id}" class="btn-link" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/projects/${p.id}')">${renderIcon('edit')}</a>
             <button class="btn-link btn-danger" onclick="projectsPageDelete('${p.id}')">${renderIcon('trash')}</button>
             ` : ''}
           </div>
         </div>
-        <div>
+        <div style="display:${expanded ? 'block' : 'none'}">
           ${p.description ? `<p>${escapeHtml(p.description).replace(/\n/g, '<br>')}</p>` : ''}
-          ${targetStr ? `<p><strong>Target:</strong> ${targetStr}</p>` : ''}
+          ${itemType === 'Project' && targetStr ? `<p><strong>Target:</strong> ${targetStr}</p>` : ''}
+          ${itemType === 'Issue' && p.reported_by ? `<p><strong>Reported by:</strong> ${escapeHtml(p.reported_by)}</p>` : ''}
+          ${itemType === 'Issue' && dateReportedStr ? `<p><strong>Date reported:</strong> ${dateReportedStr}</p>` : ''}
+          ${itemType === 'Issue' && p.severity ? `<p><strong>Severity:</strong> ${escapeHtml(p.severity)}</p>` : ''}
+          ${p.archived_at && archivedStr ? `<p><strong>Archived:</strong> ${archivedStr}</p>` : ''}
           ${p.status === 'Completed' && completedStr ? `<p><strong>Completed:</strong> ${completedStr}</p>` : ''}
           ${estCost ? `<p><strong>Est. cost:</strong> ${estCost}</p>` : ''}
           ${actCost ? `<p><strong>Actual cost:</strong> ${actCost}</p>` : ''}
@@ -320,16 +471,153 @@ async function loadProjects() {
 
 function attachListHandlers() {
   window.projectsPageDelete = async (id) => {
-    const ok = await confirmAction({ title: 'Delete this project?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
+    const ok = await confirmAction({ title: 'Delete this item?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
     if (!ok) return;
     await deleteProject(id);
     loadProjects();
-    showToast('Project removed', 'info');
+    showToast('Item removed', 'info');
   };
   window.projectsPageAddAttachment = (projectId) => {
     currentProjectIdForUpload = projectId;
     if (projectFileInput) projectFileInput.click();
   };
+  window.projectsPageToggleExpand = (id) => {
+    if (viewMode === 'expanded') {
+      if (collapsedItemIds.has(id)) collapsedItemIds.delete(id);
+      else collapsedItemIds.add(id);
+    } else {
+      if (expandedItemIds.has(id)) expandedItemIds.delete(id);
+      else expandedItemIds.add(id);
+    }
+    loadProjects();
+  };
+  window.projectsPageToggleArchive = async (id, shouldArchive) => {
+    const ok = await confirmAction({
+      title: shouldArchive ? 'Archive this item?' : 'Unarchive this item?',
+      message: shouldArchive ? 'You can unarchive it later.' : 'This item will return to active work.',
+      confirmLabel: shouldArchive ? 'Archive' : 'Unarchive',
+      cancelLabel: 'Cancel'
+    });
+    if (!ok) return;
+    await updateProject(id, { archived_at: shouldArchive ? new Date().toISOString() : null });
+    loadProjects();
+    showToast(shouldArchive ? 'Item archived' : 'Item unarchived', 'success');
+  };
+}
+
+function closeQuickAddIssueModal() {
+  if (quickIssueModalEl) {
+    quickIssueModalEl.remove();
+    quickIssueModalEl = null;
+  }
+}
+
+function openQuickAddIssueModal() {
+  try {
+    if (projectsArchived) return;
+    closeQuickAddIssueModal();
+    const host = document.getElementById('projects-quick-add-host');
+    if (!host) {
+      showToast('Could not open quick issue form', 'error');
+      return;
+    }
+    quickIssueModalEl = document.createElement('div');
+    quickIssueModalEl.className = 'card';
+    quickIssueModalEl.style.maxWidth = '640px';
+    quickIssueModalEl.style.marginBottom = '1rem';
+    quickIssueModalEl.innerHTML = `
+      <h3 style="margin-bottom:0.75rem">Log Issue</h3>
+      <form id="quick-issue-form">
+        <div class="form-group">
+          <label for="quick_issue_title">Title *</label>
+          <input id="quick_issue_title" type="text" required placeholder="e.g. Bilge pump not working">
+        </div>
+        <div class="form-group">
+          <label for="quick_issue_category">Category</label>
+          <select id="quick_issue_category">
+            <option value="">Select...</option>
+            ${CATEGORIES.map((c) => `<option value="${c}">${c}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="quick_issue_severity">Severity *</label>
+          <select id="quick_issue_severity" required>
+            <option value="">Select...</option>
+            ${SEVERITIES.map((s) => `<option value="${s}">${s}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="quick_issue_reported_by">Reported By</label>
+          <input id="quick_issue_reported_by" type="text" placeholder="Name">
+        </div>
+        <div class="form-group">
+          <label for="quick_issue_notes">Notes / Description</label>
+          <textarea id="quick_issue_notes" rows="3" placeholder="Optional notes"></textarea>
+        </div>
+        <div class="form-actions" style="margin-top:0.75rem">
+          <button type="button" class="btn-secondary" id="quick-issue-cancel-btn">Cancel</button>
+          <button type="submit" class="btn-primary" id="quick-issue-save-btn">Save Issue</button>
+        </div>
+      </form>
+  `;
+    host.appendChild(quickIssueModalEl);
+
+    const cancelBtn = document.getElementById('quick-issue-cancel-btn');
+    if (cancelBtn) cancelBtn.addEventListener('click', closeQuickAddIssueModal);
+
+    const form = document.getElementById('quick-issue-form');
+    const saveBtn = document.getElementById('quick-issue-save-btn');
+    if (form) {
+      form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = document.getElementById('quick_issue_title')?.value?.trim() || '';
+      const category = document.getElementById('quick_issue_category')?.value || null;
+      const severity = document.getElementById('quick_issue_severity')?.value || '';
+      const reportedBy = document.getElementById('quick_issue_reported_by')?.value?.trim() || null;
+      const notes = document.getElementById('quick_issue_notes')?.value?.trim() || null;
+      if (!title) {
+        showToast('Title is required', 'error');
+        return;
+      }
+      if (!severity) {
+        showToast('Severity is required', 'error');
+        return;
+      }
+      if (blockPremiumSaveIfNeeded()) return;
+      setSaveButtonLoading(saveBtn, true);
+      try {
+        const payload = {
+          id: `project_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          project_name: title,
+          category,
+          description: notes,
+          type: 'Issue',
+          status: 'Open',
+          severity,
+          reported_by: reportedBy,
+          date_reported: new Date().toISOString().slice(0, 10),
+          archived_at: null
+        };
+        const created = await createProject(currentBoatId, payload);
+        closeQuickAddIssueModal();
+        await loadProjects();
+        const createdId = created?.id || payload.id;
+        showToast('Issue logged. Edit details if needed.', 'success');
+        if (createdId && !expandedItemIds.has(createdId) && !collapsedItemIds.has(createdId)) {
+          // Keep compact by default; do not auto-expand.
+        }
+      } catch (err) {
+        showToast(err?.message || 'Failed to save issue', 'error');
+      } finally {
+        setSaveButtonLoading(saveBtn, false);
+      }
+    });
+    } else {
+      showToast('Could not open quick issue form', 'error');
+    }
+  } catch (err) {
+    showToast(err?.message || 'Could not open quick issue form', 'error');
+  }
 }
 
 function loadProjectAttachments(projects) {
@@ -387,10 +675,16 @@ async function showProjectForm() {
 
   const formHtml = `
     <div class="card" id="project-form-card">
-      <h3>${existing ? 'Edit Project' : 'Add Project'}</h3>
+      <h3>${existing ? 'Edit Project or Issue' : 'Add Project or Issue'}</h3>
       <form id="project-form">
         <div class="form-group">
-          <label for="project_name">Project name *</label>
+          <label for="project_type">Type *</label>
+          <select id="project_type" required>
+            ${TYPES.map((t) => `<option value="${t}" ${(entry?.type || 'Project') === t ? 'selected' : ''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="project_name">Title *</label>
           <input type="text" id="project_name" required value="${escapeHtml(entry?.project_name || '')}" placeholder="e.g. Install Stern Thruster">
         </div>
         <div class="form-group">
@@ -409,7 +703,6 @@ async function showProjectForm() {
             <label for="project_status">Status</label>
             <select id="project_status">
               <option value="">Select...</option>
-              ${STATUSES.map((s) => `<option value="${s}" ${entry?.status === s ? 'selected' : ''}>${s}</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
@@ -420,7 +713,26 @@ async function showProjectForm() {
             </select>
           </div>
         </div>
-        <div class="form-row">
+        <div class="form-row" id="issue-fields-row-1" style="display:none">
+          <div class="form-group">
+            <label for="project_reported_by">Reported By</label>
+            <input type="text" id="project_reported_by" value="${escapeHtml(entry?.reported_by || '')}" placeholder="Name">
+          </div>
+          <div class="form-group">
+            <label for="project_date_reported">Date Reported</label>
+            <input type="date" id="project_date_reported" value="${entry?.date_reported || ''}">
+          </div>
+        </div>
+        <div class="form-row" id="issue-fields-row-2" style="display:none">
+          <div class="form-group">
+            <label for="project_severity">Severity</label>
+            <select id="project_severity">
+              <option value="">Select...</option>
+              ${SEVERITIES.map((s) => `<option value="${s}" ${entry?.severity === s ? 'selected' : ''}>${s}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-row" id="target-date-row">
           <div class="form-group">
             <label for="project_target_date">Target date</label>
             <input type="date" id="project_target_date" value="${entry?.target_date || ''}">
@@ -469,7 +781,7 @@ async function showProjectForm() {
         </div>
         <div class="form-actions" style="margin-top:1rem">
           <button type="button" class="btn-secondary" id="project-form-cancel">Cancel</button>
-          <button type="submit" class="btn-primary" id="project-form-save">${existing ? 'Save changes' : 'Add project'}</button>
+          <button type="submit" class="btn-primary" id="project-form-save">${existing ? 'Save changes' : 'Add project or issue'}</button>
         </div>
       </form>
     </div>
@@ -482,6 +794,43 @@ async function showProjectForm() {
   const cancelBtn = document.getElementById('project-form-cancel');
   const saveBtn = document.getElementById('project-form-save');
   const addAttachmentBtn = document.getElementById('project-form-add-attachment');
+  const typeEl = document.getElementById('project_type');
+  const statusEl = document.getElementById('project_status');
+  const issueRow1 = document.getElementById('issue-fields-row-1');
+  const issueRow2 = document.getElementById('issue-fields-row-2');
+  const targetDateRow = document.getElementById('target-date-row');
+  const reportedByEl = document.getElementById('project_reported_by');
+  const dateReportedEl = document.getElementById('project_date_reported');
+  const severityEl = document.getElementById('project_severity');
+
+  function fillStatusOptions(selected) {
+    const selectedType = typeEl?.value || 'Project';
+    const options = selectedType === 'Issue' ? ISSUE_STATUSES : PROJECT_STATUSES;
+    statusEl.innerHTML = `<option value="">Select...</option>${options
+      .map((s) => `<option value="${s}" ${selected === s ? 'selected' : ''}>${s}</option>`)
+      .join('')}`;
+  }
+
+  function syncTypeVisibility() {
+    const selectedType = typeEl?.value || 'Project';
+    const isIssue = selectedType === 'Issue';
+    if (issueRow1) issueRow1.style.display = isIssue ? '' : 'none';
+    if (issueRow2) issueRow2.style.display = isIssue ? '' : 'none';
+    if (targetDateRow) targetDateRow.style.opacity = isIssue ? '0.6' : '1';
+    if (reportedByEl) reportedByEl.required = isIssue;
+    if (dateReportedEl) {
+      dateReportedEl.required = isIssue;
+      if (isIssue && !dateReportedEl.value) {
+        dateReportedEl.value = new Date().toISOString().slice(0, 10);
+      }
+    }
+    if (severityEl) severityEl.required = isIssue;
+    if (statusEl) {
+      const currentValue = statusEl.value;
+      fillStatusOptions(currentValue);
+      if (!statusEl.value) statusEl.value = isIssue ? 'Open' : 'Planned';
+    }
+  }
 
   if (projectsArchived) {
     form.querySelectorAll('input, select, textarea').forEach((el) => { el.disabled = true; });
@@ -490,12 +839,18 @@ async function showProjectForm() {
   }
 
   cancelBtn.addEventListener('click', () => navigate(`/boat/${currentBoatId}/projects`));
+  if (typeEl) {
+    fillStatusOptions(entry?.status || null);
+    syncTypeVisibility();
+    typeEl.addEventListener('change', syncTypeVisibility);
+  }
 
   function getFormPayload() {
     const estCost = document.getElementById('project_estimated_cost').value;
     const actCost = document.getElementById('project_actual_cost').value;
-    return {
+    const payload = {
       id: editingId,
+      type: document.getElementById('project_type').value || 'Project',
       project_name: document.getElementById('project_name').value.trim(),
       category: document.getElementById('project_category').value || null,
       description: document.getElementById('project_description').value.trim() || null,
@@ -503,13 +858,22 @@ async function showProjectForm() {
       priority: document.getElementById('project_priority').value || null,
       target_date: document.getElementById('project_target_date').value || null,
       completed_date: document.getElementById('project_completed_date').value || null,
+      reported_by: document.getElementById('project_reported_by').value.trim() || null,
+      date_reported: document.getElementById('project_date_reported').value || null,
+      severity: document.getElementById('project_severity').value || null,
       estimated_cost: estCost === '' ? null : parseFloat(estCost),
       estimated_cost_currency: document.getElementById('project_estimated_cost_currency').value || 'GBP',
       actual_cost: actCost === '' ? null : parseFloat(actCost),
       actual_cost_currency: document.getElementById('project_actual_cost_currency').value || 'GBP',
       supplier_installer: document.getElementById('project_supplier_installer').value.trim() || null,
-      notes: document.getElementById('project_notes').value.trim() || null
+      notes: document.getElementById('project_notes').value.trim() || null,
+      archived_at: entry?.archived_at || null
     };
+    const shouldAutoArchive =
+      (payload.type === 'Issue' && payload.status === 'Closed')
+      || (payload.type === 'Project' && payload.status === 'Completed');
+    payload.archived_at = shouldAutoArchive ? (payload.archived_at || new Date().toISOString()) : null;
+    return payload;
   }
 
   form.addEventListener('submit', async (e) => {
@@ -517,7 +881,11 @@ async function showProjectForm() {
     if (projectsArchived) return;
     const payload = getFormPayload();
     if (!payload.project_name) {
-      showToast('Project name is required', 'error');
+      showToast('Title is required', 'error');
+      return;
+    }
+    if (payload.type === 'Issue' && (!payload.reported_by || !payload.date_reported || !payload.severity)) {
+      showToast('Reported By, Date Reported and Severity are required for issues', 'error');
       return;
     }
     if (blockPremiumSaveIfNeeded()) return;
@@ -526,10 +894,10 @@ async function showProjectForm() {
       const isNew = !existing || existing.id !== editingId;
       if (isNew) {
         await createProject(currentBoatId, payload);
-        showToast('Project added', 'success');
+        showToast(`${payload.type === 'Issue' ? 'Issue' : 'Project'} added`, 'success');
       } else {
         await updateProject(editingId, payload);
-        showToast('Project updated', 'success');
+        showToast(`${payload.type === 'Issue' ? 'Issue' : 'Project'} updated`, 'success');
       }
       navigate(`/boat/${currentBoatId}/projects`);
     } catch (err) {
@@ -550,7 +918,7 @@ async function showProjectForm() {
     const existingUploads = getUploads('project', editingId, currentBoatId);
     const remaining = LIMITED_UPLOADS_PER_ENTITY - existingUploads.length;
     if (remaining <= 0) {
-      showToast(`Max ${LIMITED_UPLOADS_PER_ENTITY} files per project.`, 'error');
+      showToast(`Max ${LIMITED_UPLOADS_PER_ENTITY} files per item.`, 'error');
       formFileInput.value = '';
       return;
     }

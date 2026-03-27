@@ -17,7 +17,7 @@ const PREMIUM_CARD_TEASER = {
   fuel: 'Monitor fuel usage and performance',
   electrical: 'Track batteries and avoid failures',
   haulout: 'Plan and track haul-out work',
-  projects: 'Plan refits and onboard jobs',
+  projects: 'Plan projects and track issues',
   inventory: 'Spares and stores with low-stock alerts',
   navigation: 'Navigation kit and warranty dates',
   safety: 'Safety gear, inspections and expiry dates',
@@ -87,15 +87,15 @@ function getStatusText(cardId, boatId) {
 
     case 'projects':
       const projects = projectsStorage.getAll(boatId);
-      const planned = projects.filter((p) => !['Completed', 'Cancelled'].includes(p.status || '')).length;
-      const inProgress = projects.filter((p) => p.status === 'In Progress').length;
-      const completed = projects.filter((p) => p.status === 'Completed').length;
-      if (projects.length === 0) return 'No projects';
+      const projectItems = projects.filter((p) => (p.type || 'Project') === 'Project');
+      const issueItems = projects.filter((p) => (p.type || 'Project') === 'Issue');
+      const openIssues = issueItems.filter((p) => !['Resolved', 'Closed'].includes(p.status || '')).length;
+      if (projects.length === 0) return 'No projects or issues';
       const parts = [];
-      if (planned > 0) parts.push(`Planned: ${planned}`);
-      if (inProgress > 0) parts.push(`In progress: ${inProgress}`);
-      if (completed > 0) parts.push(`Done: ${completed}`);
-      return parts.length ? parts.join(' · ') : `${projects.length} project${projects.length !== 1 ? 's' : ''}`;
+      if (projectItems.length > 0) parts.push(`Projects: ${projectItems.length}`);
+      if (issueItems.length > 0) parts.push(`Issues: ${issueItems.length}`);
+      if (openIssues > 0) parts.push(`Open: ${openIssues}`);
+      return parts.length ? parts.join(' · ') : `${projects.length} item${projects.length !== 1 ? 's' : ''}`;
     
     case 'watermaker':
       return 'Track watermaker service';
@@ -277,7 +277,7 @@ function render() {
     { id: 'electrical', title: 'Electrical & Batteries', icon: 'battery', route: `/boat/${currentBoatId}/electrical` },
     { id: 'mayday', title: 'Mayday / Distress Call', icon: 'mayday', route: `/boat/${currentBoatId}/mayday` },
     { id: 'haulout', title: 'Haul-Out Maintenance', icon: 'wrench', route: `/boat/${currentBoatId}/haulout` },
-    { id: 'projects', title: 'Projects', icon: 'clipboard', route: `/boat/${currentBoatId}/projects` },
+    { id: 'projects', title: 'Projects & Issues', icon: 'clipboard', route: `/boat/${currentBoatId}/projects` },
     { id: 'inventory', title: 'Inventory', icon: 'inventory', route: `/boat/${currentBoatId}/inventory` },
     ...(currentBoat.boat_type === 'sailing'
       ? [{ id: 'sails-rigging', title: 'Sails & Rigging', icon: 'sail', route: `/boat/${currentBoatId}/sails-rigging` }]

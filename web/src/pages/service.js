@@ -16,6 +16,7 @@ import { showServiceHistoryLimitModal } from '../components/subscriptionUpsellMo
 import { currencySymbol, CURRENCIES } from '../lib/currency.js';
 import { enginesStorage } from '../lib/storage.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
+import { enableRecordCardExpand } from '../utils/recordCardExpand.js';
 
 let editingId = null;
 let serviceArchived = false;
@@ -790,6 +791,7 @@ async function loadServices() {
   `;
   }).join('');
 
+  enableRecordCardExpand(listContainer);
   attachHandlers();
   loadServiceAttachments(services);
   updateServiceFreeLimitUi();

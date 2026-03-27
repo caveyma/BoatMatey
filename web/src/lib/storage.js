@@ -465,17 +465,36 @@ export const linksStorage = {
     const all = storage.get(STORAGE_KEYS.LINKS, []);
     let links = boatId ? all.filter(l => l.boat_id === boatId) : all;
     
-    // Seed default links if empty for a boat
-    if (boatId && links.length === 0) {
-      const defaultLinks = [
-        { id: `link_navionics_${boatId}`, name: 'Navionics', url: 'https://www.navionics.com', boat_id: boatId },
-        { id: `link_metoffice_${boatId}`, name: 'Met Office Marine', url: 'https://www.metoffice.gov.uk/weather/marine', boat_id: boatId },
-        { id: `link_windy_${boatId}`, name: 'Windy', url: 'https://www.windy.com', boat_id: boatId },
-        { id: `link_marina_${boatId}`, name: 'Local Marina', url: 'https://example.com', boat_id: boatId }
-      ];
-      links = defaultLinks;
-      all.push(...defaultLinks);
-      storage.set(STORAGE_KEYS.LINKS, all);
+    if (boatId) {
+      // Remove retired legacy default.
+      const withoutLegacy = links.filter((l) => !(l?.name === 'Local Marina' && l?.url === 'https://example.com'));
+      if (withoutLegacy.length !== links.length) {
+        links = withoutLegacy;
+      }
+
+      // Ensure BoatMatey default exists for all boats (including existing ones).
+      const hasBoatMatey = links.some((l) => (l?.url || '').toLowerCase() === 'https://boatmatey.com');
+      if (!hasBoatMatey) {
+        links.unshift({
+          id: `link_boatmatey_${boatId}`,
+          name: 'BoatMatey',
+          url: 'https://boatmatey.com',
+          boat_id: boatId
+        });
+      }
+
+      // Seed defaults if a boat has no links at all.
+      if (links.length === 0) {
+        links = [
+          { id: `link_boatmatey_${boatId}`, name: 'BoatMatey', url: 'https://boatmatey.com', boat_id: boatId },
+          { id: `link_navionics_${boatId}`, name: 'Navionics', url: 'https://www.navionics.com', boat_id: boatId },
+          { id: `link_metoffice_${boatId}`, name: 'Met Office Marine', url: 'https://www.metoffice.gov.uk/weather/marine', boat_id: boatId },
+          { id: `link_windy_${boatId}`, name: 'Windy', url: 'https://www.windy.com', boat_id: boatId }
+        ];
+      }
+
+      const rest = all.filter((l) => l.boat_id !== boatId);
+      storage.set(STORAGE_KEYS.LINKS, rest.concat(links));
     }
     return links;
   },

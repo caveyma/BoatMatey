@@ -29,6 +29,7 @@ import {
 import { uploadsStorage } from '../lib/storage.js';
 import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
 import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
+import { enableRecordCardExpand } from '../utils/recordCardExpand.js';
 
 const INVENTORY_CATEGORIES = [
   'Engine',
@@ -318,6 +319,7 @@ async function loadInventory() {
     })
     .join('');
 
+  enableRecordCardExpand(listContainer);
   attachListHandlers();
 }
 

@@ -137,14 +137,28 @@ export async function refreshBoatUploadsFromCloud(boatId) {
   if (!boatId) return;
   try {
     const cloud = await listAttachments(boatId);
-    if (!Array.isArray(cloud) || !cloud.length) return;
+    if (!Array.isArray(cloud)) return;
 
     const localUploads = uploadsStorage.getAll().filter((u) => u.boat_id === boatId);
+    const cloudByPath = new Set(cloud.map((a) => a?.path).filter(Boolean));
+    const cloudById = new Set(cloud.map((a) => a?.id).filter(Boolean));
+
+    // Remove stale cloud-backed local attachments that no longer exist in Supabase.
+    localUploads.forEach((u) => {
+      const isCloudBacked = !!u.path || !!u.cloud_attachment_id || u.storage_type === 'cloud';
+      if (!isCloudBacked) return;
+      const existsByPath = !!u.path && cloudByPath.has(u.path);
+      const existsById = !!u.cloud_attachment_id && cloudById.has(u.cloud_attachment_id);
+      if (!existsByPath && !existsById) {
+        uploadsStorage.delete(u.id);
+      }
+    });
 
     cloud.forEach((a) => {
       if (!a?.path || !a?.entity_type || !a?.entity_id) return;
 
-      const existing = localUploads.find((u) => {
+      const existing = uploadsStorage.getAll().find((u) => {
+        if (u.boat_id !== boatId) return false;
         if (u.path && u.path === a.path) return true;
         if (u.cloud_attachment_id && a.id && u.cloud_attachment_id === a.id) return true;
         if (u.entity_type !== a.entity_type) return false;

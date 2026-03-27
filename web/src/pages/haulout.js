@@ -25,6 +25,7 @@ import {
 } from '../lib/uploads.js';
 import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
 import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
+import { enableRecordCardExpand } from '../utils/recordCardExpand.js';
 
 let editingId = null;
 let currentBoatId = null;
@@ -244,6 +245,7 @@ async function loadHaulouts() {
     })
     .join('');
 
+  enableRecordCardExpand(listContainer);
   attachListHandlers();
   loadHauloutAttachments(haulouts);
 }

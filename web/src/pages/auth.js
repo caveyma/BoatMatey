@@ -187,13 +187,23 @@ function storeBadgesHtml() {
 function render() {
   const wrapper = document.createElement('div');
   wrapper.className = 'page-fullscreen';
+  wrapper.style.minHeight = '100dvh';
+  wrapper.style.display = 'flex';
+  wrapper.style.alignItems = 'center';
+  wrapper.style.justifyContent = 'center';
+  wrapper.style.padding = '1rem';
 
   const container = document.createElement('div');
   container.className = 'container';
+  container.style.width = '100%';
+  container.style.maxWidth = '560px';
+  container.style.margin = '0 auto';
 
   const card = document.createElement('div');
   card.className = 'card';
   card.style.padding = '2rem 1.5rem';
+  card.style.width = '100%';
+  card.style.borderRadius = '16px';
 
   const isNative = Capacitor.isNativePlatform?.() ?? false;
 

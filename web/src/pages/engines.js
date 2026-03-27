@@ -9,6 +9,7 @@ import { showToast } from '../components/toast.js';
 import { confirmAction } from '../components/confirmModal.js';
 import { isBoatArchived, getEngines, deleteEngine } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOADS_PER_ENTITY } from '../lib/uploads.js';
+import { enableRecordCardExpand } from '../utils/recordCardExpand.js';
 
 let currentBoatId = null;
 let enginesFileInput = null;
@@ -233,6 +234,7 @@ function applyEnginesFilterSort() {
       </div>
     </div>
   `).join('');
+  enableRecordCardExpand(listContainer);
   attachHandlers();
   window.navigate = navigate;
 }

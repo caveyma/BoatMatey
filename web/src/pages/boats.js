@@ -22,6 +22,7 @@ import {
   reactivateBoat as reactivateBoatApi,
   uploadBoatPhoto,
   getBoatCounts,
+  getActiveIssueCountsByBoat,
   BOAT_LIMITS
 } from '../lib/dataService.js';
 import { getActiveBoatLimit } from '../lib/subscription.js';
@@ -217,6 +218,7 @@ async function loadBoats() {
   }
 
   grid.innerHTML = '';
+  const activeIssueCounts = await getActiveIssueCountsByBoat(boats.map((b) => b.id));
 
   const gridHelper = document.getElementById('boats-grid-helper');
   if (gridHelper) gridHelper.hidden = boats.length === 0;
@@ -256,6 +258,10 @@ async function loadBoats() {
       : `<div class="boat-card-photo-placeholder">${renderIcon('boat')}</div>`;
 
     const statusBadge = isArchived ? '<span class="boat-card-badge boat-card-badge-archived">Archived</span>' : '';
+    const issueCount = activeIssueCounts?.[boat.id] || 0;
+    const issueIndicator = issueCount > 0
+      ? `<button class="boat-card-issue-indicator" onclick="event.stopPropagation(); window.navigate('/boat/${boat.id}/projects?type=Issue&status=active&archived=active')" title="Open active issues">${issueCount} Issue${issueCount !== 1 ? 's' : ''}</button>`
+      : '';
     const archiveOrActivate = isArchived
       ? `<button class="boat-card-action-btn" onclick="event.stopPropagation(); boatsPageActivate('${boat.id}')" title="Activate">${renderIcon('refresh')}</button>`
       : `<button class="boat-card-action-btn" onclick="event.stopPropagation(); boatsPageArchive('${boat.id}')" title="Archive">${renderIcon('archive')}</button>`;
@@ -266,6 +272,7 @@ async function loadBoats() {
         <div class="boat-card-title-row">
           <div class="boat-card-title">${boat.boat_name || 'Unnamed Boat'}</div>
           ${statusBadge}
+          ${issueIndicator}
         </div>
         <div class="boat-card-subtitle">${boat.make_model || 'No details'}</div>
         <div class="boat-card-cta">Open Dashboard</div>

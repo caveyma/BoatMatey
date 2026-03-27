@@ -9,6 +9,7 @@ import { showToast } from '../components/toast.js';
 import { confirmAction } from '../components/confirmModal.js';
 import { isBoatArchived, getLogbook, deleteLogEntry } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, MAX_UPLOAD_SIZE_BYTES, MAX_UPLOADS_PER_ENTITY } from '../lib/uploads.js';
+import { enableRecordCardExpand } from '../utils/recordCardExpand.js';
 
 let currentBoatId = null;
 let logFileInput = null;
@@ -317,6 +318,7 @@ function applyLogFilterSort() {
   `;
   }).join('');
 
+  enableRecordCardExpand(listContainer);
   attachHandlers();
 }
 

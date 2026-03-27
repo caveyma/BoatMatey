@@ -320,6 +320,151 @@
   background: color-mix(in srgb, var(--card-mayday) 26%, #ffffff);
 }
 
+.page-content.card-color-projects .card {
+  background: color-mix(in srgb, var(--card-projects) 26%, #ffffff);
+}
+
+.page-content.card-color-inventory .card {
+  background: color-mix(in srgb, var(--card-inventory) 26%, #ffffff);
+}
+
+.page-content.card-color-watermaker .card {
+  background: color-mix(in srgb, var(--card-watermaker) 26%, #ffffff);
+}
+
+.page-content.card-color-sails-rigging .card {
+  background: color-mix(in srgb, var(--card-sails-rigging) 26%, #ffffff);
+}
+
+.page-content.card-color-account .card {
+  background: color-mix(in srgb, var(--card-account) 26%, #ffffff);
+}
+
+.page-content.card-color-guide .card {
+  background: color-mix(in srgb, var(--card-guide) 26%, #ffffff);
+}
+
+/* Projects & Issues expand/collapse interaction */
+.projects-expand-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  background: transparent;
+  border: none;
+  color: inherit;
+  padding: 0.2rem 0.35rem;
+  margin: -0.2rem -0.35rem;
+  border-radius: 0.45rem;
+  cursor: pointer;
+  text-align: left;
+  max-width: 100%;
+}
+.projects-expand-toggle:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+.projects-expand-toggle:active {
+  background: rgba(255, 255, 255, 0.5);
+}
+.projects-expand-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--card-projects) 55%, #ffffff);
+  outline-offset: 2px;
+}
+.projects-expand-chevron {
+  display: inline-block;
+  font-size: 1rem;
+  line-height: 1;
+  color: color-mix(in srgb, var(--bm-navy) 80%, #000000);
+  transform: rotate(0deg);
+  transition: transform 160ms ease, color 160ms ease;
+  flex-shrink: 0;
+}
+.projects-expand-chevron.is-expanded {
+  transform: rotate(90deg);
+}
+
+.projects-quick-add-btn {
+  border: 2px solid color-mix(in srgb, var(--card-projects) 45%, #ffffff);
+  background: color-mix(in srgb, var(--card-projects) 12%, #ffffff);
+  color: var(--bm-navy);
+  font-weight: 600;
+}
+.projects-quick-add-btn:hover {
+  background: color-mix(in srgb, var(--card-projects) 20%, #ffffff);
+  border-color: color-mix(in srgb, var(--card-projects) 65%, #ffffff);
+}
+
+/* Shared record-list expand/collapse interaction */
+.record-expand-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  margin-right: 0.35rem;
+  border-radius: 0.45rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.record-expand-toggle:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+.record-expand-toggle:active {
+  background: rgba(255, 255, 255, 0.5);
+}
+.record-expand-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--bm-teal) 65%, #ffffff);
+  outline-offset: 2px;
+}
+.record-expand-chevron {
+  display: inline-block;
+  font-size: 1rem;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 160ms ease;
+}
+.record-expand-chevron.is-expanded {
+  transform: rotate(90deg);
+}
+.record-expand-hitarea {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 0.45rem;
+  padding: 0.12rem 0.2rem;
+  width: 100%;
+  gap: 0.35rem;
+}
+.record-expand-hitarea:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+.record-expand-hitarea:active {
+  background: rgba(255, 255, 255, 0.4);
+}
+.record-expand-summary .card-title {
+  margin: 0;
+  display: inline;
+  line-height: 1.25;
+  vertical-align: middle;
+}
+.record-expand-summary .text-muted {
+  display: inline;
+  margin: 0 0 0 0.35rem;
+  line-height: 1.25;
+  vertical-align: middle;
+}
+.card:not(.record-expanded) .record-expand-summary .text-muted {
+  opacity: 0.9;
+}
+.record-expand-details {
+  display: none;
+}
+.card.record-expanded > .record-expand-details {
+  display: block;
+}
+
 /* Web Links: clickable cards, no overflow */
 .link-card {
   cursor: pointer;
@@ -516,6 +661,21 @@
 .boat-card-badge-archived {
   background: var(--color-gray-light);
   color: var(--color-text-light);
+}
+
+.boat-card-issue-indicator {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #b42318;
+  background: #fee4e2;
+  border: 1px solid #fda29b;
+  border-radius: 999px;
+  padding: 0.15rem 0.45rem;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.boat-card-issue-indicator:hover {
+  background: #fecdca;
 }
 
 .boat-card-archived {

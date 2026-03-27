@@ -9,6 +9,7 @@ import { showToast } from '../components/toast.js';
 import { confirmAction } from '../components/confirmModal.js';
 import { isBoatArchived, getEquipment, deleteEquipment } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
+import { enableRecordCardExpand } from '../utils/recordCardExpand.js';
 
 let currentBoatId = null;
 let safetyFileInput = null;
@@ -180,6 +181,7 @@ async function loadSafetyEquipment() {
   `;
   }).join('');
 
+  enableRecordCardExpand(listContainer);
   attachHandlers();
   loadSafetyAttachments(items);
 }
