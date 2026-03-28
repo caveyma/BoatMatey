@@ -12,7 +12,7 @@
 import { navigate } from '../router.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
 import { showToast } from '../components/toast.js';
-import { confirmAction } from '../components/confirmModal.js';
+import { confirmAction, chooseRecurringScope } from '../components/confirmModal.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { boatsStorage, enginesStorage, serviceHistoryStorage, hauloutStorage, navEquipmentStorage } from '../lib/storage.js';
 import { getBoats, getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '../lib/dataService.js';
@@ -23,6 +23,7 @@ let boatMap = {}; // id -> { boat_name, ... }
 let currentMonthDate = new Date();
 let selectedDateStr = null;
 let editingEventId = null; // when set, form is in edit mode
+let editingOccurrenceDate = null; // ISO date of the occurrence being edited (repeating series)
 
 function toIsoDate(date) {
   const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -35,6 +36,63 @@ function parseIsoDate(iso) {
   const parts = iso.split('-').map(Number);
   if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return null;
   return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
+function prevIsoDate(iso) {
+  const d = parseIsoDate(iso);
+  if (!d) return null;
+  d.setDate(d.getDate() - 1);
+  return toIsoDate(d);
+}
+
+function normalizeExceptionDates(ev) {
+  const raw = ev?.exception_dates;
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(String);
+  return [];
+}
+
+function normalizeOccurrenceOverrides(ev) {
+  const o = ev?.occurrence_overrides;
+  if (o && typeof o === 'object' && !Array.isArray(o)) return { ...o };
+  return {};
+}
+
+function isRecurringMaster(ev) {
+  const r = ev?.repeat || ev?.recurrence_type;
+  return !!(r && r !== 'none');
+}
+
+function getEffectiveOccurrence(master, occurrenceDate) {
+  if (!master) return null;
+  const ov = normalizeOccurrenceOverrides(master)[occurrenceDate];
+  const row = {
+    ...master,
+    date: occurrenceDate,
+    recurrence_type: master.repeat || master.recurrence_type || 'none',
+    recurrence_until: master.repeat_until || master.recurrence_until
+  };
+  if (ov && typeof ov === 'object') {
+    if (ov.title != null) row.title = ov.title;
+    if (ov.time !== undefined) row.time = ov.time;
+    if (ov.notes !== undefined) row.notes = ov.notes;
+    if (ov.reminder_minutes !== undefined) row.reminder_minutes = ov.reminder_minutes;
+  }
+  return row;
+}
+
+function snapOverridePayloadFromInstance(inst) {
+  return {
+    title: inst.title,
+    time: inst.time ?? null,
+    notes: inst.notes ?? '',
+    reminder_minutes: inst.reminder_minutes ?? null
+  };
+}
+
+function normRepeatVal(r) {
+  if (!r || r === 'none') return 'none';
+  return String(r);
 }
 
 /**
@@ -50,13 +108,25 @@ function expandRecurringEvents(baseEvents, fromDate, toDate) {
   const startRange = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
   const endRange = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate());
 
-  const addOccurrence = (base, dateObj) => {
-    if (dateObj < startRange || dateObj > endRange) return;
-    const iso = toIsoDate(dateObj);
-    results.push({ ...base, date: iso });
-  };
-
   baseEvents.forEach((event) => {
+    const exceptionSet = new Set(normalizeExceptionDates(event));
+    const overrides = normalizeOccurrenceOverrides(event);
+
+    const addOccurrence = (base, dateObj) => {
+      if (dateObj < startRange || dateObj > endRange) return;
+      const iso = toIsoDate(dateObj);
+      if (exceptionSet.has(iso)) return;
+      let row = { ...base, date: iso };
+      const ov = overrides[iso];
+      if (ov && typeof ov === 'object') {
+        if (ov.title != null) row.title = ov.title;
+        if (ov.time !== undefined) row.time = ov.time;
+        if (ov.notes !== undefined) row.notes = ov.notes;
+        if (ov.reminder_minutes !== undefined) row.reminder_minutes = ov.reminder_minutes;
+      }
+      results.push(row);
+    };
+
     const start = parseIsoDate(event.date);
     if (!start) return;
 
@@ -541,8 +611,8 @@ function renderAppointmentsForSelectedDate(baseEvents) {
             ${notes}
           </div>
           <div class="calendar-appointment-actions">
-            <button type="button" class="btn-link calendar-event-edit" data-event-id="${ev.id}">Edit</button>
-            <button type="button" class="btn-link btn-danger calendar-event-delete" data-event-id="${ev.id}">Delete</button>
+            <button type="button" class="btn-link calendar-event-edit" data-event-id="${ev.id}" data-occurrence-date="${ev.date}">Edit</button>
+            <button type="button" class="btn-link btn-danger calendar-event-delete" data-event-id="${ev.id}" data-occurrence-date="${ev.date}">Delete</button>
           </div>
         </div>
       `;
@@ -550,21 +620,71 @@ function renderAppointmentsForSelectedDate(baseEvents) {
     .join('');
 
   listEl.querySelectorAll('.calendar-event-edit').forEach((btn) => {
-    const id = btn.getAttribute('data-event-id');
     btn.addEventListener('click', () => {
-      const ev = (baseEvents || []).find((e) => e.id === id);
-      if (!ev) return;
-      populateFormForEdit(ev);
+      const id = btn.getAttribute('data-event-id');
+      const occ = btn.getAttribute('data-occurrence-date');
+      const master = (baseEvents || []).find((e) => e.id === id);
+      if (!master || !occ) return;
+      const eff = getEffectiveOccurrence(master, occ);
+      populateFormForEdit(eff, master);
     });
   });
 
   listEl.querySelectorAll('.calendar-event-delete').forEach((btn) => {
-    const id = btn.getAttribute('data-event-id');
     btn.addEventListener('click', async () => {
-      const ok = await confirmAction({ title: 'Delete this appointment?', message: 'This cannot be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel', danger: true });
-      if (!ok) return;
-      await deleteCalendarEvent(id);
+      const id = btn.getAttribute('data-event-id');
+      const occurrenceDate = btn.getAttribute('data-occurrence-date');
+      const master = (baseEvents || []).find((e) => e.id === id);
+      if (!master || !occurrenceDate) return;
+
+      if (!isRecurringMaster(master)) {
+        const ok = await confirmAction({
+          title: 'Delete this appointment?',
+          message: 'This cannot be undone.',
+          confirmLabel: 'Delete',
+          cancelLabel: 'Cancel',
+          danger: true
+        });
+        if (!ok) return;
+        await deleteCalendarEvent(id);
+      } else {
+        const scope = await chooseRecurringScope({
+          title: 'Delete repeating appointment',
+          message: 'Choose whether to remove only this date, this and future dates, or the entire series.',
+          mode: 'delete'
+        });
+        if (!scope) return;
+
+        if (scope === 'all') {
+          await deleteCalendarEvent(id);
+        } else if (scope === 'this') {
+          const ex = new Set(normalizeExceptionDates(master));
+          ex.add(occurrenceDate);
+          const overrides = { ...normalizeOccurrenceOverrides(master) };
+          delete overrides[occurrenceDate];
+          await updateCalendarEvent(id, { exception_dates: [...ex], occurrence_overrides: overrides });
+        } else if (scope === 'future') {
+          if (occurrenceDate <= master.date) {
+            await deleteCalendarEvent(id);
+          } else {
+            const prev = prevIsoDate(occurrenceDate);
+            if (!prev) return;
+            const ex = normalizeExceptionDates(master).filter((d) => d < occurrenceDate);
+            const overrides = { ...normalizeOccurrenceOverrides(master) };
+            for (const k of Object.keys(overrides)) {
+              if (k >= occurrenceDate) delete overrides[k];
+            }
+            await updateCalendarEvent(id, {
+              repeat_until: prev,
+              exception_dates: ex,
+              occurrence_overrides: overrides
+            });
+          }
+        }
+      }
+
       editingEventId = null;
+      editingOccurrenceDate = null;
       resetFormToAddMode();
       const { baseEvents: refreshedBase, reminders } = await loadAllCalendarData();
       renderMonthView(reminders, refreshedBase);
@@ -574,14 +694,16 @@ function renderAppointmentsForSelectedDate(baseEvents) {
   });
 }
 
-function populateFormForEdit(ev) {
+function populateFormForEdit(ev, masterRow) {
   editingEventId = ev.id;
+  editingOccurrenceDate = ev.date || null;
   document.getElementById('calendar-appointment-date').value = ev.date || selectedDateStr;
   document.getElementById('calendar-appointment-boat').value = ev.boat_id || '';
   document.getElementById('calendar-appointment-title').value = ev.title || '';
   document.getElementById('calendar-appointment-time').value = ev.time ? ev.time.slice(0, 5) : '';
-  document.getElementById('calendar-appointment-repeat').value = ev.repeat || ev.recurrence_type || 'none';
-  document.getElementById('calendar-appointment-repeat-until').value = ev.repeat_until || ev.recurrence_until || '';
+  document.getElementById('calendar-appointment-repeat').value = masterRow?.repeat || masterRow?.recurrence_type || ev.repeat || ev.recurrence_type || 'none';
+  document.getElementById('calendar-appointment-repeat-until').value =
+    masterRow?.repeat_until || masterRow?.recurrence_until || ev.repeat_until || ev.recurrence_until || '';
   document.getElementById('calendar-appointment-reminder').value = ev.reminder_minutes != null ? String(ev.reminder_minutes) : '';
   document.getElementById('calendar-appointment-notes').value = ev.notes || '';
   const submitBtn = document.querySelector('#calendar-appointment-form button[type="submit"]');
@@ -592,6 +714,7 @@ function populateFormForEdit(ev) {
 
 function resetFormToAddMode() {
   editingEventId = null;
+  editingOccurrenceDate = null;
   document.getElementById('calendar-appointment-title').value = '';
   document.getElementById('calendar-appointment-time').value = '';
   document.getElementById('calendar-appointment-repeat').value = 'none';
@@ -821,11 +944,126 @@ export async function onMount(params = {}) {
       };
 
       if (editingEventId) {
-        await updateCalendarEvent(editingEventId, payload);
-        editingEventId = null;
-        resetFormToAddMode();
+        const { baseEvents: freshBase } = await loadAllCalendarData();
+        const master = freshBase.find((e) => e.id === editingEventId);
+        if (!master) {
+          showToast('Could not find this appointment.', 'error');
+          return;
+        }
+
+        const pivot = editingOccurrenceDate || master.date;
+
+        const clearEditState = () => {
+          editingEventId = null;
+          editingOccurrenceDate = null;
+          resetFormToAddMode();
+        };
+
+        if (!isRecurringMaster(master)) {
+          await updateCalendarEvent(editingEventId, payload);
+          clearEditState();
+        } else {
+          const scope = await chooseRecurringScope({
+            title: 'Apply to repeating appointment',
+            message:
+              'Choose whether your changes apply only to this date, this and future dates, or the entire series.',
+            mode: 'edit'
+          });
+          if (!scope) return;
+
+          if (scope === 'all') {
+            await updateCalendarEvent(editingEventId, {
+              ...payload,
+              exception_dates: [],
+              occurrence_overrides: {}
+            });
+            clearEditState();
+          } else if (scope === 'this') {
+            if (dateValue !== pivot) {
+              const ex = new Set(normalizeExceptionDates(master));
+              ex.add(pivot);
+              const overrides = { ...normalizeOccurrenceOverrides(master) };
+              delete overrides[pivot];
+              await updateCalendarEvent(editingEventId, {
+                exception_dates: [...ex],
+                occurrence_overrides: overrides
+              });
+              await createCalendarEvent(master.boat_id, {
+                ...payload,
+                date: dateValue,
+                repeat: null,
+                repeat_until: null
+              });
+            } else {
+              const overrides = {
+                ...normalizeOccurrenceOverrides(master),
+                [pivot]: {
+                  title: payload.title,
+                  time: payload.time,
+                  notes: payload.notes,
+                  reminder_minutes: payload.reminder_minutes
+                }
+              };
+              await updateCalendarEvent(editingEventId, { occurrence_overrides: overrides });
+            }
+            clearEditState();
+          } else {
+            const scheduleChanged =
+              String(pivot) !== String(dateValue) ||
+              normRepeatVal(master.repeat) !== normRepeatVal(payload.repeat) ||
+              String(master.repeat_until || '') !== String(payload.repeat_until || '');
+
+            if (scheduleChanged) {
+              if (pivot <= master.date) {
+                await updateCalendarEvent(editingEventId, {
+                  ...payload,
+                  exception_dates: [],
+                  occurrence_overrides: {}
+                });
+              } else {
+                const prev = prevIsoDate(pivot);
+                if (!prev) return;
+                const ex = normalizeExceptionDates(master).filter((d) => d < pivot);
+                const overrides = { ...normalizeOccurrenceOverrides(master) };
+                for (const k of Object.keys(overrides)) {
+                  if (k >= pivot) delete overrides[k];
+                }
+                await updateCalendarEvent(editingEventId, {
+                  repeat_until: prev,
+                  exception_dates: ex,
+                  occurrence_overrides: overrides
+                });
+                await createCalendarEvent(master.boat_id, payload);
+              }
+            } else {
+              const prevEnd = prevIsoDate(pivot);
+              const fromD = parseIsoDate(master.date);
+              const toD = parseIsoDate(prevEnd);
+              const newOverrides = {};
+              if (fromD && toD && fromD <= toD) {
+                const expandedPast = expandRecurringEvents([master], fromD, toD);
+                for (const inst of expandedPast) {
+                  newOverrides[inst.date] = snapOverridePayloadFromInstance(inst);
+                }
+              }
+              const newEx = normalizeExceptionDates(master).filter((d) => d < pivot);
+              await updateCalendarEvent(editingEventId, {
+                date: master.date,
+                repeat: master.repeat,
+                repeat_until: master.repeat_until,
+                title: payload.title,
+                time: payload.time,
+                notes: payload.notes,
+                reminder_minutes: payload.reminder_minutes,
+                exception_dates: newEx,
+                occurrence_overrides: newOverrides
+              });
+            }
+            clearEditState();
+          }
+        }
       } else {
-        const created = await createCalendarEvent(boatId, payload);
+        await createCalendarEvent(boatId, payload);
       }
 
       const { baseEvents: updatedBase, reminders: updatedReminders } = await loadAllCalendarData();
@@ -842,6 +1080,7 @@ export async function onMount(params = {}) {
   if (cancelBtn) {
     cancelBtn.addEventListener('click', () => {
       editingEventId = null;
+      editingOccurrenceDate = null;
       resetFormToAddMode();
     });
   }

@@ -38,12 +38,30 @@ function logSupabaseFallback(resource, error) {
   );
 }
 
+/** Stale or revoked refresh tokens leave bad data in localStorage; clear so the user can sign in again. */
+async function signOutIfInvalidRefreshToken(error) {
+  if (!supabase || !error) return;
+  const msg = String(error.message || '').toLowerCase();
+  const code = String(error.code || '').toLowerCase();
+  const looksStale =
+    code === 'refresh_token_not_found' ||
+    (msg.includes('refresh token') && (msg.includes('invalid') || msg.includes('not found')));
+  if (!looksStale) return;
+  try {
+    await supabase.auth.signOut({ scope: 'local' });
+    console.warn('[BoatMatey] Stored session was invalid (refresh token). Cleared locally — sign in again.');
+  } catch (_) {
+    /* ignore */
+  }
+}
+
 // Small helper: returns current auth session (or null)
 export async function getSession() {
   if (!supabase) return null;
   const { data, error } = await supabase.auth.getSession();
   if (error) {
     console.error('Supabase auth.getSession error:', error);
+    await signOutIfInvalidRefreshToken(error);
     return null;
   }
   return data.session ?? null;
@@ -60,6 +78,7 @@ export async function getSessionWithTimeout(ms = 6000) {
     const { data, error } = result;
     if (error) {
       console.error('Supabase auth.getSession error:', error);
+      await signOutIfInvalidRefreshToken(error);
       return null;
     }
     return data?.session ?? null;
@@ -819,12 +838,21 @@ export async function createServiceEntry(boatId, entry) {
       .single();
     if (result.error) {
       console.error('createServiceEntry error:', result.error);
-      return null;
+      return {
+        _saveFailed: true,
+        code: result.error.code,
+        message: result.error.message || 'Save failed'
+      };
     }
     return { ...result.data, currencyFallback: true };
   }
   if (error) {
     console.error('createServiceEntry error:', error);
+    return {
+      _saveFailed: true,
+      code: error.code,
+      message: error.message || 'Save failed'
+    };
   }
 
   return data ?? null;
@@ -1743,7 +1771,12 @@ export async function getCalendarEvents(boatId) {
 
   return (data || []).map((e) => ({
     ...e,
-    time: e.time ? (typeof e.time === 'string' ? e.time.slice(0, 5) : e.time) : null
+    time: e.time ? (typeof e.time === 'string' ? e.time.slice(0, 5) : e.time) : null,
+    exception_dates: Array.isArray(e.exception_dates) ? e.exception_dates.map(String) : [],
+    occurrence_overrides:
+      e.occurrence_overrides && typeof e.occurrence_overrides === 'object' && !Array.isArray(e.occurrence_overrides)
+        ? e.occurrence_overrides
+        : {}
   }));
 }
 
@@ -1762,7 +1795,12 @@ export async function createCalendarEvent(boatId, payload) {
     notes: payload.notes || null,
     repeat: payload.repeat || null,
     repeat_until: payload.repeat_until || null,
-    reminder_minutes: payload.reminder_minutes ?? null
+    reminder_minutes: payload.reminder_minutes ?? null,
+    exception_dates: Array.isArray(payload.exception_dates) ? payload.exception_dates : [],
+    occurrence_overrides:
+      payload.occurrence_overrides && typeof payload.occurrence_overrides === 'object' && !Array.isArray(payload.occurrence_overrides)
+        ? payload.occurrence_overrides
+        : {}
   };
 
   if (!session || !isSupabaseEnabled()) {
@@ -1771,11 +1809,18 @@ export async function createCalendarEvent(boatId, payload) {
     return calendarEventsStorage.getAll(boatId).find((e) => e.date === payload.date && e.title === payload.title) || event;
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('calendar_events')
     .insert(dbPayload)
     .select('*')
     .single();
+
+  if (error && isMissingCalendarSeriesColumnsError(error)) {
+    const { exception_dates: _ex, occurrence_overrides: _ov, ...legacyPayload } = dbPayload;
+    const retry = await supabase.from('calendar_events').insert(legacyPayload).select('*').single();
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error) {
     logSupabaseFallback('calendar_events', error);
@@ -1787,34 +1832,81 @@ export async function createCalendarEvent(boatId, payload) {
   return data;
 }
 
+function normalizeCalendarEventRow(row) {
+  const out = { ...row };
+  out.exception_dates = Array.isArray(out.exception_dates) ? out.exception_dates.map(String) : [];
+  out.occurrence_overrides =
+    out.occurrence_overrides && typeof out.occurrence_overrides === 'object' && !Array.isArray(out.occurrence_overrides)
+      ? { ...out.occurrence_overrides }
+      : {};
+  return out;
+}
+
+/** When migration 20260328140000 is not applied yet, PostgREST rejects unknown columns. */
+function isMissingCalendarSeriesColumnsError(error) {
+  if (!error) return false;
+  const msg = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`;
+  return /exception_dates|occurrence_overrides/i.test(msg);
+}
+
+function calendarEventBaseUpdatePayload(merged) {
+  return {
+    date: merged.date,
+    time: merged.time ?? null,
+    title: merged.title,
+    notes: merged.notes ?? null,
+    repeat: merged.repeat ?? null,
+    repeat_until: merged.repeat_until ?? null,
+    reminder_minutes: merged.reminder_minutes ?? null
+  };
+}
+
 export async function updateCalendarEvent(eventId, payload) {
   if (!hasActiveSubscription()) {
     return;
   }
   const session = await getSession();
+
+  const persistLocal = (merged) => {
+    calendarEventsStorage.save(normalizeCalendarEventRow(merged), merged.boat_id);
+  };
+
   if (!session || !isSupabaseEnabled()) {
     const existing = calendarEventsStorage.get(eventId) || { id: eventId };
-    calendarEventsStorage.save({ ...existing, ...payload }, existing.boat_id);
+    persistLocal({ ...existing, ...payload });
     return;
   }
 
-  const { error } = await supabase
+  const { data: existingRow } = await supabase
     .from('calendar_events')
-    .update({
-      date: payload.date,
-      time: payload.time ?? null,
-      title: payload.title,
-      notes: payload.notes ?? null,
-      repeat: payload.repeat ?? null,
-      repeat_until: payload.repeat_until ?? null,
-      reminder_minutes: payload.reminder_minutes ?? null
-    })
-    .eq('id', eventId);
+    .select('*')
+    .eq('id', eventId)
+    .maybeSingle();
+
+  const existing = existingRow || calendarEventsStorage.get(eventId) || { id: eventId };
+  const merged = normalizeCalendarEventRow({ ...existing, ...payload });
+
+  const fullPatch = {
+    ...calendarEventBaseUpdatePayload(merged),
+    exception_dates: merged.exception_dates,
+    occurrence_overrides: merged.occurrence_overrides
+  };
+
+  let { error } = await supabase.from('calendar_events').update(fullPatch).eq('id', eventId);
+
+  if (error && isMissingCalendarSeriesColumnsError(error)) {
+    const retry = await supabase
+      .from('calendar_events')
+      .update(calendarEventBaseUpdatePayload(merged))
+      .eq('id', eventId);
+    error = retry.error;
+  }
 
   if (error) {
     logSupabaseFallback('calendar_events', error);
-    const existing = calendarEventsStorage.get(eventId) || { id: eventId };
-    calendarEventsStorage.save({ ...existing, ...payload }, existing.boat_id);
+    persistLocal(merged);
+  } else {
+    persistLocal(merged);
   }
 }
 
