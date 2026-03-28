@@ -336,12 +336,13 @@ function renderBoatDashboardOnboarding(boatId) {
       ${
         hasReminderFlow
           ? `
-      <p class="dashboard-onboarding-success">Service logged and reminder set.</p>
-      <p class="dashboard-onboarding-reinforcement">Your boat is now set up and being tracked</p>
+      <p class="dashboard-onboarding-success">You&apos;re now set up 👍</p>
+      <p class="dashboard-onboarding-reinforcement">Your boat is being tracked and your first reminder is in place.</p>
       <p style="margin-top: 0.75rem;"><a href="#/boat/${boatId}/reminder" class="btn-link dashboard-onboarding-reminder-link">View your reminder</a></p>
+      <p class="dashboard-onboarding-value-msg">BoatMatey helps you stay on top of everything — from maintenance and logs to safety, equipment and more.</p>
       <div class="dashboard-onboarding-upgrade">
-        <p class="dashboard-onboarding-upgrade-text">Upgrade to track unlimited services, reminders and logs</p>
-        <button type="button" class="btn-primary dashboard-onboarding-trial-btn">Start Free Trial &amp; Keep Tracking</button>
+        <p class="dashboard-onboarding-upgrade-text">Upgrade to unlock the full set of tools and manage everything in one place.</p>
+        <button type="button" class="btn-primary dashboard-onboarding-trial-btn">Unlock Full Access &amp; Start Free Trial</button>
       </div>
       `
           : ''

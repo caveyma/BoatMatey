@@ -12,7 +12,7 @@ import { initRevenueCat } from './services/revenuecat.js';
 import { initSubscription, refreshSubscriptionStatus } from './lib/subscription.js';
 import { syncOsNotifications } from './lib/notifications.js';
 import { supabase } from './lib/supabaseClient.js';
-import { getSessionWithTimeout } from './lib/dataService.js';
+import { getSessionWithTimeout, touchLastLoginAfterAuthSession } from './lib/dataService.js';
 import { Capacitor } from '@capacitor/core';
 import { SplashScreen } from '@capacitor/splash-screen';
 import boatsPage from './pages/boats.js';
@@ -189,6 +189,7 @@ async function checkAccessAndRedirect() {
       return;
     }
     if (session) {
+      void touchLastLoginAfterAuthSession();
       try {
         await Promise.race([
           refreshSubscriptionStatus(),

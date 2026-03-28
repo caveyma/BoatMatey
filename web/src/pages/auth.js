@@ -18,6 +18,7 @@ import {
   refreshSubscriptionStatus
 } from '../lib/subscription.js';
 import { logInWithAppUserId } from '../services/revenuecat.js';
+import { touchLastLoginAfterAuthSession } from '../lib/dataService.js';
 import { Capacitor } from '@capacitor/core';
 import { APP_STORE_URL, GOOGLE_PLAY_URL, APP_STORE_BADGE_URL, GOOGLE_PLAY_BADGE_URL } from '../lib/constants.js';
 
@@ -126,6 +127,9 @@ export async function completeAccountCreation() {
         await refreshSubscriptionStatus();
       } catch (rcErr) {
         console.warn('[Auth] RevenueCat logIn after account creation failed (non-blocking):', rcErr);
+      }
+      if (data.session) {
+        await touchLastLoginAfterAuthSession();
       }
       return { success: true, user: data.user };
     }
@@ -424,6 +428,7 @@ async function onMount() {
       if (data.user && isNative) {
         await syncSubscriptionToProfile(data.user.id);
       }
+      await touchLastLoginAfterAuthSession();
       showMessage('Signed in successfully!', false, true);
       await refreshSubscriptionStatus();
       const hasAccess = hasActiveSubscription();
@@ -633,6 +638,7 @@ async function onMount() {
           access_token: signUpData.session.access_token,
           refresh_token: signUpData.session.refresh_token,
         });
+        await touchLastLoginAfterAuthSession();
         if (isNative) {
           try {
             await logInWithAppUserId(userId);

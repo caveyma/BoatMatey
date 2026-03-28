@@ -1081,8 +1081,8 @@ async function showServiceForm() {
         </div>
 
         <div class="form-group">
-          <label for="service_notes">Notes${isNewFreeTierEntry ? ' *' : ''}</label>
-          <textarea id="service_notes" rows="4" ${isNewFreeTierEntry ? 'required' : ''}>${entry?.notes || ''}</textarea>
+          <label for="service_notes">Notes</label>
+          <textarea id="service_notes" rows="4">${entry?.notes || ''}</textarea>
         </div>
         <div class="card" id="service-next-due-card" style="margin-top: 1rem;">
           <h4>Next service due${isNewFreeTierEntry ? '' : ' (optional)'}</h4>
@@ -1538,12 +1538,6 @@ async function saveService() {
       setSaveButtonLoading(form, false);
       return;
     }
-    const notesVal = document.getElementById('service_notes')?.value?.trim() || '';
-    if (!notesVal) {
-      showToast('Please add notes for this service entry.', 'error');
-      setSaveButtonLoading(form, false);
-      return;
-    }
     if (!nextDueVal) {
       showToast('Please set a next due date so we can create your reminder.', 'error');
       setSaveButtonLoading(form, false);
@@ -1584,6 +1578,18 @@ async function saveService() {
     await updateServiceEntry(editingId, entry);
   } else {
     const created = await createServiceEntry(currentBoatId, entry);
+    if (created && created._saveFailed) {
+      const msg = String(created.message || '');
+      const isRlsRecursion =
+        created.code === '42P17' || msg.includes('infinite recursion') || msg.includes('infinite recursion detected');
+      showToast(
+        isRlsRecursion
+          ? 'Could not save: the database still has an old security rule. Apply the Supabase migration `20260328130000_service_entries_insert_rls_no_recursion.sql` (includes row_security off on the count helper), then try again.'
+          : msg || 'Could not save this entry.',
+        'error'
+      );
+      return;
+    }
     if (!created) {
       showToast(SERVICE_HISTORY_UPGRADE_MESSAGE, 'info');
       showServiceHistoryLimitModal();

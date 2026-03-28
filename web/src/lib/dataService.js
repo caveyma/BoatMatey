@@ -90,6 +90,28 @@ export async function getSessionWithTimeout(ms = 6000) {
   }
 }
 
+/**
+ * Record a successful authenticated session for inactive-account cleanup (90-day rule).
+ * The database RPC throttles writes (default 6h) so token refresh / reloads do not spam updates.
+ */
+export async function touchLastLoginAfterAuthSession() {
+  if (!supabase) return;
+  try {
+    const session = await getSession();
+    if (!session?.user?.id) return;
+    const { error } = await supabase.rpc('touch_last_login_at');
+    if (error) {
+      const code = String(error.code || '');
+      if (code === '42883' || /function .* does not exist/i.test(String(error.message || ''))) {
+        return;
+      }
+      console.warn('[BoatMatey] touch_last_login_at:', error.message || error);
+    }
+  } catch (e) {
+    console.warn('[BoatMatey] touch_last_login_at failed:', e?.message || e);
+  }
+}
+
 function isSupabaseEnabled() {
   return !!supabase;
 }
