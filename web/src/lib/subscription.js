@@ -105,8 +105,8 @@ export async function initSubscription() {
 /**
  * Fetch subscription status from the user's Supabase profile (source of truth when signed in).
  * Returns null if no session or no profile; otherwise { active, plan, expires_at }.
- * Premium/active is determined only by subscription_status: if it is 'active' the user has premium.
- * If subscription_status is 'expired', 'inactive', or null, the user does not have premium.
+ * Premium/active: paid subscription (subscription_status + expiry) OR valid promo/access window
+ * (promo_access_until / access_until), e.g. lifetime codes via redeem-promo.
  */
 async function getSubscriptionFromProfile() {
   if (!supabase) return null;
@@ -119,13 +119,19 @@ async function getSubscriptionFromProfile() {
       .eq('id', session.user.id)
       .maybeSingle();
     if (error || !profile) return null;
+    const now = new Date();
     const status = (profile.subscription_status || '').toLowerCase();
-    const active = status === 'active';
     const rcExpiresAt = profile.subscription_expires_at ? new Date(profile.subscription_expires_at) : null;
     const promoUntil = profile.promo_access_until ? new Date(profile.promo_access_until) : null;
     const accessUntilCol = profile.access_until ? new Date(profile.access_until) : null;
+
+    const paidActive = status === 'active' && (!rcExpiresAt || rcExpiresAt > now);
+    const promoAccessActive =
+      (promoUntil && promoUntil > now) || (accessUntilCol && accessUntilCol > now);
+    const active = paidActive || promoAccessActive;
+
     const latestUntil = [rcExpiresAt, promoUntil, accessUntilCol].filter(Boolean).sort((a, b) => b - a)[0] ?? null;
-    const isPromo = active && (profile.promo_source || (promoUntil && promoUntil > new Date()) || (accessUntilCol && accessUntilCol > new Date()));
+    const isPromo = active && !!profile.promo_source && promoAccessActive && !paidActive;
     return {
       active,
       isPromo: !!isPromo,

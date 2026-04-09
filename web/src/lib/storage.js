@@ -16,7 +16,9 @@ const STORAGE_KEYS = {
   INVENTORY: 'boatmatey_inventory', // Scoped by boat_id
   UPLOADS: 'boatmatey_uploads', // Scoped by boat_id
   CALENDAR_EVENTS: 'boatmatey_calendar_events', // Scoped by boat_id
-  SETTINGS: 'boatmatey_settings'
+  SETTINGS: 'boatmatey_settings',
+  /** Per-boat ISO timestamp when dashboard onboarding first reached “setup complete” (reminder flow done). */
+  BOAT_DASHBOARD_SETUP_COMPLETE_AT: 'boatmatey_boat_dashboard_setup_complete_at'
 };
 
 /**
@@ -133,6 +135,35 @@ export const boatsStorage = {
 
     const uploads = uploadsStorage.getAll().filter(u => u.boat_id !== boatId);
     storage.set(STORAGE_KEYS.UPLOADS, uploads);
+
+    boatDashboardSetupCompleteStorage.removeForBoat(boatId);
+  }
+};
+
+/** First time a boat’s setup is complete (per local UX); used for day-2-style nudges. */
+export const boatDashboardSetupCompleteStorage = {
+  getRecordedAt(boatId) {
+    if (!boatId) return null;
+    const map = storage.get(STORAGE_KEYS.BOAT_DASHBOARD_SETUP_COMPLETE_AT, {});
+    return map[boatId] || null;
+  },
+
+  recordFirstComplete(boatId) {
+    if (!boatId) return null;
+    const map = { ...storage.get(STORAGE_KEYS.BOAT_DASHBOARD_SETUP_COMPLETE_AT, {}) };
+    if (!map[boatId]) {
+      map[boatId] = new Date().toISOString();
+      storage.set(STORAGE_KEYS.BOAT_DASHBOARD_SETUP_COMPLETE_AT, map);
+    }
+    return map[boatId];
+  },
+
+  removeForBoat(boatId) {
+    if (!boatId) return;
+    const map = { ...storage.get(STORAGE_KEYS.BOAT_DASHBOARD_SETUP_COMPLETE_AT, {}) };
+    if (!(boatId in map)) return;
+    delete map[boatId];
+    storage.set(STORAGE_KEYS.BOAT_DASHBOARD_SETUP_COMPLETE_AT, map);
   }
 };
 

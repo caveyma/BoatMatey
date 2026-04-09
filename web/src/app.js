@@ -44,12 +44,14 @@ import electricalPage from './pages/electrical.js';
 import maydayPage from './pages/mayday.js';
 import inventoryPage from './pages/inventory.js';
 import boatReminderPage from './pages/boat-reminder.js';
+import { initPageFullscreenViewport } from './lib/pageFullscreenViewport.js';
 
 /**
  * Initialize the app
  */
 export async function init() {
   try {
+    initPageFullscreenViewport();
     // Register routes
     route('/welcome', welcomePage); // Welcome/onboarding page
     route('/subscription', subscriptionPage); // Subscription paywall

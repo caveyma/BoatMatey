@@ -7,9 +7,26 @@ import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
 import { showToast } from '../components/toast.js';
-import { getBoat, getEngines, getServiceEntries, getHaulouts, getProjects, getInventory, getEquipment, getLogbook, getLinks, getFuelLogs, getBatteries, getBoatElectrical, getBoatDistressInfo } from '../lib/dataService.js';
-import { boatsStorage, enginesStorage, serviceHistoryStorage, hauloutStorage, projectsStorage, inventoryStorage, navEquipmentStorage, safetyEquipmentStorage, shipsLogStorage, linksStorage } from '../lib/storage.js';
-import { canAccessCard, shouldShowPremiumBadge, canAccessPremiumFeature } from '../lib/access.js';
+import { getBoat, getEngines, getServiceEntries, getHaulouts, getProjects, getInventory, getEquipment, getLogbook, getLinks, getFuelLogs, getBatteries, getBoatElectrical, getBoatDistressInfo, touchBoatDashboardOpen } from '../lib/dataService.js';
+import {
+  boatsStorage,
+  enginesStorage,
+  serviceHistoryStorage,
+  hauloutStorage,
+  projectsStorage,
+  inventoryStorage,
+  navEquipmentStorage,
+  safetyEquipmentStorage,
+  shipsLogStorage,
+  linksStorage,
+  boatDashboardSetupCompleteStorage
+} from '../lib/storage.js';
+import {
+  canAccessCard,
+  shouldShowPremiumBadge,
+  canAccessPremiumFeature,
+  getBasicPlanRecordLimit
+} from '../lib/access.js';
 import { hasActiveSubscription } from '../lib/subscription.js';
 
 /** Short benefit-led line for premium-locked dashboard cards (free users). */
@@ -34,6 +51,7 @@ const logIconUrl = new URL('../assets/log-book.png', import.meta.url).href;
 const linksIconUrl = new URL('../assets/links-globe.png', import.meta.url).href;
 const navigationIconUrl = new URL('../assets/navigation-compass.png', import.meta.url).href;
 const boatIconUrl = new URL('../assets/boat-generic.png', import.meta.url).href;
+const sailBoatDetailsIconUrl = new URL('../assets/Sail-generic.png', import.meta.url).href;
 // Sails & Rigging card icon – use custom sailboat artwork.
 // Ensure the image exists at: web/src/assets/sails-rigging.png
 const sailsRiggingIconUrl = new URL('../assets/sails-rigging.png', import.meta.url).href;
@@ -50,6 +68,36 @@ const projectIconUrl = new URL('../assets/Project.png', import.meta.url).href;
 const inventoryIconUrl = new URL('../assets/inventory.png', import.meta.url).href;
 let currentBoatId = null;
 let currentBoat = null;
+
+const SETUP_COMPLETE_NUDGE_MS = 24 * 60 * 60 * 1000;
+
+/** Appends "· used/limit Basic" on free plan for modules with Basic limits. */
+function withBasicPlanUsageLine(cardId, boatId, baseLine) {
+  if (hasActiveSubscription()) return baseLine;
+  const lim = getBasicPlanRecordLimit(cardId);
+  if (lim == null) return baseLine;
+  let used = 0;
+  switch (cardId) {
+    case 'projects':
+      used = projectsStorage.getAll(boatId).filter((p) => !p.archived_at).length;
+      break;
+    case 'inventory':
+      used = inventoryStorage.getAll(boatId).length;
+      break;
+    case 'navigation':
+      used = navEquipmentStorage.getAll(boatId).length;
+      break;
+    case 'safety':
+      used = safetyEquipmentStorage.getAll(boatId).length;
+      break;
+    case 'log':
+      used = shipsLogStorage.getAll(boatId).length;
+      break;
+    default:
+      return baseLine;
+  }
+  return `${baseLine} · ${used}/${lim} Basic`;
+}
 
 function getStatusText(cardId, boatId) {
   switch (cardId) {
@@ -69,33 +117,53 @@ function getStatusText(cardId, boatId) {
       const haulouts = hauloutStorage.getAll(boatId);
       return `${haulouts.length} haul-out${haulouts.length !== 1 ? 's' : ''}`;
     
-    case 'navigation':
+    case 'navigation': {
       const nav = navEquipmentStorage.getAll(boatId);
-      return `${nav.length} item${nav.length !== 1 ? 's' : ''}`;
-    
-    case 'safety':
+      return withBasicPlanUsageLine(
+        'navigation',
+        boatId,
+        `${nav.length} item${nav.length !== 1 ? 's' : ''}`
+      );
+    }
+
+    case 'safety': {
       const safety = safetyEquipmentStorage.getAll(boatId);
-      return `${safety.length} item${safety.length !== 1 ? 's' : ''}`;
-    
-    case 'log':
+      return withBasicPlanUsageLine(
+        'safety',
+        boatId,
+        `${safety.length} item${safety.length !== 1 ? 's' : ''}`
+      );
+    }
+
+    case 'log': {
       const logs = shipsLogStorage.getAll(boatId);
-      return `${logs.length} passage${logs.length !== 1 ? 's' : ''}`;
+      return withBasicPlanUsageLine(
+        'log',
+        boatId,
+        `${logs.length} passage${logs.length !== 1 ? 's' : ''}`
+      );
+    }
     
     case 'links':
       const links = linksStorage.getAll(boatId);
       return `${links.length} link${links.length !== 1 ? 's' : ''}`;
 
-    case 'projects':
+    case 'projects': {
       const projects = projectsStorage.getAll(boatId);
       const projectItems = projects.filter((p) => (p.type || 'Project') === 'Project');
       const issueItems = projects.filter((p) => (p.type || 'Project') === 'Issue');
       const openIssues = issueItems.filter((p) => !['Resolved', 'Closed'].includes(p.status || '')).length;
-      if (projects.length === 0) return 'No projects or issues';
-      const parts = [];
-      if (projectItems.length > 0) parts.push(`Projects: ${projectItems.length}`);
-      if (issueItems.length > 0) parts.push(`Issues: ${issueItems.length}`);
-      if (openIssues > 0) parts.push(`Open: ${openIssues}`);
-      return parts.length ? parts.join(' · ') : `${projects.length} item${projects.length !== 1 ? 's' : ''}`;
+      let line;
+      if (projects.length === 0) line = 'No projects or issues';
+      else {
+        const parts = [];
+        if (projectItems.length > 0) parts.push(`Projects: ${projectItems.length}`);
+        if (issueItems.length > 0) parts.push(`Issues: ${issueItems.length}`);
+        if (openIssues > 0) parts.push(`Open: ${openIssues}`);
+        line = parts.length ? parts.join(' · ') : `${projects.length} item${projects.length !== 1 ? 's' : ''}`;
+      }
+      return withBasicPlanUsageLine('projects', boatId, line);
+    }
     
     case 'watermaker':
       return 'Track watermaker service';
@@ -116,11 +184,15 @@ function getStatusText(cardId, boatId) {
       const items = inventoryStorage.getAll(boatId);
       const lowCount = items.filter((i) => (i.in_stock_level != null ? Number(i.in_stock_level) : 0) <= (i.required_quantity != null ? Number(i.required_quantity) : 0)).length;
       const criticalCount = items.filter((i) => !!i.critical_spare && (i.in_stock_level == null || Number(i.in_stock_level) === 0)).length;
-      if (items.length === 0) return 'No items';
-      const parts = [`${items.length} item${items.length !== 1 ? 's' : ''}`];
-      if (lowCount > 0) parts.push(`${lowCount} low`);
-      if (criticalCount > 0) parts.push(`${criticalCount} critical`);
-      return parts.join(' · ');
+      let line;
+      if (items.length === 0) line = 'No items';
+      else {
+        const parts = [`${items.length} item${items.length !== 1 ? 's' : ''}`];
+        if (lowCount > 0) parts.push(`${lowCount} low`);
+        if (criticalCount > 0) parts.push(`${criticalCount} critical`);
+        line = parts.join(' · ');
+      }
+      return withBasicPlanUsageLine('inventory', boatId, line);
     }
 
     default:
@@ -155,8 +227,9 @@ function createCard(id, title, iconName, route, boatId) {
   } else if (id === 'sails-rigging') {
     iconHtml = `<img src="${sailsRiggingIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else if (id === 'boat') {
-    // Always use the generic boat artwork so the card matches the home screen.
-    iconHtml = `<img src="${boatIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
+    const b = boatsStorage.get(boatId);
+    const detailsIconUrl = b?.boat_type === 'sailing' ? sailBoatDetailsIconUrl : boatIconUrl;
+    iconHtml = `<img src="${detailsIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else if (id === 'service') {
     iconHtml = `<img src="${serviceIconUrl}" alt="${title} icon" class="dashboard-card-icon-img">`;
   } else if (id === 'haulout') {
@@ -314,10 +387,20 @@ function renderBoatDashboardOnboarding(boatId) {
   const hasService = services.length > 0;
   const hasReminderFlow = services.some((s) => !!s.next_service_due);
 
+  let setupCompleteAtMs = null;
+  if (hasReminderFlow) {
+    const recorded = boatDashboardSetupCompleteStorage.recordFirstComplete(boatId);
+    setupCompleteAtMs = recorded ? Date.parse(recorded) : null;
+  }
+  const showDay2Nudge =
+    hasReminderFlow &&
+    setupCompleteAtMs != null &&
+    !Number.isNaN(setupCompleteAtMs) &&
+    Date.now() - setupCompleteAtMs >= SETUP_COMPLETE_NUDGE_MS;
+
   const stepClass = (done) => (done ? 'dashboard-onboarding-step is-done' : 'dashboard-onboarding-step');
 
-  host.innerHTML = `
-    <div class="dashboard-onboarding card">
+  const stepsBlock = `
       <h3 class="dashboard-onboarding-title">Get started</h3>
       <ol class="dashboard-onboarding-list">
         <li class="${stepClass(hasEngine)}">
@@ -332,21 +415,38 @@ function renderBoatDashboardOnboarding(boatId) {
           <span class="dashboard-onboarding-label">Set next due date &amp; reminder</span>
           ${hasReminderFlow ? '<span class="text-muted">Done</span>' : hasService ? `<a href="#/boat/${boatId}/service/${services[0].id}" class="btn-link dashboard-onboarding-link">Open service entry</a>` : '<span class="text-muted">After you add a service</span>'}
         </li>
-      </ol>
-      ${
-        hasReminderFlow
-          ? `
+      </ol>`;
+
+  const completedSetupBlock = `
       <p class="dashboard-onboarding-success">You&apos;re now set up 👍</p>
       <p class="dashboard-onboarding-reinforcement">Your boat is being tracked and your first reminder is in place.</p>
       <p style="margin-top: 0.75rem;"><a href="#/boat/${boatId}/reminder" class="btn-link dashboard-onboarding-reminder-link">View your reminder</a></p>
-      <p class="dashboard-onboarding-value-msg">BoatMatey helps you stay on top of everything — from maintenance and logs to safety, equipment and more.</p>
       <div class="dashboard-onboarding-upgrade">
-        <p class="dashboard-onboarding-upgrade-text">Upgrade to unlock the full set of tools and manage everything in one place.</p>
+        <p class="dashboard-onboarding-upgrade-text">You&apos;re currently on the free plan.<br>Unlock full access to properly look after your boat and stay on top of everything.</p>
         <button type="button" class="btn-primary dashboard-onboarding-trial-btn">Unlock Full Access &amp; Start Free Trial</button>
-      </div>
-      `
-          : ''
-      }
+      </div>`;
+
+  const day2NudgeBlock = `
+      <p class="dashboard-onboarding-success">You&apos;re back 👍</p>
+      <p class="dashboard-onboarding-reinforcement">Your boat is now being tracked. Keep everything up to date so you do not miss anything important.</p>
+      <div class="dashboard-onboarding-upgrade">
+        <p class="dashboard-onboarding-upgrade-text">You&apos;re currently on the free plan.<br>Unlock full access to properly look after your boat and stay on top of everything.</p>
+        <button type="button" class="btn-primary dashboard-onboarding-trial-btn">Unlock Full Access &amp; Start Free Trial</button>
+      </div>`;
+
+  let cardInner = '';
+  if (showDay2Nudge) {
+    cardInner = day2NudgeBlock;
+  } else {
+    cardInner = stepsBlock;
+    if (hasReminderFlow) {
+      cardInner += completedSetupBlock;
+    }
+  }
+
+  host.innerHTML = `
+    <div class="dashboard-onboarding card">
+      ${cardInner}
     </div>
   `;
 
@@ -371,6 +471,7 @@ async function onMount() {
   const boatId = match ? match[1] : null;
 
   if (boatId) {
+    void touchBoatDashboardOpen();
     try {
       sessionStorage.setItem('bm_onboarding_context_boat', boatId);
     } catch (_) {}

@@ -34,6 +34,48 @@ function escapeHtml(s) {
   return div.innerHTML;
 }
 
+/** Returns HTML <p> for engine hours, or empty string if none. */
+function formatPassageEngineHoursParagraph(entry) {
+  const engines = entry.engine_hours_engines;
+  if (!Array.isArray(engines) || engines.length === 0) {
+    const hoursStart = entry.engine_hours_start;
+    const hoursEnd = entry.engine_hours_end;
+    if (hoursStart == null && hoursEnd == null) return '';
+    const startStr = hoursStart != null ? String(hoursStart) : '—';
+    const endStr = hoursEnd != null ? String(hoursEnd) : '—';
+    const hoursUsed = (hoursStart != null && hoursEnd != null)
+      ? (parseFloat(hoursEnd) - parseFloat(hoursStart)).toFixed(1)
+      : null;
+    const usedPart = hoursUsed ? ` (${hoursUsed} hrs used)` : '';
+    return `<p><strong>Engine hours:</strong> ${startStr} → ${endStr}${usedPart}</p>`;
+  }
+
+  const singleUnlabeled = engines.length === 1 && !(engines[0].label && String(engines[0].label).trim());
+  if (singleUnlabeled) {
+    const eng = engines[0];
+    const hs = eng.start;
+    const he = eng.end;
+    const startStr = hs != null ? String(hs) : '—';
+    const endStr = he != null ? String(he) : '—';
+    const hoursUsed = (hs != null && he != null) ? (Number(he) - Number(hs)).toFixed(1) : null;
+    const usedPart = hoursUsed ? ` (${hoursUsed} hrs used)` : '';
+    return `<p><strong>Engine hours:</strong> ${startStr} → ${endStr}${usedPart}</p>`;
+  }
+
+  const lines = engines.map((eng, i) => {
+    const hasName = eng.label && String(eng.label).trim();
+    const title = hasName ? escapeHtml(eng.label.trim()) : `Engine ${i + 1}`;
+    const hs = eng.start;
+    const he = eng.end;
+    const startStr = hs != null ? String(hs) : '—';
+    const endStr = he != null ? String(he) : '—';
+    let used = '';
+    if (hs != null && he != null) used = ` (${(Number(he) - Number(hs)).toFixed(1)} hrs used)`;
+    return `<strong>${title}:</strong> ${startStr} → ${endStr}${used}`;
+  });
+  return `<p><strong>Engine hours:</strong><br>${lines.join('<br>')}</p>`;
+}
+
 function render(params = {}) {
   // Get boat ID from route params
   currentBoatId = params?.id || window.routeParams?.id;
@@ -265,7 +307,11 @@ function applyLogFilterSort() {
     const type = (entry.passage_type || '').toLowerCase();
     const dateStr = entry.date ? new Date(entry.date).toLocaleDateString().toLowerCase() : '';
     const dateEndStr = entry.date_end ? new Date(entry.date_end).toLocaleDateString().toLowerCase() : '';
-    return dep.includes(q) || arr.includes(q) || notes.includes(q) || type.includes(q) || dateStr.includes(q) || dateEndStr.includes(q);
+    const engQ = (entry.engine_hours_engines || [])
+      .map((en) => `${en.label || ''} ${en.start ?? ''} ${en.end ?? ''}`)
+      .join(' ')
+      .toLowerCase();
+    return dep.includes(q) || arr.includes(q) || notes.includes(q) || type.includes(q) || dateStr.includes(q) || dateEndStr.includes(q) || engQ.includes(q);
   });
   entries = [...entries].sort((a, b) => {
     const dateA = a.date ? new Date(a.date).getTime() : 0;
@@ -288,12 +334,10 @@ function applyLogFilterSort() {
     const dateRangeStr = formatPassageDateRange(entry.date, entry.date_end);
     const titleStr = entry.title && entry.title.trim() ? entry.title.trim() : dateRangeStr;
     const passageTypeLabel = entry.passage_type === 'motor' ? 'Motor' : entry.passage_type === 'sail' ? 'Sail' : entry.passage_type === 'both' ? 'Motor & Sail' : null;
-    const hoursStart = entry.engine_hours_start ?? '';
-    const hoursEnd = entry.engine_hours_end ?? '';
-    const hoursUsed = (entry.engine_hours_start != null && entry.engine_hours_end != null)
-      ? (parseFloat(entry.engine_hours_end) - parseFloat(entry.engine_hours_start)).toFixed(1)
-      : null;
-    const showEngineHours = passageTypeLabel === null || passageTypeLabel === 'Motor' || passageTypeLabel === 'Motor & Sail' || hoursStart !== '' || hoursEnd !== '';
+    const engineHoursPara = formatPassageEngineHoursParagraph(entry);
+    const hasEngineData = engineHoursPara !== '';
+    const showEngineHours = passageTypeLabel === null || passageTypeLabel === 'Motor' || passageTypeLabel === 'Motor & Sail' || hasEngineData;
+    const engineHoursHtml = hasEngineData ? engineHoursPara : (showEngineHours ? '<p><strong>Engine hours:</strong> — → —</p>' : '');
     const dailyNoteCount = entry.daily_notes && typeof entry.daily_notes === 'object' ? Object.keys(entry.daily_notes).length : 0;
 
     return `
@@ -310,7 +354,7 @@ function applyLogFilterSort() {
       </div>
       <div>
         ${dailyNoteCount > 0 ? `<p><strong>Daily log:</strong> ${dailyNoteCount} day${dailyNoteCount !== 1 ? 's' : ''}</p>` : ''}
-        ${showEngineHours ? `<p><strong>Engine Hours:</strong> ${hoursStart || '—'} → ${hoursEnd || '—'}${hoursUsed ? ` (${hoursUsed} hrs used)` : ''}</p>` : ''}
+        ${showEngineHours ? engineHoursHtml : ''}
         ${entry.distance_nm ? `<p><strong>Distance:</strong> ${entry.distance_nm} nm</p>` : ''}
         ${entry.notes ? `<p><strong>Notes:</strong> ${entry.notes}</p>` : ''}
       </div>

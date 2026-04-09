@@ -90,16 +90,95 @@ export async function getSessionWithTimeout(ms = 6000) {
   }
 }
 
+function inferBrowserFromUa(ua) {
+  const u = ua || '';
+  if (/Edg\//i.test(u)) return 'Edge';
+  if (/OPR\/|Opera/i.test(u)) return 'Opera';
+  if (/CriOS/i.test(u)) return 'Chrome';
+  if (/Chrome\//i.test(u)) return 'Chrome';
+  if (/Firefox\//i.test(u)) return 'Firefox';
+  if (/Safari/i.test(u) && !/Chrome|CriOS|Edg|OPR/i.test(u)) return 'Safari';
+  if (/MSIE|Trident/i.test(u)) return 'Internet Explorer';
+  return 'Other';
+}
+
+function inferOsFromUa(ua) {
+  const u = ua || '';
+  if (/Windows NT 10/i.test(u)) return 'Windows';
+  if (/Windows NT 6\./i.test(u)) return 'Windows';
+  if (/Windows NT/i.test(u)) return 'Windows';
+  if (/Mac OS X|Macintosh/i.test(u)) return 'macOS';
+  if (/CrOS/i.test(u)) return 'Chrome OS';
+  if (/Android/i.test(u)) return 'Android';
+  if (/iPhone|iPad|iPod/i.test(u)) return 'iOS';
+  if (/Linux/i.test(u)) return 'Linux';
+  return 'Unknown';
+}
+
 /**
- * Record a successful authenticated session for inactive-account cleanup (90-day rule).
- * The database RPC throttles writes (default 6h) so token refresh / reloads do not spam updates.
+ * Readable snapshot for profiles.last_sign_in_client.
+ * Use last_sign_in_client->>'client_surface' (web | ios | android) and ->>'summary' in SQL.
+ */
+export function buildSignInClientPayload() {
+  const ua =
+    typeof navigator !== 'undefined' ? String(navigator.userAgent || '').slice(0, 400) : '';
+  const language =
+    typeof navigator !== 'undefined' ? String(navigator.language || '').slice(0, 32) : '';
+
+  let clientSurface = 'web';
+  let nativePlatform = null;
+  try {
+    const Cap = typeof window !== 'undefined' ? window.Capacitor : undefined;
+    if (Cap?.isNativePlatform?.()) {
+      nativePlatform = Cap.getPlatform?.() ? String(Cap.getPlatform()).slice(0, 32) : null;
+      const p = (nativePlatform || '').toLowerCase();
+      if (p === 'ios') clientSurface = 'ios';
+      else if (p === 'android') clientSurface = 'android';
+    }
+  } catch (_) {
+    /* ignore */
+  }
+
+  if (clientSurface === 'ios') {
+    return {
+      client_surface: 'ios',
+      summary: 'BoatMatey app (iOS)',
+      language: language || null,
+      native_platform: 'ios'
+    };
+  }
+  if (clientSurface === 'android') {
+    return {
+      client_surface: 'android',
+      summary: 'BoatMatey app (Android)',
+      language: language || null,
+      native_platform: 'android'
+    };
+  }
+
+  const browser = inferBrowserFromUa(ua);
+  const os = inferOsFromUa(ua);
+  return {
+    client_surface: 'web',
+    summary: `Web · ${browser} · ${os}`,
+    browser,
+    os,
+    language: language || null,
+    user_agent: ua || null
+  };
+}
+
+/**
+ * Record client device/browser info when a session is active (sign-in or restored session).
+ * Server stores profiles.last_sign_in_client and throttles repeats (6h unless user_agent changes).
  */
 export async function touchLastLoginAfterAuthSession() {
   if (!supabase) return;
   try {
     const session = await getSession();
     if (!session?.user?.id) return;
-    const { error } = await supabase.rpc('touch_last_login_at');
+    const client = buildSignInClientPayload();
+    const { error } = await supabase.rpc('touch_last_login_at', { p_client: client });
     if (error) {
       const code = String(error.code || '');
       if (code === '42883' || /function .* does not exist/i.test(String(error.message || ''))) {
@@ -109,6 +188,27 @@ export async function touchLastLoginAfterAuthSession() {
     }
   } catch (e) {
     console.warn('[BoatMatey] touch_last_login_at failed:', e?.message || e);
+  }
+}
+
+/**
+ * Record that the user opened a boat dashboard (profiles.last_login_at). Throttled to ~1/min server-side.
+ */
+export async function touchBoatDashboardOpen() {
+  if (!supabase) return;
+  try {
+    const session = await getSession();
+    if (!session?.user?.id) return;
+    const { error } = await supabase.rpc('touch_boat_dashboard_open');
+    if (error) {
+      const code = String(error.code || '');
+      if (code === '42883' || /function .* does not exist/i.test(String(error.message || ''))) {
+        return;
+      }
+      console.warn('[BoatMatey] touch_boat_dashboard_open:', error.message || error);
+    }
+  } catch (e) {
+    console.warn('[BoatMatey] touch_boat_dashboard_open failed:', e?.message || e);
   }
 }
 
@@ -1079,10 +1179,64 @@ export async function deleteEquipment(equipmentId, category) {
 
 // ----------------- Logbook -----------------
 
+/** Decode passage `notes` JSON into display fields (multi-engine + legacy single pair). Mutates `out`. */
+function applyLogbookNotesJsonToOut(out, notesField) {
+  if (!notesField || typeof notesField !== 'string') return;
+  try {
+    const d = JSON.parse(notesField);
+    if (!d || typeof d !== 'object') return;
+    if (d.raw != null) out.notes = d.raw;
+    if (d.distance_nm != null) out.distance_nm = d.distance_nm;
+
+    const engines = [];
+    if (Array.isArray(d.engine_hours_engines)) {
+      for (const row of d.engine_hours_engines) {
+        if (!row || typeof row !== 'object') continue;
+        const label = typeof row.label === 'string' ? row.label.trim() : '';
+        const startN = row.start !== '' && row.start != null && !Number.isNaN(Number(row.start)) ? Number(row.start) : null;
+        const endN = row.end !== '' && row.end != null && !Number.isNaN(Number(row.end)) ? Number(row.end) : null;
+        if (startN != null || endN != null || label) {
+          engines.push({ label, start: startN, end: endN });
+        }
+      }
+    }
+    if (engines.length === 0) {
+      const hs = d.engine_hours_start;
+      const he = d.engine_hours_end;
+      const startN = hs !== '' && hs != null && !Number.isNaN(Number(hs)) ? Number(hs) : null;
+      const endN = he !== '' && he != null && !Number.isNaN(Number(he)) ? Number(he) : null;
+      if (startN != null || endN != null) {
+        engines.push({ label: '', start: startN, end: endN });
+      }
+    }
+    if (engines.length > 0) {
+      out.engine_hours_engines = engines;
+      out.engine_hours_start = engines[0].start;
+      out.engine_hours_end = engines[0].end;
+    }
+  } catch (_) {}
+}
+
+function mapLogbookRowForClient(e, boatId) {
+  const out = {
+    ...e,
+    boat_id: e.boat_id ?? boatId,
+    date: e.date ?? e.trip_date,
+    date_end: e.date_end ?? e.trip_date_end ?? null,
+    passage_type: e.passage_type ?? null,
+    departure: e.departure ?? e.from_location ?? null,
+    arrival: e.arrival ?? e.to_location ?? null,
+    title: e.title ?? 'Passage',
+    daily_notes: e.daily_notes && typeof e.daily_notes === 'object' ? e.daily_notes : null
+  };
+  applyLogbookNotesJsonToOut(out, typeof e.notes === 'string' ? e.notes : null);
+  return out;
+}
+
 export async function getLogbook(boatId) {
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
-    return shipsLogStorage.getAll(boatId);
+    return shipsLogStorage.getAll(boatId).map((e) => mapLogbookRowForClient(e, boatId));
   }
 
   const { data, error } = await supabase
@@ -1093,7 +1247,7 @@ export async function getLogbook(boatId) {
 
   if (error) {
     console.error('getLogbook error:', error);
-    return shipsLogStorage.getAll(boatId);
+    return shipsLogStorage.getAll(boatId).map((e) => mapLogbookRowForClient(e, boatId));
   }
 
   const mapped = (data || []).map((e) => {
@@ -1108,17 +1262,7 @@ export async function getLogbook(boatId) {
       title: e.title ?? 'Passage',
       daily_notes: e.daily_notes && typeof e.daily_notes === 'object' ? e.daily_notes : null
     };
-    try {
-      if (e.notes && typeof e.notes === 'string') {
-        const d = JSON.parse(e.notes);
-        if (d && typeof d === 'object') {
-          if (d.raw != null) out.notes = d.raw;
-          if (d.engine_hours_start != null) out.engine_hours_start = d.engine_hours_start;
-          if (d.engine_hours_end != null) out.engine_hours_end = d.engine_hours_end;
-          if (d.distance_nm != null) out.distance_nm = d.distance_nm;
-        }
-      }
-    } catch (_) {}
+    applyLogbookNotesJsonToOut(out, e.notes);
     return out;
   });
   shipsLogStorage.replaceForBoat(boatId, mapped);

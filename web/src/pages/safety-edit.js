@@ -11,7 +11,8 @@ import { confirmAction } from '../components/confirmModal.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getEquipment, createEquipment, updateEquipment } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
-import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
+import { blockFreePlanRecordLimitIfNeeded } from '../lib/premiumSaveGate.js';
+import { safetyEquipmentStorage } from '../lib/storage.js';
 import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 
 const SAFETY_TYPES = ['Liferaft', 'EPIRB', 'Fire Extinguisher', 'Flares', 'First Aid Kit', 'Life Jacket', 'Other'];
@@ -240,7 +241,13 @@ async function onMount(params = {}) {
   document.getElementById('safety-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (archived) return;
-    if (blockPremiumSaveIfNeeded()) return;
+    const willCreate = isNew || (itemId && String(itemId).startsWith('safety_'));
+    if (
+      willCreate &&
+      blockFreePlanRecordLimitIfNeeded('safety', safetyEquipmentStorage.getAll(boatId).length)
+    ) {
+      return;
+    }
     const form = e.target;
     setSaveButtonLoading(form, true);
     try {
@@ -270,7 +277,7 @@ async function onMount(params = {}) {
   insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-safety'), {
     headline: 'Preview: Safety equipment',
     detail:
-      'Log inspections and expiry dates here. Tap Save when ready — Premium is required to keep safety gear on file.'
+      'Basic plan: 1 equipment item per boat. Upgrade for unlimited inspections and expiry tracking.'
   });
 }
 

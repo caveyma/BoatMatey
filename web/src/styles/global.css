@@ -226,6 +226,39 @@ label {
   display: block;
 }
 
+.log-engine-hours-heading {
+  font-weight: 500;
+  margin-bottom: var(--spacing-xs);
+  color: var(--color-text);
+}
+.log-engine-hours-section .log-engine-hours-rows {
+  margin-bottom: var(--spacing-sm);
+}
+.log-engine-hours-section .log-engine-hours-row {
+  margin-bottom: var(--spacing-md);
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px solid var(--color-border, #dee2e6);
+}
+.log-engine-hours-section .log-engine-hours-row:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+.log-engine-hours-section .log-engine-start-end-row {
+  align-items: flex-end;
+}
+.log-engine-hours-section .log-engine-remove-wrap {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+}
+.log-engine-hours-section .log-engine-hours-row:only-child .log-engine-remove {
+  visibility: hidden;
+  pointer-events: none;
+}
+.log-engine-hours-section .log-engine-label-group {
+  margin-bottom: var(--spacing-sm);
+}
+
 .log-daily-section {
   margin-top: var(--spacing-lg);
   padding-top: var(--spacing-lg);

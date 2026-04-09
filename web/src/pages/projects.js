@@ -22,7 +22,8 @@ import {
   LIMITED_UPLOAD_SIZE_BYTES,
   LIMITED_UPLOADS_PER_ENTITY
 } from '../lib/uploads.js';
-import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
+import { blockFreePlanRecordLimitIfNeeded } from '../lib/premiumSaveGate.js';
+import { projectsStorage } from '../lib/storage.js';
 import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 
 const CATEGORIES = ['Electronics', 'Mechanical', 'Plumbing', 'Electrical', 'Hull / Deck', 'Interior', 'Safety', 'Other'];
@@ -210,7 +211,7 @@ async function onMount(params = {}) {
     insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-projects'), {
       headline: 'Preview: Projects & Issues',
       detail:
-        'Plan refits and log issues here. Tap Save when ready — Premium is required to keep your items and attachments.'
+        'Basic plan: up to 2 projects and issues combined per boat (not archived). Upgrade for unlimited items and attachments.'
     });
     return;
   }
@@ -282,7 +283,7 @@ async function onMount(params = {}) {
   insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-projects'), {
     headline: 'Preview: Projects & Issues',
     detail:
-      'Plan refits and log issues here. Tap Save when ready — Premium is required to keep your items and attachments.'
+      'Basic plan: up to 2 projects and issues combined per boat (not archived). Upgrade for unlimited items and attachments.'
   });
 
   loadProjects();
@@ -583,7 +584,9 @@ function openQuickAddIssueModal() {
         showToast('Severity is required', 'error');
         return;
       }
-      if (blockPremiumSaveIfNeeded()) return;
+      const activeProjectCount = () =>
+        projectsStorage.getAll(currentBoatId).filter((p) => !p.archived_at).length;
+      if (blockFreePlanRecordLimitIfNeeded('projects', activeProjectCount())) return;
       setSaveButtonLoading(saveBtn, true);
       try {
         const payload = {
@@ -888,10 +891,12 @@ async function showProjectForm() {
       showToast('Reported By, Date Reported and Severity are required for issues', 'error');
       return;
     }
-    if (blockPremiumSaveIfNeeded()) return;
+    const isNew = !existing || existing.id !== editingId;
+    const activeProjectCount = () =>
+      projectsStorage.getAll(currentBoatId).filter((p) => !p.archived_at).length;
+    if (isNew && blockFreePlanRecordLimitIfNeeded('projects', activeProjectCount())) return;
     setSaveButtonLoading(saveBtn, true);
     try {
-      const isNew = !existing || existing.id !== editingId;
       if (isNew) {
         await createProject(currentBoatId, payload);
         showToast(`${payload.type === 'Issue' ? 'Issue' : 'Project'} added`, 'success');

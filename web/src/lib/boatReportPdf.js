@@ -409,6 +409,30 @@ export function buildPdfReport(data, options = {}) {
       const date = entry.date || entry.trip_date || entry.departure_date || '—';
       doc.text(`${date}  ${from} → ${to}`, MARGIN, y);
       y += LINE_HEIGHT;
+      const engines = entry.engine_hours_engines;
+      if (Array.isArray(engines) && engines.length > 0) {
+        engines.forEach((eng, i) => {
+          const hasName = eng.label && String(eng.label).trim();
+          const title = hasName ? `${eng.label.trim()} ` : engines.length > 1 ? `Engine ${i + 1} ` : '';
+          const hs = eng.start != null ? String(eng.start) : '—';
+          const he = eng.end != null ? String(eng.end) : '—';
+          let line = `  ${title}${hs} → ${he}`;
+          if (eng.start != null && eng.end != null) {
+            line += ` (${(Number(eng.end) - Number(eng.start)).toFixed(1)} hrs used)`;
+          }
+          doc.text(line, MARGIN, y);
+          y += LINE_HEIGHT;
+        });
+      } else if (entry.engine_hours_start != null || entry.engine_hours_end != null) {
+        const hs = entry.engine_hours_start != null ? String(entry.engine_hours_start) : '—';
+        const he = entry.engine_hours_end != null ? String(entry.engine_hours_end) : '—';
+        let line = `  Engine hours: ${hs} → ${he}`;
+        if (entry.engine_hours_start != null && entry.engine_hours_end != null) {
+          line += ` (${(Number(entry.engine_hours_end) - Number(entry.engine_hours_start)).toFixed(1)} hrs used)`;
+        }
+        doc.text(line, MARGIN, y);
+        y += LINE_HEIGHT;
+      }
       const logNotes = entry.notes || (typeof entry.daily_notes === 'string' ? entry.daily_notes : null);
       if (logNotes) y = addWrappedText(doc, logNotes, y);
       y += 2;

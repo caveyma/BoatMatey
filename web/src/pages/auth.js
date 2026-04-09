@@ -21,6 +21,7 @@ import { logInWithAppUserId } from '../services/revenuecat.js';
 import { touchLastLoginAfterAuthSession } from '../lib/dataService.js';
 import { Capacitor } from '@capacitor/core';
 import { APP_STORE_URL, GOOGLE_PLAY_URL, APP_STORE_BADGE_URL, GOOGLE_PLAY_BADGE_URL } from '../lib/constants.js';
+import { fireGoogleAdsSignupConversionIfEligible } from '../lib/googleAdsConversions.js';
 
 // Store pending signup data (cleared after use)
 let pendingSignup = null;
@@ -131,6 +132,7 @@ export async function completeAccountCreation() {
       if (data.session) {
         await touchLastLoginAfterAuthSession();
       }
+      fireGoogleAdsSignupConversionIfEligible(data.user);
       return { success: true, user: data.user };
     }
 
@@ -191,11 +193,6 @@ function storeBadgesHtml() {
 function render() {
   const wrapper = document.createElement('div');
   wrapper.className = 'page-fullscreen';
-  wrapper.style.minHeight = '100dvh';
-  wrapper.style.display = 'flex';
-  wrapper.style.alignItems = 'center';
-  wrapper.style.justifyContent = 'center';
-  wrapper.style.padding = '1rem';
 
   const container = document.createElement('div');
   container.className = 'container';
@@ -214,11 +211,11 @@ function render() {
   // Single form for both sign in and create account (no tabs).
   card.innerHTML = `
     <div class="text-center" style="margin-bottom: 1.5rem;">
-      <div style="display:flex; justify-content:center; margin-bottom: 1rem;">
+      <div style="display:flex; justify-content:center; margin-bottom: 0.65rem;">
         ${renderLogoFull(220)}
       </div>
-      <h2 style="margin-bottom: 0.5rem;">BoatMatey</h2>
-      <p class="text-muted">Sign in or create an account to get started.</p>
+      <p class="text-muted" style="margin: 0; font-size: 1.05rem; line-height: 1.5; max-width: 22rem; margin-left: auto; margin-right: auto;">Create your free account and start tracking your boat in minutes.</p>
+      <p style="margin: 0.35rem 0 0; font-size: 0.8rem; line-height: 1.45; color: var(--color-text-light);">No payment required to get started.</p>
     </div>
 
     <form id="auth-form">
@@ -256,7 +253,7 @@ function render() {
       <button type="button" class="btn-link" id="forgot-password-btn" style="width: 100%; text-align: center; color: var(--color-primary);">Forgot password?</button>
     </div>
 
-    <p class="text-muted" style="margin-top: 1rem; font-size: 0.9rem;">New here? Create an account to get started. Add a promo code if you have one, or subscribe later from Account.</p>
+    <p class="text-muted" style="margin-top: 1rem; font-size: 0.9rem; line-height: 1.5;">New here? Create your free account to get started. Add a promo code if you have one, or upgrade later in the app.</p>
     ${isNative ? '' : `<div style="display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.75rem;">${storeBadgesHtml()}</div>`}
 
     <div id="auth-message" style="display: none; margin-top: 1rem; padding: 0.75rem; border-radius: 8px;">
@@ -352,6 +349,9 @@ function showMessage(text, isError = false, isSuccess = false) {
 
 async function onMount() {
   window.navigate = navigate;
+
+  const pageFs = document.querySelector('.page-fullscreen');
+  if (pageFs) pageFs.scrollTop = 0;
 
   const isNative = Capacitor.isNativePlatform?.() ?? false;
 
@@ -618,6 +618,8 @@ async function onMount() {
         await new Promise((r) => setTimeout(r, 800));
         await upsertProfile();
       }
+
+      fireGoogleAdsSignupConversionIfEligible(signUpData.user);
 
       if (promoCode) {
         const { data: applyData, error: applyError } = await supabase.functions.invoke('apply-promo-after-signup', {

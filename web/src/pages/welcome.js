@@ -39,7 +39,7 @@ function render() {
         style="width: 100%; display: block; max-height: 200px; object-fit: cover;"
         title="BoatMatey – Creating a new boat"
       ></video>
-      <p style="margin: 0.5rem 0 0; font-size: 0.8rem; color: var(--color-text-light);">Official BoatMatey product demo</p>
+      <p style="margin: 0.5rem 0 0; font-size: 0.8rem; color: var(--color-text-light);">See how BoatMatey works</p>
     </div>
 
     <h1 style="font-size: 1.75rem; color: var(--color-text); margin-bottom: 0.75rem;">
@@ -47,7 +47,7 @@ function render() {
     </h1>
     
     <p style="color: var(--color-text-light); font-size: 1.1rem; margin-bottom: 2rem; line-height: 1.5;">
-      Your digital boat management companion
+      Never miss a service or important job on your boat again
     </p>
 
     <div style="text-align: left; margin-bottom: 2rem;">

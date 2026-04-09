@@ -6,6 +6,8 @@
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-auto-rows: auto;
+  align-items: stretch;
   gap: var(--spacing-lg);
   padding: var(--spacing-md);
 }
@@ -63,7 +65,9 @@
   transition: var(--transition);
   cursor: pointer;
   min-height: 180px;
-  justify-content: center;
+  /* Top-align so icons and titles line up across columns in the same row */
+  justify-content: flex-start;
+  min-width: 0;
   border: 1px solid var(--bm-border);
   position: relative;
   overflow: hidden;
@@ -117,6 +121,7 @@
 .dashboard-card-icon-badge {
   width: 56px;
   height: 56px;
+  flex-shrink: 0;
   border-radius: var(--radius-lg);
   background: var(--card-color, var(--bm-teal));
   display: flex;
@@ -199,6 +204,9 @@
   margin-bottom: var(--spacing-xs);
   color: var(--bm-navy);
   letter-spacing: -0.01em;
+  width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* Premium lock: badge and locked state (free users on premium cards) */
@@ -253,6 +261,11 @@
   font-size: var(--font-size-sm);
   color: var(--color-text-light);
   font-weight: 500;
+  width: 100%;
+  margin-top: auto;
+  padding-top: var(--spacing-xs);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* Boat Cards - Home Page (Premium Yacht Style) */

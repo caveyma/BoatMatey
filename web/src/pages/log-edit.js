@@ -8,7 +8,8 @@ import { navigate } from '../router.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getLogbook, createLogEntry, updateLogEntry } from '../lib/dataService.js';
-import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
+import { blockFreePlanRecordLimitIfNeeded } from '../lib/premiumSaveGate.js';
+import { shipsLogStorage } from '../lib/storage.js';
 import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 
 const MAX_DAILY_DAYS = 60;
@@ -101,6 +102,69 @@ function escapeHtml(s) {
   return div.innerHTML;
 }
 
+function engineHoursRowHtml(eng = {}) {
+  const label = typeof eng.label === 'string' ? eng.label : '';
+  const start = eng.start != null && eng.start !== '' ? String(eng.start) : '';
+  const end = eng.end != null && eng.end !== '' ? String(eng.end) : '';
+  return `
+    <div class="log-engine-hours-row">
+      <div class="form-group log-engine-label-group">
+        <label>Engine name <span class="text-muted">(optional)</span></label>
+        <input type="text" class="log-engine-label" placeholder="e.g. Port, starboard, center" value="${escapeHtml(label)}">
+      </div>
+      <div class="form-row log-engine-start-end-row">
+        <div class="form-group">
+          <label>Hours (start)</label>
+          <input type="number" class="log-engine-start" step="0.1" min="0" placeholder="h" value="${escapeHtml(start)}">
+        </div>
+        <div class="form-group">
+          <label>Hours (end)</label>
+          <input type="number" class="log-engine-end" step="0.1" min="0" placeholder="h" value="${escapeHtml(end)}">
+        </div>
+        <div class="form-group log-engine-remove-wrap">
+          <button type="button" class="btn-secondary log-engine-remove">Remove</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function collectEngineHoursFromForm() {
+  const container = document.getElementById('log-engine-hours-rows');
+  if (!container) return [];
+  const engines = [];
+  container.querySelectorAll('.log-engine-hours-row').forEach((row) => {
+    const label = row.querySelector('.log-engine-label')?.value?.trim() ?? '';
+    const startRaw = row.querySelector('.log-engine-start')?.value?.trim();
+    const endRaw = row.querySelector('.log-engine-end')?.value?.trim();
+    const start = startRaw ? parseFloat(startRaw) : null;
+    const end = endRaw ? parseFloat(endRaw) : null;
+    const startOk = start != null && Number.isFinite(start);
+    const endOk = end != null && Number.isFinite(end);
+    if (startOk || endOk || label) {
+      engines.push({ label, start: startOk ? start : null, end: endOk ? end : null });
+    }
+  });
+  return engines;
+}
+
+function renderEngineHoursRows(entry) {
+  const container = document.getElementById('log-engine-hours-rows');
+  if (!container) return;
+  let initial = [];
+  if (entry && Array.isArray(entry.engine_hours_engines) && entry.engine_hours_engines.length > 0) {
+    initial = entry.engine_hours_engines.map((e) => ({
+      label: typeof e.label === 'string' ? e.label : '',
+      start: e.start != null ? e.start : null,
+      end: e.end != null ? e.end : null
+    }));
+  } else if (entry && (entry.engine_hours_start != null || entry.engine_hours_end != null)) {
+    initial = [{ label: '', start: entry.engine_hours_start ?? null, end: entry.engine_hours_end ?? null }];
+  } else {
+    initial = [{ label: '', start: null, end: null }];
+  }
+  container.innerHTML = initial.map((eng) => engineHoursRowHtml(eng)).join('');
+}
+
 function render(params = {}) {
   const boatId = params?.id || window.routeParams?.id;
   const entryId = params?.entryId || window.routeParams?.entryId;
@@ -162,14 +226,11 @@ function render(params = {}) {
           <label for="log_arrival">Arrival Location</label>
           <input type="text" id="log_arrival" placeholder="e.g. Harbour, island or port">
         </div>
-        <div class="form-group">
-          <label for="log_hours_start">Engine Hours (Start)</label>
-          <input type="number" id="log_hours_start" step="0.1" placeholder="Hours" min="0">
-          <span class="form-hint">Optional for sail-only passages</span>
-        </div>
-        <div class="form-group">
-          <label for="log_hours_end">Engine Hours (End)</label>
-          <input type="number" id="log_hours_end" step="0.1" placeholder="Hours" min="0">
+        <div class="form-group log-engine-hours-section">
+          <div class="log-engine-hours-heading">Engine hours</div>
+          <span class="form-hint">Optional for sail-only passages. Add a row per engine (e.g. port / starboard).</span>
+          <div id="log-engine-hours-rows" class="log-engine-hours-rows"></div>
+          <button type="button" class="btn-secondary" id="log-add-engine-hours">Add engine</button>
         </div>
         <div class="form-group">
           <label for="log_distance">Distance (nautical miles)</label>
@@ -218,8 +279,6 @@ async function onMount(params = {}) {
       set('log_passage_type', entry.passage_type || '');
       set('log_departure', entry.departure);
       set('log_arrival', entry.arrival);
-      set('log_hours_start', entry.engine_hours_start);
-      set('log_hours_end', entry.engine_hours_end);
       set('log_distance', entry.distance_nm);
       set('log_notes', entry.notes);
     }
@@ -227,6 +286,20 @@ async function onMount(params = {}) {
     set('log_title', 'Passage');
     set('log_date', today);
   }
+
+  renderEngineHoursRows(entry);
+
+  const engineHoursContainer = document.getElementById('log-engine-hours-rows');
+  document.getElementById('log-add-engine-hours')?.addEventListener('click', () => {
+    engineHoursContainer?.insertAdjacentHTML('beforeend', engineHoursRowHtml({ label: '', start: null, end: null }));
+  });
+  engineHoursContainer?.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.log-engine-remove');
+    if (!btn || !engineHoursContainer) return;
+    const rows = engineHoursContainer.querySelectorAll('.log-engine-hours-row');
+    if (rows.length <= 1) return;
+    btn.closest('.log-engine-hours-row')?.remove();
+  });
 
   function collectDailyNotesFromForm() {
     const container = document.getElementById('log-daily-notes-container');
@@ -280,7 +353,12 @@ async function onMount(params = {}) {
   document.getElementById('log-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (archived) return;
-    if (blockPremiumSaveIfNeeded()) return;
+    if (
+      isNew &&
+      blockFreePlanRecordLimitIfNeeded('log', shipsLogStorage.getAll(boatId).length)
+    ) {
+      return;
+    }
     const form = e.target;
     setSaveButtonLoading(form, true);
     try {
@@ -292,15 +370,23 @@ async function onMount(params = {}) {
       const passageType = passageTypeRaw && passageTypeRaw.trim() ? passageTypeRaw.trim() : null;
       const departure = document.getElementById('log_departure').value.trim();
       const arrival = document.getElementById('log_arrival').value.trim();
-      const hoursStart = document.getElementById('log_hours_start').value ? parseFloat(document.getElementById('log_hours_start').value) : null;
-      const hoursEnd = document.getElementById('log_hours_end').value ? parseFloat(document.getElementById('log_hours_end').value) : null;
+      const engines = collectEngineHoursFromForm();
       const distanceNm = document.getElementById('log_distance').value ? parseFloat(document.getElementById('log_distance').value) : null;
       const notes = document.getElementById('log_notes').value.trim();
 
       const notesPayload = { raw: notes };
-      if (hoursStart != null || hoursEnd != null) notesPayload.engine_hours_start = hoursStart;
-      if (hoursEnd != null) notesPayload.engine_hours_end = hoursEnd;
+      if (engines.length > 0) {
+        notesPayload.engine_hours_engines = engines;
+        notesPayload.engine_hours_start = engines[0].start;
+        notesPayload.engine_hours_end = engines[0].end;
+      }
       if (distanceNm != null) notesPayload.distance_nm = distanceNm;
+
+      let hours = null;
+      if (engines.length > 0) {
+        const f = engines[0];
+        hours = f.end != null ? f.end : f.start;
+      }
 
       const dailyNotes = collectDailyNotesFromForm();
 
@@ -311,7 +397,7 @@ async function onMount(params = {}) {
         title,
         from_location: departure,
         to_location: arrival,
-        hours: hoursEnd ?? hoursStart,
+        hours,
         notes: (Object.keys(notesPayload).length > 1 || notesPayload.raw) ? JSON.stringify(notesPayload) : null,
         daily_notes: Object.keys(dailyNotes).length > 0 ? dailyNotes : null
       };
@@ -330,7 +416,7 @@ async function onMount(params = {}) {
   insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-log'), {
     headline: 'Preview: Passage log',
     detail:
-      'Record trips and passages here. Tap Save when ready — Premium is required to keep your logbook.'
+      'Basic plan: up to 2 passage logs per boat. Upgrade for an unlimited logbook.'
   });
 }
 

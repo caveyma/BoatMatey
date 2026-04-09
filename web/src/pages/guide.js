@@ -173,7 +173,7 @@ export function render(params = {}) {
       <p><strong>How to use it:</strong></p>
       <ul>
         <li>Tap <strong>Passage Log</strong>, then <strong>Add Passage</strong>.</li>
-        <li>Enter start date and optionally end date for multi-day passages. Choose passage type (Motor, Sail, or Motor &amp; Sail), departure and arrival, engine hours if applicable, distance and notes.</li>
+        <li>Enter start date and optionally end date for multi-day passages. Choose passage type (Motor, Sail, or Motor &amp; Sail), departure and arrival, engine hours (add a row per engine if you have twins), distance and notes.</li>
       </ul>
     </div>
 
