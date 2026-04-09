@@ -205,8 +205,9 @@
   color: var(--bm-navy);
   letter-spacing: -0.01em;
   width: 100%;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  /* `anywhere` shrinks grid min-content and causes mid-word breaks; wrap at word boundaries. */
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 /* Premium lock: badge and locked state (free users on premium cards) */
@@ -264,8 +265,8 @@
   width: 100%;
   margin-top: auto;
   padding-top: var(--spacing-xs);
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 /* Boat Cards - Home Page (Premium Yacht Style) */
