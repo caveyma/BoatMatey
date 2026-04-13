@@ -12,19 +12,26 @@
 import { navigate } from '../router.js';
 import { renderLogoFull } from '../components/logo.js';
 import { supabase } from '../lib/supabaseClient.js';
-import {
-  hasActiveSubscription,
-  getSubscriptionStatus,
-  refreshSubscriptionStatus
-} from '../lib/subscription.js';
+import { getSubscriptionStatus, refreshSubscriptionStatus } from '../lib/subscription.js';
 import { logInWithAppUserId } from '../services/revenuecat.js';
-import { touchLastLoginAfterAuthSession } from '../lib/dataService.js';
+import { touchLastLoginAfterAuthSession, getBoats } from '../lib/dataService.js';
 import { Capacitor } from '@capacitor/core';
 import { APP_STORE_URL, GOOGLE_PLAY_URL, APP_STORE_BADGE_URL, GOOGLE_PLAY_BADGE_URL } from '../lib/constants.js';
 import { fireGoogleAdsSignupConversionIfEligible } from '../lib/googleAdsConversions.js';
 
 // Store pending signup data (cleared after use)
 let pendingSignup = null;
+
+/** Default post-auth landing: onboarding when the fleet is empty, otherwise home. */
+async function resolvePostAuthDefaultPath() {
+  try {
+    const boats = await getBoats();
+    if (boats.length === 0) return '/onboarding';
+  } catch (e) {
+    console.warn('[Auth] Could not check boats after auth, using home:', e?.message || e);
+  }
+  return '/';
+}
 
 /**
  * Store signup data for after payment
@@ -431,9 +438,11 @@ async function onMount() {
       await touchLastLoginAfterAuthSession();
       showMessage('Signed in successfully!', false, true);
       await refreshSubscriptionStatus();
-      const hasAccess = hasActiveSubscription();
       const { redirect } = getAuthRedirectParams();
-      const goTo = redirect && redirect.startsWith('/') ? redirect.replace(/^#?\/?/, '/') : '/';
+      let goTo = redirect && redirect.startsWith('/') ? redirect.replace(/^#?\/?/, '/') : '/';
+      if (goTo === '/') {
+        goTo = await resolvePostAuthDefaultPath();
+      }
       setTimeout(() => navigate(goTo), 500);
     } catch (err) {
       console.error('Unexpected sign-in error:', err);
@@ -649,7 +658,10 @@ async function onMount() {
             console.warn('[Auth] RevenueCat logIn after account creation failed (non-blocking):', rcErr);
           }
         }
-        setTimeout(() => navigate('/'), 1200);
+        setTimeout(async () => {
+          const goTo = await resolvePostAuthDefaultPath();
+          navigate(goTo);
+        }, 1200);
       } else {
         showMessage('Check your email to confirm your account, then sign in.', false, true);
         createAccountBtn.disabled = false;

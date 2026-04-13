@@ -6,6 +6,7 @@
 
 import { navigate } from '../router.js';
 import { supabase } from '../lib/supabaseClient.js';
+import { resetFirstRunOnboardingClientState } from '../lib/firstRunOnboarding.js';
 import { hasActiveSubscription } from '../lib/subscription.js';
 
 let planPillSyncListenerAttached = false;
@@ -158,6 +159,7 @@ export function createYachtHeader(title, options = {}) {
     signOutBtn.onclick = async (e) => {
       e.preventDefault();
       if (supabase) await supabase.auth.signOut();
+      resetFirstRunOnboardingClientState();
       navigate('/welcome');
     };
     actionsSection.appendChild(signOutBtn);

@@ -638,6 +638,15 @@ label {
 .dashboard-card-inventory-badge.dashboard-card-inventory-badge-critical {
   background: var(--color-error);
 }
+.dashboard-card-inventory-badge.dashboard-card-inventory-badge-attention {
+  background: color-mix(in srgb, var(--color-warning) 85%, #b45309);
+}
+
+.inventory-summary {
+  margin: 0 0 var(--spacing-md);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
 
 /* Mobile responsive */
 @media (max-width: 768px) {

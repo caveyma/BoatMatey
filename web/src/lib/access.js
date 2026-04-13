@@ -49,7 +49,7 @@ export const FREE_BOAT_ROUTE_SEGMENTS = ['details', 'engines', 'service', 'mayda
 export const FREE_PLAN_SERVICE_ENTRIES_PER_BOAT = 1;
 
 // Top-level routes always allowed (no subscription required)
-const FREE_TOP_LEVEL_ROUTES = ['/account', '/guide', '/'];
+const FREE_TOP_LEVEL_ROUTES = ['/account', '/guide', '/', '/onboarding'];
 
 /**
  * Whether the user can access this boat dashboard card.

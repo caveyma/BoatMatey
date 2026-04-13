@@ -33,6 +33,7 @@ import accountPage from './pages/account.js';
 import authPage from './pages/auth.js';
 import subscriptionPage from './pages/subscription.js';
 import welcomePage from './pages/welcome.js';
+import firstBoatOnboardingPage from './pages/first-boat-onboarding.js';
 import hauloutPage from './pages/haulout.js';
 import projectsPage from './pages/projects.js';
 import calendarPage from './pages/calendar.js';
@@ -56,6 +57,7 @@ export async function init() {
     route('/welcome', welcomePage); // Welcome/onboarding page
     route('/subscription', subscriptionPage); // Subscription paywall
     route('/auth', authPage); // Auth page (sign in / create account)
+    route('/onboarding', firstBoatOnboardingPage); // First boat setup (zero boats, signed in)
     route('/', boatsPage); // Boats list (home)
     route('/guide', guidePage); // User guide (no boat – from home)
     route('/calendar', calendarPage); // App-wide calendar

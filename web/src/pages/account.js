@@ -19,6 +19,7 @@ import { storage } from '../lib/storage.js';
 import { getBoats, listAttachments } from '../lib/dataService.js';
 import { supabase } from '../lib/supabaseClient.js';
 import { getSession } from '../lib/dataService.js';
+import { resetFirstRunOnboardingClientState } from '../lib/firstRunOnboarding.js';
 import { Capacitor } from '@capacitor/core';
 
 function render() {
@@ -371,6 +372,7 @@ async function onMount() {
       } catch (error) {
         console.error('Error signing out of Supabase:', error);
       } finally {
+        resetFirstRunOnboardingClientState();
         navigate('/auth');
       }
     });

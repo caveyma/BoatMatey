@@ -8,7 +8,17 @@ import { createYachtHeader, createBackButton } from '../components/header.js';
 import { showToast } from '../components/toast.js';
 import { confirmAction } from '../components/confirmModal.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
-import { isBoatArchived, getServiceEntries, createServiceEntry, updateServiceEntry, deleteServiceEntry, getEngines } from '../lib/dataService.js';
+import {
+  isBoatArchived,
+  getServiceEntries,
+  createServiceEntry,
+  updateServiceEntry,
+  deleteServiceEntry,
+  getEngines,
+  getEngineMaintenanceSchedules
+} from '../lib/dataService.js';
+import { findSchedulesMatchingServiceEntry } from '../lib/engineMaintenanceScheduleDue.js';
+import { offerUpdateEngineSchedulesAfterService } from '../lib/offerEngineScheduleAfterService.js';
 import { canAddAnotherServiceEntry, SERVICE_HISTORY_UPGRADE_MESSAGE } from '../lib/access.js';
 import { hasActiveSubscription } from '../lib/subscription.js';
 import { syncCalendarNotifications } from './calendar.js';
@@ -17,8 +27,22 @@ import { currencySymbol, CURRENCIES } from '../lib/currency.js';
 import { enginesStorage } from '../lib/storage.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
 import { enableRecordCardExpand } from '../utils/recordCardExpand.js';
+import { serviceEntryMatchesDueFilter } from '../lib/serviceDueFilter.js';
+import {
+  LEGACY_SAILING_SERVICE_TYPE,
+  SAILING_SERVICE_TYPES,
+  ENGINE_SERVICE_TYPES,
+  isSailingServiceType,
+  SAILING_TARGET_FIELD_BY_TYPE,
+  WINCH_PRESET_OPTIONS,
+  SAIL_WORKED_ON_OPTIONS,
+  getSailingChecklistSectionsForType,
+  formatSailingServiceDetailSummary
+} from '../lib/sailingServiceEntryConfig.js';
 
 let editingId = null;
+/** Snapshot of the entry being edited (for re-rendering sailing targets after type/area changes). */
+let serviceFormEntrySnapshot = null;
 let serviceArchived = false;
 let filterEngineId = null;
 let currentBoatId = null;
@@ -271,87 +295,6 @@ const DIY_CHECKLIST_SECTIONS = [
   }
 ];
 
-// Sails & Rigging checklist (boat-level; no engine). Used when service type is 'Sails & Rigging'.
-const SAILS_RIGGING_CHECKLIST_SECTIONS = [
-  {
-    id: 'sails_mainsail',
-    title: 'Mainsail',
-    items: [
-      { id: 'mainsail_condition_inspected', label: 'Mainsail condition inspected (cloth, stitching, UV damage)' },
-      { id: 'reefing_system_checked', label: 'Reefing system checked (points, lines, slugs)' },
-      { id: 'battens_inspected', label: 'Battens inspected and secure' },
-      { id: 'sail_cover_condition', label: 'Sail cover / stack pack condition checked' },
-      { id: 'mainsheet_traveler_operational', label: 'Mainsheet and traveler operational' }
-    ]
-  },
-  {
-    id: 'sails_headsails',
-    title: 'Headsails (genoa, jib)',
-    items: [
-      { id: 'headsail_condition_inspected', label: 'Headsail(s) condition inspected' },
-      { id: 'furling_system_checked', label: 'Furling system checked (foil, drum, line)' },
-      { id: 'headsail_sheets_checked', label: 'Headsail sheets and cars checked' }
-    ]
-  },
-  {
-    id: 'rigging_mast_spar',
-    title: 'Mast & spar',
-    items: [
-      { id: 'mast_inspection_visual', label: 'Mast visual inspection (corrosion, cracks, fittings)' },
-      { id: 'spreaders_and_fittings_checked', label: 'Spreaders and fittings checked' },
-      { id: 'boom_gooseneck_kicking_strap', label: 'Boom, gooseneck and kicking strap checked' },
-      { id: 'mast_boot_seal_checked', label: 'Mast boot / deck seal checked' }
-    ]
-  },
-  {
-    id: 'rigging_standing',
-    title: 'Standing rigging',
-    items: [
-      { id: 'shrouds_stay_inspection', label: 'Shrouds and stay(s) inspected (wire/rod, terminals)' },
-      { id: 'turnbuckles_lubricated_tight', label: 'Turnbuckles lubricated and secure' },
-      { id: 'swage_terminals_cracks', label: 'Swage/terminals checked for cracks or wear' },
-      { id: 'forestay_backstay_checked', label: 'Forestay and backstay checked' }
-    ]
-  },
-  {
-    id: 'rigging_running',
-    title: 'Running rigging',
-    items: [
-      { id: 'halyards_inspected', label: 'Halyards inspected (wear, UV, splices)' },
-      { id: 'sheets_inspected', label: 'Sheets inspected' },
-      { id: 'blocks_clutches_checked', label: 'Blocks, clutches and fairleads checked' },
-      { id: 'control_lines_checked', label: 'Control lines (vang, cunningham, outhaul) checked' }
-    ]
-  },
-  {
-    id: 'winches_sails',
-    title: 'Winches',
-    items: [
-      { id: 'winches_serviced_lubricated', label: 'Winches serviced and lubricated' },
-      { id: 'winch_pawls_springs_checked', label: 'Pawls and springs checked' },
-      { id: 'winch_mountings_secure', label: 'Winch mountings secure' }
-    ]
-  },
-  {
-    id: 'final_checks_sails',
-    title: 'Final checks (sails & rigging)',
-    items: [
-      { id: 'all_pins_split_rings_secure', label: 'All pins and split rings secure' },
-      { id: 'no_frayed_or_chafed_lines', label: 'No frayed or chafed lines left in use' },
-      { id: 'service_notes_recorded_sails', label: 'Service notes recorded' }
-    ]
-  },
-  {
-    id: 'service_notes_advisories_sails',
-    title: 'Service notes & advisories',
-    items: [
-      { id: 'items_requiring_future_attention_noted_sails', label: 'Items requiring future attention noted' },
-      { id: 'parts_replaced_listed_sails', label: 'Parts replaced listed' },
-      { id: 'next_service_due_recorded_sails', label: 'Next service due recorded' }
-    ]
-  }
-];
-
 // Map service type -> which checklist sections should be shown (section IDs).
 // Actual sections shown are then filtered by selected engine fuel type + drive type.
 const SERVICE_TYPE_SECTION_MAP = {
@@ -376,8 +319,7 @@ const SERVICE_TYPE_SECTION_MAP = {
     'anodes_corrosion',
     'final_checks',
     'service_notes_advisories'
-  ],
-  'Sails & Rigging': SAILS_RIGGING_CHECKLIST_SECTIONS.map(s => s.id)
+  ]
 };
 
 // Which fuel types and drive types each section applies to.
@@ -478,18 +420,397 @@ function reminderLeadLabel(minutes) {
   return `${m} minutes before`;
 }
 
+/** True when "Sail & rigging (boat-level)" is selected — no engine applies. */
+function isBoatLevelServiceAreaFromForm() {
+  const el = document.getElementById('service_engine');
+  return !(el?.value || '').toString().trim();
+}
+
+function escapeOptionLabel(s) {
+  const d = document.createElement('div');
+  d.textContent = s == null ? '' : String(s);
+  return d.innerHTML;
+}
+
+function getSailingTargetModeForType(type) {
+  return SAILING_TARGET_FIELD_BY_TYPE[type] || 'none';
+}
+
+/**
+ * Rebuild service type <select> for engine vs boat-level rigging.
+ */
+function syncServiceTypeDropdown() {
+  const sel = document.getElementById('service_type');
+  const customEl = document.getElementById('service_type_custom');
+  if (!sel) return;
+
+  const prevEffective =
+    (sel.value || '').trim() || (customEl?.value || '').trim();
+  const boatLevel = isBoatLevelServiceAreaFromForm();
+  const tierTypes = boatLevel
+    ? [...SAILING_SERVICE_TYPES, LEGACY_SAILING_SERVICE_TYPE, 'Other']
+    : [...ENGINE_SERVICE_TYPES];
+
+  sel.innerHTML =
+    '<option value="">Select...</option>' +
+    tierTypes.map((t) => `<option value="${escapeOptionLabel(t)}">${escapeOptionLabel(t)}</option>`).join('');
+
+  if (prevEffective && tierTypes.includes(prevEffective)) {
+    sel.value = prevEffective;
+    if (customEl) customEl.value = '';
+  } else if (!boatLevel && prevEffective && isSailingServiceType(prevEffective)) {
+    sel.value = 'Other';
+    if (customEl) customEl.value = prevEffective;
+  } else if (boatLevel && prevEffective && !isSailingServiceType(prevEffective) && prevEffective !== 'Other') {
+    sel.value = '';
+    if (customEl) customEl.value = '';
+  } else if (prevEffective === 'Other' && customEl?.value) {
+    sel.value = 'Other';
+  } else {
+    sel.value = '';
+  }
+}
+
+function restoreServiceTypeFromEntry(entry) {
+  if (!entry?.service_type) return;
+  const sel = document.getElementById('service_type');
+  const cust = document.getElementById('service_type_custom');
+  if (!sel) return;
+  const boatLevel = isBoatLevelServiceAreaFromForm();
+  const tier = boatLevel
+    ? [...SAILING_SERVICE_TYPES, LEGACY_SAILING_SERVICE_TYPE, 'Other']
+    : [...ENGINE_SERVICE_TYPES];
+  if (tier.includes(entry.service_type)) {
+    sel.value = entry.service_type;
+    if (cust) cust.value = '';
+  } else {
+    sel.value = 'Other';
+    if (cust) cust.value = entry.service_type;
+  }
+}
+
+function sailingWinchRowHtml(value = '') {
+  const presetValues = WINCH_PRESET_OPTIONS.map((o) => o.value).filter((v) => v && v !== '__custom__');
+  const isPreset = value && presetValues.includes(value);
+  const selectValue = isPreset ? value : value ? '__custom__' : '';
+  const customVal = !isPreset && value ? value : '';
+  const showCustom = selectValue === '__custom__' || (!!customVal && !isPreset);
+
+  const opts = WINCH_PRESET_OPTIONS.map((o) => {
+    const sel = o.value === selectValue ? ' selected' : '';
+    return `<option value="${escapeOptionLabel(o.value)}"${sel}>${escapeOptionLabel(o.label)}</option>`;
+  }).join('');
+
+  return `
+    <div class="sailing-winch-row form-row" style="align-items: flex-end; gap: 0.5rem; margin-bottom: 0.5rem;">
+      <div class="form-group" style="flex: 1; margin-bottom: 0;">
+        <label class="text-muted" style="font-size: 0.85rem;">Winch</label>
+        <select class="form-control sailing-winch-select">
+          ${opts}
+        </select>
+      </div>
+      <div class="form-group sailing-winch-custom-wrap" style="flex: 1; margin-bottom: 0;${showCustom ? '' : ' display: none;'}">
+        <label class="text-muted" style="font-size: 0.85rem;">Custom label</label>
+        <input type="text" class="form-control sailing-winch-custom" placeholder="e.g. Mid-boom winch" value="${escapeOptionLabel(customVal)}">
+      </div>
+      <button type="button" class="btn-link btn-danger sailing-winch-remove" style="margin-bottom: 0.25rem;" title="Remove">×</button>
+    </div>
+  `;
+}
+
+function sailingRiggingRowHtml(value = '') {
+  return `
+    <div class="sailing-rigging-row form-row" style="gap: 0.5rem; margin-bottom: 0.5rem; align-items: center;">
+      <input type="text" class="form-control sailing-rigging-input" placeholder="e.g. Main halyard, Forestay" value="${escapeOptionLabel(value)}">
+      <button type="button" class="btn-link btn-danger sailing-rigging-remove" title="Remove">×</button>
+    </div>
+  `;
+}
+
+function bindSailingTargetRowEvents(host) {
+  if (!host) return;
+  host.querySelectorAll('.sailing-winch-select').forEach((select) => {
+    select.addEventListener('change', () => {
+      const row = select.closest('.sailing-winch-row');
+      const customWrap = row?.querySelector('.sailing-winch-custom-wrap');
+      const customIn = row?.querySelector('.sailing-winch-custom');
+      if (!customWrap || !customIn) return;
+      if (select.value === '__custom__') {
+        customWrap.style.display = '';
+        customIn.value = '';
+      } else if (select.value && !WINCH_PRESET_OPTIONS.some((o) => o.value === select.value)) {
+        customWrap.style.display = '';
+        customIn.value = select.value;
+      } else {
+        customWrap.style.display = 'none';
+        customIn.value = '';
+      }
+    });
+  });
+  host.querySelectorAll('.sailing-winch-remove').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      btn.closest('.sailing-winch-row')?.remove();
+    });
+  });
+  host.querySelectorAll('.sailing-rigging-remove').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      btn.closest('.sailing-rigging-row')?.remove();
+    });
+  });
+}
+
+function renderSailingTargetFields(entry) {
+  const host = document.getElementById('service-sailing-targets');
+  if (!host) return;
+
+  if (!isBoatLevelServiceAreaFromForm()) {
+    host.hidden = true;
+    host.innerHTML = '';
+    return;
+  }
+
+  host.hidden = false;
+  const type = getCurrentServiceTypeFromForm();
+  const mode = getSailingTargetModeForType(type);
+  const detail = entry?.sailing_service_detail || {};
+
+  if (!type || mode === 'none') {
+    host.innerHTML =
+      '<p class="text-muted" style="margin: 0; font-size: 0.9rem;">Select a sail & rigging service type to show target fields (winch, sail, line, etc.).</p>';
+    return;
+  }
+
+  if (mode === 'winches') {
+    const ids = Array.isArray(detail.winch_identifiers) ? detail.winch_identifiers.filter(Boolean) : [];
+    const rows = ids.length ? ids : [''];
+    host.innerHTML = `
+      <h4 class="sailing-targets-heading" style="margin-top: 0;">What was serviced</h4>
+      <p class="text-muted" style="font-size: 0.875rem; margin-top: 0;">Record one or more winches. Use presets or type a custom label.</p>
+      <div id="sailing-winch-rows">${rows.map((v) => sailingWinchRowHtml(v)).join('')}</div>
+      <button type="button" class="btn-secondary" id="sailing-add-winch-row">${renderIcon('plus')} Add winch</button>
+    `;
+    document.getElementById('sailing-add-winch-row')?.addEventListener('click', () => {
+      const wrap = document.getElementById('sailing-winch-rows');
+      wrap?.insertAdjacentHTML('beforeend', sailingWinchRowHtml(''));
+      bindSailingTargetRowEvents(wrap?.parentElement || host);
+    });
+    bindSailingTargetRowEvents(host);
+    return;
+  }
+
+  if (mode === 'sail') {
+    const sw = detail.sail_worked_on || '';
+    const presetVals = SAIL_WORKED_ON_OPTIONS.map((o) => o.value).filter((v) => v && v !== '__custom__');
+    const isPreset = sw && presetVals.includes(sw);
+    const selVal = isPreset ? sw : sw ? '__custom__' : '';
+    const customVal = !isPreset && sw ? sw : '';
+    const opts = SAIL_WORKED_ON_OPTIONS.map((o) => {
+      const sel = o.value === selVal ? ' selected' : '';
+      return `<option value="${escapeOptionLabel(o.value)}"${sel}>${escapeOptionLabel(o.label)}</option>`;
+    }).join('');
+    host.innerHTML = `
+      <h4 class="sailing-targets-heading" style="margin-top: 0;">What was serviced</h4>
+      <div class="form-group">
+        <label for="sailing_sail_worked_on">Sail worked on</label>
+        <select id="sailing_sail_worked_on" class="form-control">${opts}</select>
+      </div>
+      <div class="form-group" id="sailing_sail_custom_wrap" style="${selVal === '__custom__' || customVal ? '' : 'display: none;'}">
+        <label for="sailing_sail_custom">Custom sail name</label>
+        <input type="text" id="sailing_sail_custom" class="form-control" value="${escapeOptionLabel(customVal)}" placeholder="e.g. Code 0">
+      </div>
+    `;
+    document.getElementById('sailing_sail_worked_on')?.addEventListener('change', (e) => {
+      const wrap = document.getElementById('sailing_sail_custom_wrap');
+      if (!wrap) return;
+      wrap.style.display = e.target.value === '__custom__' ? '' : 'none';
+    });
+    return;
+  }
+
+  if (mode === 'rigging') {
+    const items = Array.isArray(detail.rigging_items) ? detail.rigging_items.filter(Boolean) : [];
+    const rows = items.length ? items : [''];
+    host.innerHTML = `
+      <h4 class="sailing-targets-heading" style="margin-top: 0;">What was serviced</h4>
+      <p class="text-muted" style="font-size: 0.875rem; margin-top: 0;">Rigging item(s) — add as many rows as needed.</p>
+      <div id="sailing-rigging-rows">${rows.map((v) => sailingRiggingRowHtml(v)).join('')}</div>
+      <button type="button" class="btn-secondary" id="sailing-add-rigging-row">${renderIcon('plus')} Add line / stay</button>
+    `;
+    document.getElementById('sailing-add-rigging-row')?.addEventListener('click', () => {
+      const wrap = document.getElementById('sailing-rigging-rows');
+      wrap?.insertAdjacentHTML('beforeend', sailingRiggingRowHtml(''));
+      bindSailingTargetRowEvents(wrap?.parentElement || host);
+    });
+    bindSailingTargetRowEvents(host);
+    return;
+  }
+
+  if (mode === 'component') {
+    host.innerHTML = `
+      <h4 class="sailing-targets-heading" style="margin-top: 0;">What was serviced</h4>
+      <div class="form-group">
+        <label for="sailing_component_worked">Component worked on</label>
+        <input type="text" id="sailing_component_worked" class="form-control" value="${escapeOptionLabel(detail.component_worked_on || '')}" placeholder="e.g. Furler drum, Gooseneck fitting">
+      </div>
+      <div class="form-group">
+        <label for="sailing_location_fitting">Location / fitting (optional)</label>
+        <input type="text" id="sailing_location_fitting" class="form-control" value="${escapeOptionLabel(detail.location_or_fitting || '')}" placeholder="e.g. Mast base, Port side">
+      </div>
+    `;
+    return;
+  }
+
+  if (mode === 'general') {
+    host.innerHTML = `
+      <h4 class="sailing-targets-heading" style="margin-top: 0;">Inspection scope (optional)</h4>
+      <div class="form-group">
+        <label for="sailing_inspection_scope">Area or focus</label>
+        <textarea id="sailing_inspection_scope" class="form-control" rows="2" placeholder="e.g. Full rig check before passage">${escapeOptionLabel(detail.inspection_scope || '')}</textarea>
+      </div>
+    `;
+  }
+}
+
+function collectWinchIdentifiersFromForm() {
+  const rows = document.querySelectorAll('.sailing-winch-row');
+  const out = [];
+  rows.forEach((row) => {
+    const sel = row.querySelector('.sailing-winch-select');
+    const custom = row.querySelector('.sailing-winch-custom')?.value?.trim() || '';
+    let v = sel?.value || '';
+    if (v === '__custom__' || (v && custom)) v = custom || v;
+    if (v && v !== '__custom__') out.push(v);
+  });
+  return out;
+}
+
+function collectRiggingItemsFromForm() {
+  const inputs = document.querySelectorAll('.sailing-rigging-input');
+  const out = [];
+  inputs.forEach((inp) => {
+    const t = inp.value?.trim();
+    if (t) out.push(t);
+  });
+  return out;
+}
+
+function collectSailingServiceDetailFromForm() {
+  if (!isBoatLevelServiceAreaFromForm()) return null;
+  const type = getCurrentServiceTypeFromForm();
+  const mode = getSailingTargetModeForType(type);
+  if (!type || mode === 'none') return null;
+
+  if (mode === 'winches') {
+    const winch_identifiers = collectWinchIdentifiersFromForm();
+    return winch_identifiers.length ? { winch_identifiers } : {};
+  }
+  if (mode === 'sail') {
+    const sel = document.getElementById('sailing_sail_worked_on')?.value || '';
+    const custom = document.getElementById('sailing_sail_custom')?.value?.trim() || '';
+    const sail_worked_on = sel === '__custom__' ? custom : sel;
+    return sail_worked_on ? { sail_worked_on } : {};
+  }
+  if (mode === 'rigging') {
+    const rigging_items = collectRiggingItemsFromForm();
+    return rigging_items.length ? { rigging_items } : {};
+  }
+  if (mode === 'component') {
+    const component_worked_on = document.getElementById('sailing_component_worked')?.value?.trim() || '';
+    const location_or_fitting = document.getElementById('sailing_location_fitting')?.value?.trim() || '';
+    const o = {};
+    if (component_worked_on) o.component_worked_on = component_worked_on;
+    if (location_or_fitting) o.location_or_fitting = location_or_fitting;
+    return o;
+  }
+  if (mode === 'general') {
+    const inspection_scope = document.getElementById('sailing_inspection_scope')?.value?.trim() || '';
+    return inspection_scope ? { inspection_scope } : {};
+  }
+  return null;
+}
+
+/**
+ * Show/hide engine-only vs sail–rigging UI. Call after DOM exists and on engine/mode changes.
+ */
+function applyServiceFormScope() {
+  const boatLevel = isBoatLevelServiceAreaFromForm();
+  const diyMode = document.querySelector('input[name="service_mode"]:checked')?.value === 'DIY';
+
+  const hoursGroup = document.getElementById('service-engine-hours-group');
+  if (hoursGroup) hoursGroup.hidden = boatLevel;
+
+  const engineOnly = document.getElementById('service-diy-engine-only');
+  if (engineOnly) engineOnly.hidden = boatLevel;
+
+  const seacocksRow = document.getElementById('service-diy-seacocks-row');
+  if (seacocksRow) seacocksRow.hidden = boatLevel;
+
+  const sailNotes = document.getElementById('service-diy-sail-notes');
+  if (sailNotes) sailNotes.hidden = !boatLevel || !diyMode;
+
+  const areaHint = document.getElementById('service-area-hint');
+  if (areaHint) {
+    areaHint.textContent = boatLevel
+      ? 'Boat-level sail and rigging — pick a specific service type (winches, sails, rigging, etc.). Use Other only if you need a short custom label.'
+      : 'Choose which engine this work applies to (e.g. port, starboard, auxiliary).';
+  }
+
+  const personLabel = document.getElementById('diy-person-label');
+  if (personLabel) {
+    personLabel.textContent = boatLevel
+      ? 'Sailmaker / rigger / person carrying out service'
+      : 'Person carrying out service';
+  }
+
+  const proMechLabel = document.getElementById('pro-mechanic-label');
+  if (proMechLabel) {
+    proMechLabel.textContent = boatLevel ? 'Contact / technician name' : 'Mechanic name';
+  }
+
+  const diyTitle = document.getElementById('service-diy-card-title');
+  const diyIntro = document.getElementById('service-diy-card-intro');
+  if (diyMode) {
+    if (diyTitle) {
+      diyTitle.textContent = boatLevel
+        ? 'Sail & rigging inspection & service checklist'
+        : 'DIY boat engine & gearbox service checklist';
+    }
+    if (diyIntro) {
+      diyIntro.textContent = boatLevel
+        ? 'Tick each item as you complete it. Use the notes fields for sail condition, repairs, and work carried out.'
+        : 'Tick each item as you complete it.';
+    }
+  }
+
+  renderSailingTargetFields(serviceFormEntrySnapshot);
+}
+
 function getDIYChecklistStats(entry) {
   const checklist = entry?.diy_checklist || {};
   let total = 0;
   let completed = 0;
 
-  const activeSections = entry?.service_type === 'Sails & Rigging'
-    ? SAILS_RIGGING_CHECKLIST_SECTIONS
-    : getActiveChecklistSectionsForServiceType(entry.service_type, enginesStorage.getAll(currentBoatId).find(e => e.id === entry.engine_id));
-  const sectionsToCount = activeSections.length ? activeSections : DIY_CHECKLIST_SECTIONS;
+  let sectionsToCount = [];
+  if (!entry?.engine_id && entry?.service_type) {
+    if (isSailingServiceType(entry.service_type)) {
+      sectionsToCount = getSailingChecklistSectionsForType(entry.service_type);
+    } else {
+      sectionsToCount = [];
+    }
+  } else if (entry?.engine_id && entry?.service_type) {
+    const eng = enginesStorage.getAll(currentBoatId).find((e) => e.id === entry.engine_id);
+    const attrs = eng ? getEngineFuelAndDrive(eng) : { fuel_type: '', drive_type: '' };
+    const engineOrAttrs = {
+      fuel_type: normaliseFuelType(attrs.fuel_type),
+      drive_type: normaliseDriveType(attrs.drive_type)
+    };
+    sectionsToCount = getActiveChecklistSectionsForServiceType(entry.service_type, engineOrAttrs);
+  }
 
-  sectionsToCount.forEach(section => {
-    section.items.forEach(item => {
+  if (!sectionsToCount.length && entry?.engine_id) sectionsToCount = DIY_CHECKLIST_SECTIONS;
+
+  sectionsToCount.forEach((section) => {
+    section.items.forEach((item) => {
       const key = `${section.id}.${item.id}`;
       total += 1;
       if (checklist[key]) completed += 1;
@@ -602,6 +923,15 @@ async function onMount(params = {}) {
 
   loadFilters();
 
+  const hashForQuery = window.location.hash || '';
+  const qIdx = hashForQuery.indexOf('?');
+  const queryPart = qIdx >= 0 ? hashForQuery.slice(qIdx + 1) : '';
+  const dueParam = new URLSearchParams(queryPart).get('due');
+  if (dueParam === 'overdue' || dueParam === 'due_soon') {
+    const dueSel = document.getElementById('service-due-filter');
+    if (dueSel) dueSel.value = dueParam;
+  }
+
   if (serviceFileInput) {
     serviceFileInput.addEventListener('change', async (e) => {
       const files = Array.from(e.target.files);
@@ -689,9 +1019,15 @@ function loadFilters() {
   filterContainer.className = 'page-actions list-tools';
   filterContainer.innerHTML = `
     <input type="search" id="service-search" class="form-control" placeholder="Search entries..." aria-label="Search service entries">
-    <select id="engine-filter" class="form-control" style="max-width: 200px;">
-      <option value="">All Engines</option>
+    <select id="engine-filter" class="form-control" style="max-width: 220px;" aria-label="Filter by service area">
+      <option value="">All service areas</option>
+      <option value="__boat_level__">Sail & rigging (boat-level)</option>
       ${engines.map(e => `<option value="${e.id}">${e.label || 'Unnamed'}</option>`).join('')}
+    </select>
+    <select id="service-due-filter" class="form-control" aria-label="Filter by next due date" style="max-width: 200px;">
+      <option value="">All entries</option>
+      <option value="overdue">Overdue (next due)</option>
+      <option value="due_soon">Due in 30 days</option>
     </select>
     <select id="service-sort" class="form-control" aria-label="Sort entries">
       <option value="newest">Newest first</option>
@@ -703,6 +1039,7 @@ function loadFilters() {
     filterEngineId = e.target.value || null;
     loadServices();
   });
+  document.getElementById('service-due-filter').addEventListener('change', () => loadServices());
   document.getElementById('service-search').addEventListener('input', () => loadServices());
   document.getElementById('service-sort').addEventListener('change', () => loadServices());
 }
@@ -712,8 +1049,12 @@ async function loadServices() {
   allServiceEntries = currentBoatId ? await getServiceEntries(currentBoatId) : [];
   const q = (document.getElementById('service-search')?.value || '').trim().toLowerCase();
   const sortVal = document.getElementById('service-sort')?.value || 'newest';
+  const dueFilter = document.getElementById('service-due-filter')?.value || '';
   let services = allServiceEntries.filter(s => {
-    if (filterEngineId && s.engine_id !== filterEngineId) return false;
+    if (filterEngineId === '__boat_level__') {
+      if (s.engine_id) return false;
+    } else if (filterEngineId && s.engine_id !== filterEngineId) return false;
+    if (!serviceEntryMatchesDueFilter(s, dueFilter)) return false;
     if (!q) return true;
     const dateStr = s.date ? new Date(s.date).toLocaleDateString().toLowerCase() : '';
     const type = (s.service_type || '').toLowerCase();
@@ -727,6 +1068,13 @@ async function loadServices() {
   });
 
   if (services.length === 0) {
+    const dueF = document.getElementById('service-due-filter')?.value || '';
+    let filteredHint = '';
+    if (allServiceEntries.length > 0 && dueF === 'overdue') {
+      filteredHint = '<p class="text-muted">No service entries have an overdue next due date. Clear the filter or set next due on an entry.</p>';
+    } else if (allServiceEntries.length > 0 && dueF === 'due_soon') {
+      filteredHint = '<p class="text-muted">No service entries are due in the next 30 days.</p>';
+    }
     listContainer.innerHTML = allServiceEntries.length === 0
       ? `
       <div class="empty-state">
@@ -735,7 +1083,7 @@ async function loadServices() {
         ${!serviceArchived ? `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); window.servicePageTryAdd()">${renderIcon('plus')} Add Service Entry</button></div>` : ''}
       </div>
     `
-      : `<p class="text-muted">No service entries match your search.</p>`;
+      : filteredHint || `<p class="text-muted">No service entries match your filters.</p>`;
     attachHandlers();
     updateServiceFreeLimitUi();
     return;
@@ -743,8 +1091,9 @@ async function loadServices() {
 
   const engines = currentBoatId ? await getEngines(currentBoatId) : [];
   const getEngineLabel = (id) => {
+    if (id == null || id === '') return 'Sail & rigging (boat-level)';
     const engine = engines.find(e => e.id === id);
-    return engine ? engine.label : 'Unknown Engine';
+    return engine ? engine.label : 'Unknown engine';
   };
 
   listContainer.innerHTML = services.map(service => {
@@ -757,9 +1106,18 @@ async function loadServices() {
     if (service.mode === 'DIY') {
       const stats = getDIYChecklistStats(service);
       if (stats.total > 0) {
-        diySummary = `<p class="text-muted">DIY checklist: ${stats.completed}/${stats.total} items ticked</p>`;
+        const checklistLabel =
+          !service.engine_id && isSailingServiceType(service.service_type)
+            ? 'Sail & rigging checklist'
+            : 'Engine DIY checklist';
+        diySummary = `<p class="text-muted">${checklistLabel}: ${stats.completed}/${stats.total} items ticked</p>`;
       }
     }
+
+    const sailingExtra = formatSailingServiceDetailSummary(service.sailing_service_detail);
+    const sailingExtraHtml = sailingExtra
+      ? `<p class="text-muted"><strong>Details:</strong> ${escapeOptionLabel(sailingExtra)}</p>`
+      : '';
 
     return `
     <div class="card">
@@ -774,8 +1132,9 @@ async function loadServices() {
         </div>
       </div>
       <div>
-        <p><strong>Engine Hours:</strong> ${service.engine_hours || 'N/A'}</p>
+        ${service.engine_id && service.engine_hours != null ? `<p><strong>Engine hours:</strong> ${service.engine_hours}</p>` : ''}
         ${service.cost != null ? `<p><strong>Cost:</strong> ${currencySymbol(service.cost_currency)}${Number(service.cost).toFixed(2)}</p>` : ''}
+        ${sailingExtraHtml}
         ${diySummary}
         ${service.notes ? `<p><strong>Notes:</strong> ${service.notes}</p>` : ''}
         ${service.next_service_due && service.next_service_reminder_minutes > 0 ? `<p class="service-entry-reminder text-muted"><strong>Reminder:</strong> Next due ${new Date(service.next_service_due + 'T12:00:00').toLocaleDateString()} · ${reminderLeadLabel(service.next_service_reminder_minutes)}</p>` : service.next_service_due ? `<p class="text-muted"><strong>Next due:</strong> ${new Date(service.next_service_due + 'T12:00:00').toLocaleDateString()}</p>` : ''}
@@ -920,11 +1279,11 @@ async function showServiceForm() {
     editingId = `service_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
   const entry = existingEntry;
+  serviceFormEntrySnapshot = entry || null;
   const isNewFreeTierEntry = !existingEntry && !hasActiveSubscription();
   const mode = entry?.mode || 'Professional';
   const engines = currentBoatId ? await getEngines(currentBoatId) : [];
   serviceFormEngines = engines;
-  const serviceTypes = ['Oil Change', 'Filter Change', 'Annual Service', 'Winterization', 'Sails & Rigging', 'Other'];
 
   const selectedEngine = entry?.engine_id ? engines.find(e => e.id === entry.engine_id) : null;
 
@@ -950,9 +1309,9 @@ async function showServiceForm() {
           <input type="date" id="service_date" required value="${entry?.date || new Date().toISOString().split('T')[0]}">
         </div>
         <div class="form-group">
-          <label for="service_engine">Engine</label>
-          <select id="service_engine">
-            <option value="" data-fuel-type="" data-drive-type="" ${entry?.service_type === 'Sails & Rigging' && !entry?.engine_id ? ' selected' : ''}>N/A – Sails & Rigging (boat-level)</option>
+          <label for="service_engine">Service area</label>
+          <select id="service_engine" aria-label="Service area">
+            <option value="" data-fuel-type="" data-drive-type="" ${entry && !entry.engine_id ? ' selected' : ''}>Sail & rigging (boat-level)</option>
             ${engines.map(e => {
               const attrs = getEngineFuelAndDrive(e);
               const fuel = normaliseFuelType(attrs.fuel_type);
@@ -962,61 +1321,71 @@ async function showServiceForm() {
               return `<option value="${String(e.id)}" data-fuel-type="${(fuel || '').replace(/"/g, '&quot;')}" data-drive-type="${(drive || '').replace(/"/g, '&quot;')}"${sel}>${label}</option>`;
             }).join('')}
           </select>
-          <p class="text-muted" style="margin-top: 0.25rem; font-size: 0.875rem;">Use &quot;N/A – Sails & Rigging&quot; for sail and rigging service (no engine).</p>
+          <p class="text-muted" id="service-area-hint" style="margin-top: 0.25rem; font-size: 0.875rem;"></p>
         </div>
         <div class="form-group">
           <label for="service_type">Service type${isNewFreeTierEntry ? ' *' : ''}</label>
           <select id="service_type" ${isNewFreeTierEntry ? 'required' : ''}>
             <option value="">Select...</option>
-            ${serviceTypes.map(t => `<option value="${t}" ${entry?.service_type === t ? 'selected' : ''}>${t}</option>`).join('')}
           </select>
-          <input type="text" id="service_type_custom" placeholder="Or enter custom type" value="${entry?.service_type && !serviceTypes.includes(entry.service_type) ? entry.service_type : ''}" style="margin-top: 0.5rem;">
+          <input type="text" id="service_type_custom" placeholder="Or enter custom type" value="" style="margin-top: 0.5rem;">
         </div>
-        <div class="form-group">
-          <label for="service_hours">Engine Hours</label>
+        <div id="service-sailing-targets" class="card" style="margin-top: 1rem; padding: var(--spacing-md);" hidden></div>
+        <div class="form-group" id="service-engine-hours-group">
+          <label for="service_hours">Engine hours (meter)</label>
           <input type="number" id="service_hours" step="0.1" value="${entry?.engine_hours || ''}">
         </div>
         <div class="card" id="service-diy-card" style="margin-top: 1rem; ${mode === 'DIY' ? 'display: block;' : 'display: none;'}">
-          <h4>DIY Boat Engine & Gearbox Service Checklist</h4>
-          <p class="text-muted">Tick each item as you complete it.</p>
-          <div class="form-group">
-            <label for="diy_engine_make_model">Engine make & model</label>
-            <input
-              type="text"
-              id="diy_engine_make_model"
-              value="${entry?.diy_meta?.engine_make_model || (selectedEngine ? `${(selectedEngine.manufacturer || '')} ${(selectedEngine.model || '')}`.trim() : '')}"
-              readonly
-            >
+          <h4 id="service-diy-card-title">DIY boat engine & gearbox service checklist</h4>
+          <p class="text-muted" id="service-diy-card-intro">Tick each item as you complete it.</p>
+          <div id="service-diy-engine-only">
+            <div class="form-group">
+              <label for="diy_engine_make_model">Engine make & model</label>
+              <input
+                type="text"
+                id="diy_engine_make_model"
+                value="${entry?.diy_meta?.engine_make_model || (selectedEngine ? `${(selectedEngine.manufacturer || '')} ${(selectedEngine.model || '')}`.trim() : '')}"
+                readonly
+              >
+            </div>
+            <div class="form-group">
+              <label for="diy_engine_serial_number">Engine serial number</label>
+              <input
+                type="text"
+                id="diy_engine_serial_number"
+                value="${entry?.diy_meta?.engine_serial_number || (selectedEngine?.serial_number || '')}"
+                readonly
+              >
+            </div>
+            <div class="form-group">
+              <label for="diy_gearbox_make_model">Gearbox make & model</label>
+              <input
+                type="text"
+                id="diy_gearbox_make_model"
+                value="${entry?.diy_meta?.gearbox_make_model || (selectedEngine ? `${(selectedEngine.gearbox_manufacturer || '')} ${(selectedEngine.gearbox_model || '')}`.trim() : '')}"
+                readonly
+              >
+            </div>
+            <div class="form-group" id="service-engine-fuel-drive-wrap">
+              <p id="service-engine-fuel-drive-display" class="text-muted" style="margin-top: 0.25rem; margin-bottom: 0;">Select an engine under Service area to see fuel type and drive type. The checklist below is filtered by these.</p>
+            </div>
           </div>
           <div class="form-group">
-            <label for="diy_engine_serial_number">Engine serial number</label>
-            <input
-              type="text"
-              id="diy_engine_serial_number"
-              value="${entry?.diy_meta?.engine_serial_number || (selectedEngine?.serial_number || '')}"
-              readonly
-            >
-          </div>
-          <div class="form-group">
-            <label for="diy_gearbox_make_model">Gearbox make & model</label>
-            <input
-              type="text"
-              id="diy_gearbox_make_model"
-              value="${entry?.diy_meta?.gearbox_make_model || (selectedEngine ? `${(selectedEngine.gearbox_manufacturer || '')} ${(selectedEngine.gearbox_model || '')}`.trim() : '')}"
-              readonly
-            >
-          </div>
-          <div class="form-group" id="service-engine-fuel-drive-wrap">
-            <p id="service-engine-fuel-drive-display" class="text-muted" style="margin-top: 0.25rem; margin-bottom: 0;">Select an engine above to see fuel type and drive type. The checklist below is filtered by these.</p>
-          </div>
-          <div class="form-group">
-            <label for="diy_person_carrying_out_service">Person carrying out service</label>
+            <label for="diy_person_carrying_out_service" id="diy-person-label">Person carrying out service</label>
             <input type="text" id="diy_person_carrying_out_service" value="${entry?.diy_meta?.person_carrying_out_service || ''}">
+          </div>
+          <div class="form-group" id="service-diy-sail-notes" hidden>
+            <label for="diy_sail_condition_notes">Sail condition notes</label>
+            <textarea id="diy_sail_condition_notes" rows="2">${entry?.diy_meta?.sail_condition_notes || ''}</textarea>
+            <label for="diy_sails_repairs_required" style="margin-top: 0.75rem;">Any repairs required</label>
+            <textarea id="diy_sails_repairs_required" rows="2">${entry?.diy_meta?.sails_repairs_required || ''}</textarea>
+            <label for="diy_sails_work_carried_out" style="margin-top: 0.75rem;">Work carried out (rigging)</label>
+            <textarea id="diy_sails_work_carried_out" rows="2">${entry?.diy_meta?.sails_work_carried_out || ''}</textarea>
           </div>
 
           <div id="service-diy-checklist"></div>
 
-          <div class="form-group" style="margin-top: 1rem;">
+          <div class="form-group" id="service-diy-seacocks-row" style="margin-top: 1rem;">
             <label>Seacocks left in correct position</label>
             <div class="radio-option-row">
               <label class="inline-choice">
@@ -1045,13 +1414,13 @@ async function showServiceForm() {
         </div>
 
         <div class="card" id="service-pro-card" style="margin-top: 1rem; ${mode === 'DIY' ? 'display: none;' : 'display: block;'}">
-          <h4>Professional / Mechanic Details</h4>
+          <h4 id="service-pro-card-title">Professional service details</h4>
           <div class="form-group">
-            <label for="pro_workshop_name">Workshop / company name</label>
+            <label for="pro_workshop_name">Workshop / company / rigger</label>
             <input type="text" id="pro_workshop_name" value="${entry?.pro_meta?.workshop_name || ''}">
           </div>
           <div class="form-group">
-            <label for="pro_mechanic_name">Mechanic name</label>
+            <label for="pro_mechanic_name" id="pro-mechanic-label">Mechanic name</label>
             <input type="text" id="pro_mechanic_name" value="${entry?.pro_meta?.mechanic_name || ''}">
           </div>
           <div class="form-group">
@@ -1134,6 +1503,9 @@ async function showServiceForm() {
   const listContainer = document.getElementById('service-list');
   listContainer.insertAdjacentHTML('afterbegin', formHtml);
 
+  syncServiceTypeDropdown();
+  restoreServiceTypeFromEntry(entry);
+
   const form = document.getElementById('service-form');
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -1151,10 +1523,12 @@ async function showServiceForm() {
       if (selected === 'DIY') {
         if (diyCard) diyCard.style.display = 'block';
         if (proCard) proCard.style.display = 'none';
+        applyServiceFormScope();
         renderDIYChecklist(entry);
       } else {
         if (diyCard) diyCard.style.display = 'none';
         if (proCard) proCard.style.display = 'block';
+        applyServiceFormScope();
       }
     });
   });
@@ -1179,22 +1553,50 @@ async function showServiceForm() {
       if (eng && gearboxInput) {
         gearboxInput.value = `${(eng.gearbox_manufacturer || '')} ${(eng.gearbox_model || '')}`.trim();
       }
+      if (!eng) {
+        if (makeModelInput) makeModelInput.value = '';
+        if (serialInput) serialInput.value = '';
+        if (gearboxInput) gearboxInput.value = '';
+      }
+      const prevType = getCurrentServiceTypeFromForm();
+      applyServiceFormScope();
+      syncServiceTypeDropdown();
+      const boatLevelNow = isBoatLevelServiceAreaFromForm();
+      if (!boatLevelNow && prevType && isSailingServiceType(prevType)) {
+        const st = document.getElementById('service_type');
+        const cu = document.getElementById('service_type_custom');
+        if (st) st.value = 'Other';
+        if (cu) cu.value = prevType;
+      }
+      if (boatLevelNow && prevType && ENGINE_SERVICE_TYPES.includes(prevType) && prevType !== 'Other') {
+        const st = document.getElementById('service_type');
+        const cu = document.getElementById('service_type_custom');
+        if (st) st.value = '';
+        if (cu) cu.value = '';
+      }
+      renderSailingTargetFields(serviceFormEntrySnapshot);
       renderDIYChecklist(entry);
     });
   }
 
   // Render DIY checklist with existing values (if any)
   renderDIYChecklist(entry);
+  applyServiceFormScope();
 
   // Handle custom service type
   document.getElementById('service_type').addEventListener('change', (e) => {
     if (e.target.value) {
       document.getElementById('service_type_custom').value = '';
     }
-    if (e.target.value === 'Sails & Rigging') {
-      const engineSelect = document.getElementById('service_engine');
-      if (engineSelect) engineSelect.value = '';
+    if (e.target.value && isSailingServiceType(e.target.value)) {
+      const sel = document.getElementById('service_engine');
+      if (sel) sel.value = '';
     }
+    if (serviceFormEntrySnapshot) {
+      serviceFormEntrySnapshot = { ...serviceFormEntrySnapshot, sailing_service_detail: {} };
+    }
+    applyServiceFormScope();
+    renderSailingTargetFields(serviceFormEntrySnapshot);
     renderDIYChecklist(entry);
   });
 
@@ -1202,6 +1604,8 @@ async function showServiceForm() {
     if (e.target.value) {
       document.getElementById('service_type').value = '';
     }
+    applyServiceFormScope();
+    renderSailingTargetFields(serviceFormEntrySnapshot);
     renderDIYChecklist(entry);
   });
 
@@ -1253,8 +1657,8 @@ function renderDIYChecklist(entry) {
 
   const displayEl = document.getElementById('service-engine-fuel-drive-display');
   if (displayEl) {
-    if (currentServiceType === 'Sails & Rigging') {
-      displayEl.textContent = 'Sails & rigging service – use the checklist below.';
+    if (isBoatLevelServiceAreaFromForm() && isSailingServiceType(currentServiceType)) {
+      displayEl.textContent = 'Sail & rigging — checklist matches the service type you selected.';
     } else if (selectedEngineId && (fuelFromOption || driveFromOption)) {
       const fuelLabel = formatFuelTypeForDisplay(fuelFromOption) || '—';
       const driveLabel = formatDriveTypeForDisplay(driveFromOption) || '—';
@@ -1269,6 +1673,15 @@ function renderDIYChecklist(entry) {
     ? { fuel_type: fuelFromOption, drive_type: driveFromOption }
     : null;
 
+  if (isBoatLevelServiceAreaFromForm() && !currentServiceType) {
+    container.innerHTML = `
+      <p class="text-muted" style="margin-top: 0;">
+        Choose a sail & rigging service type above to show the checklist for that task.
+      </p>
+    `;
+    return;
+  }
+
   const activeSections = getActiveChecklistSectionsForServiceType(currentServiceType, engineAttrs);
 
   if (!activeSections.length) {
@@ -1281,8 +1694,13 @@ function renderDIYChecklist(entry) {
   }
 
   const noEngineSelected = !selectedEngineId || (!fuelFromOption && !driveFromOption);
-  const tailorNote = noEngineSelected
-    ? '<p class="text-muted" style="margin-top: 0; margin-bottom: 0.75rem;">Select an engine above to tailor this checklist to your engine (fuel & drive type).</p>'
+  const showEngineTailorNote =
+    !isBoatLevelServiceAreaFromForm() &&
+    !isSailingServiceType(currentServiceType) &&
+    currentServiceType !== LEGACY_SAILING_SERVICE_TYPE &&
+    noEngineSelected;
+  const tailorNote = showEngineTailorNote
+    ? '<p class="text-muted" style="margin-top: 0; margin-bottom: 0.75rem;">Select an engine under Service area to tailor this checklist to your engine (fuel & drive type).</p>'
     : '';
 
   container.innerHTML = tailorNote + activeSections.map(section => {
@@ -1316,9 +1734,9 @@ function getActiveChecklistSectionsForServiceType(serviceType, engineOrAttrs) {
 function getActiveChecklistSectionsForServiceTypeInternal(serviceType, engine) {
   if (!serviceType) return [];
 
-  // Sails & Rigging is boat-level; use sailing checklist only (no engine filter).
-  if (serviceType === 'Sails & Rigging') {
-    return SAILS_RIGGING_CHECKLIST_SECTIONS;
+  const boatLevelRigging = !engine;
+  if (boatLevelRigging && isSailingServiceType(serviceType)) {
+    return getSailingChecklistSectionsForType(serviceType);
   }
 
   let baseSectionIds;
@@ -1478,6 +1896,7 @@ async function saveService() {
   const serviceMode = document.querySelector('input[name="service_mode"]:checked')?.value || 'Professional';
   const serviceType = document.getElementById('service_type').value || document.getElementById('service_type_custom').value;
   const engineIdRaw = document.getElementById('service_engine').value;
+  const boatLevelServiceArea = !(engineIdRaw || '').toString().trim();
 
   let diyChecklist = null;
   let diyMeta = null;
@@ -1488,7 +1907,10 @@ async function saveService() {
 
   if (serviceMode === 'DIY') {
     diyChecklist = {};
-    const sectionsToSave = serviceType === 'Sails & Rigging' ? SAILS_RIGGING_CHECKLIST_SECTIONS : DIY_CHECKLIST_SECTIONS;
+    let sectionsToSave = DIY_CHECKLIST_SECTIONS;
+    if (boatLevelServiceArea && isSailingServiceType(serviceType)) {
+      sectionsToSave = getSailingChecklistSectionsForType(serviceType);
+    }
     sectionsToSave.forEach(section => {
       section.items.forEach(item => {
         const key = `${section.id}.${item.id}`;
@@ -1502,7 +1924,10 @@ async function saveService() {
       engine_make_model: document.getElementById('diy_engine_make_model')?.value || '',
       engine_serial_number: document.getElementById('diy_engine_serial_number')?.value || '',
       gearbox_make_model: document.getElementById('diy_gearbox_make_model')?.value || '',
-      person_carrying_out_service: document.getElementById('diy_person_carrying_out_service')?.value || ''
+      person_carrying_out_service: document.getElementById('diy_person_carrying_out_service')?.value || '',
+      sail_condition_notes: document.getElementById('diy_sail_condition_notes')?.value?.trim() || '',
+      sails_repairs_required: document.getElementById('diy_sails_repairs_required')?.value?.trim() || '',
+      sails_work_carried_out: document.getElementById('diy_sails_work_carried_out')?.value?.trim() || ''
     };
 
     seacocksPosition = document.querySelector('input[name="diy_seacocks_position"]:checked')?.value || null;
@@ -1517,8 +1942,14 @@ async function saveService() {
     };
   }
 
-  if (serviceType !== 'Sails & Rigging' && !engineIdRaw) {
+  if (!boatLevelServiceArea && !engineIdRaw) {
     showToast('Please select an engine for this service type.', 'error');
+    setSaveButtonLoading(form, false);
+    return;
+  }
+
+  if (boatLevelServiceArea && !serviceType.trim()) {
+    showToast('Choose a sail & rigging service type.', 'error');
     setSaveButtonLoading(form, false);
     return;
   }
@@ -1551,6 +1982,14 @@ async function saveService() {
 
   try {
 
+  const sailingDetailRaw = collectSailingServiceDetailFromForm();
+  const sailing_service_detail =
+    boatLevelServiceArea && sailingDetailRaw && Object.keys(sailingDetailRaw).length
+      ? sailingDetailRaw
+      : boatLevelServiceArea
+        ? {}
+        : null;
+
   const costEl = document.getElementById('service_cost');
   const costVal = costEl?.value?.trim();
   const entry = {
@@ -1558,7 +1997,11 @@ async function saveService() {
     date: document.getElementById('service_date').value,
     engine_id: engineIdRaw || null,
     service_type: serviceType,
-    engine_hours: document.getElementById('service_hours').value ? parseFloat(document.getElementById('service_hours').value) : null,
+    engine_hours: boatLevelServiceArea
+      ? null
+      : (document.getElementById('service_hours').value
+        ? parseFloat(document.getElementById('service_hours').value)
+        : null),
     notes: document.getElementById('service_notes').value,
     cost: costVal ? parseFloat(costVal) : null,
     cost_currency: document.getElementById('service_cost_currency')?.value || 'GBP',
@@ -1570,7 +2013,8 @@ async function saveService() {
     parts_replaced_notes: partsReplacedNotes,
     next_service_due: nextDueVal,
     next_service_reminder_minutes: nextReminderMins,
-    pro_meta: proMeta
+    pro_meta: proMeta,
+    sailing_service_detail
   };
 
   // Pass full entry so checklist, DIY/pro meta, and all details are persisted (Supabase description + local storage)
@@ -1604,6 +2048,27 @@ async function saveService() {
   } catch (e) {
     console.warn('[BoatMatey] Reminder notification sync failed:', e);
   }
+
+  if (entry.engine_id && entry.service_type) {
+    try {
+      const schedules = await getEngineMaintenanceSchedules(currentBoatId);
+      const matches = findSchedulesMatchingServiceEntry(schedules, {
+        engineId: entry.engine_id,
+        serviceType: entry.service_type
+      });
+      if (matches.length) {
+        await offerUpdateEngineSchedulesAfterService({
+          matches,
+          completedDate: entry.date,
+          engineHours: entry.engine_hours,
+          boatId: currentBoatId
+        });
+      }
+    } catch (e) {
+      console.warn('[BoatMatey] Maintenance schedule prompt failed:', e?.message || e);
+    }
+  }
+
   const card = document.getElementById('service-form-card');
   if (card) card.remove();
   editingId = null;

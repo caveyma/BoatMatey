@@ -1,6 +1,6 @@
 /**
  * Inventory Page
- * Onboard stock tracking with required level, in-stock level, low-stock and critical-spare alerts.
+ * Marine asset inventory: spares, consumables, sails, winches, rigging, and low-stock alerts.
  */
 
 import { navigate } from '../router.js';
@@ -30,19 +30,24 @@ import { uploadsStorage, inventoryStorage } from '../lib/storage.js';
 import { blockFreePlanRecordLimitIfNeeded } from '../lib/premiumSaveGate.js';
 import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 import { enableRecordCardExpand } from '../utils/recordCardExpand.js';
-
-const INVENTORY_CATEGORIES = [
-  'Engine',
-  'Electrical',
-  'Plumbing',
-  'Safety',
-  'Tools',
-  'Cleaning',
-  'Galley',
-  'Spares',
-  'Deck Gear',
-  'Misc'
-];
+import {
+  MARINE_CATEGORIES,
+  LEGACY_INVENTORY_CATEGORIES,
+  SAIL_TYPES,
+  INVENTORY_CONDITIONS,
+  INVENTORY_TEMPLATES,
+  INVENTORY_LIST_FILTER,
+  emptyDetail,
+  mergeDetail,
+  getInventoryDetail,
+  normalizeInventoryItem,
+  categoryUsesStockSection,
+  isRiggingCategory,
+  inventoryNeedsAttentionStrict,
+  inventoryReplacementDueOrSoon,
+  inventoryRecommendedReplacementOffsetDays,
+  inventorySummaryCounts
+} from '../lib/inventoryMarine.js';
 
 const INVENTORY_UNITS = ['pcs', 'litres', 'bottles', 'tubes', 'rolls', 'packs'];
 
@@ -50,7 +55,8 @@ const SORT_OPTIONS = [
   { value: 'name', label: 'Name' },
   { value: 'category', label: 'Category' },
   { value: 'location', label: 'Location' },
-  { value: 'stock', label: 'Stock level' }
+  { value: 'stock', label: 'Stock level' },
+  { value: 'condition', label: 'Condition' }
 ];
 
 let currentBoatId = null;
@@ -58,6 +64,37 @@ let editingId = null;
 let inventoryArchived = false;
 let inventoryFileInput = null;
 let currentItemIdForUpload = null;
+
+function addSelectOption(select, value, label) {
+  const opt = document.createElement('option');
+  opt.value = value;
+  opt.textContent = label;
+  select.appendChild(opt);
+}
+
+function addOptgroup(select, label) {
+  const og = document.createElement('optgroup');
+  og.label = label;
+  select.appendChild(og);
+  return og;
+}
+
+function buildInventoryCategoryFilterSelect() {
+  const select = document.createElement('select');
+  select.id = 'inventory-filter-category';
+  select.className = 'form-control';
+  select.setAttribute('aria-label', 'Filter inventory');
+  addSelectOption(select, '', 'All items');
+  const views = addOptgroup(select, 'Views');
+  addSelectOption(views, INVENTORY_LIST_FILTER.NEEDS_ATTENTION, 'Needs attention');
+  addSelectOption(views, INVENTORY_LIST_FILTER.REPLACEMENT_DUE, 'Replacement due (30 days)');
+  addSelectOption(views, INVENTORY_LIST_FILTER.RIGGING_ALL, 'All rigging');
+  const marine = addOptgroup(select, 'Categories');
+  MARINE_CATEGORIES.forEach(({ value, label }) => addSelectOption(marine, value, label));
+  const legacy = addOptgroup(select, 'Earlier categories');
+  LEGACY_INVENTORY_CATEGORIES.forEach(({ value, label }) => addSelectOption(legacy, value, label));
+  return select;
+}
 
 function isLowStock(item) {
   const required = item.required_quantity != null ? Number(item.required_quantity) : 0;
@@ -118,19 +155,25 @@ function render(params = {}) {
 
   const filtersWrap = document.createElement('div');
   filtersWrap.className = 'inventory-filters';
-  filtersWrap.innerHTML = `
-    <select id="inventory-filter-category" class="form-control" aria-label="Filter by category">
-      <option value="">All categories</option>
-      ${INVENTORY_CATEGORIES.map((c) => `<option value="${c}">${c}</option>`).join('')}
-    </select>
-    <select id="inventory-filter-stock" class="form-control" aria-label="Filter by stock">
-      <option value="all">All items</option>
-      <option value="low">Low stock only</option>
-    </select>
-    <select id="inventory-sort" class="form-control" aria-label="Sort by">
-      ${SORT_OPTIONS.map((o) => `<option value="${o.value}">${o.label}</option>`).join('')}
-    </select>
-  `;
+  filtersWrap.appendChild(buildInventoryCategoryFilterSelect());
+  const stockSel = document.createElement('select');
+  stockSel.id = 'inventory-filter-stock';
+  stockSel.className = 'form-control';
+  stockSel.setAttribute('aria-label', 'Filter by stock');
+  stockSel.innerHTML =
+    '<option value="all">All items</option><option value="low">Low stock only</option>';
+  filtersWrap.appendChild(stockSel);
+  const sortSel = document.createElement('select');
+  sortSel.id = 'inventory-sort';
+  sortSel.className = 'form-control';
+  sortSel.setAttribute('aria-label', 'Sort by');
+  SORT_OPTIONS.forEach((o) => {
+    const opt = document.createElement('option');
+    opt.value = o.value;
+    opt.textContent = o.label;
+    sortSel.appendChild(opt);
+  });
+  filtersWrap.appendChild(sortSel);
 
   toolbar.appendChild(addBtn);
   toolbar.appendChild(searchWrap);
@@ -143,10 +186,16 @@ function render(params = {}) {
   fileInput.accept = 'image/*,.jpg,.jpeg,.png';
   fileInput.style.display = 'none';
 
+  const summary = document.createElement('div');
+  summary.id = 'inventory-summary';
+  summary.className = 'inventory-summary text-muted';
+  summary.hidden = true;
+
   const listContainer = document.createElement('div');
   listContainer.id = 'inventory-list';
 
   container.appendChild(toolbar);
+  container.appendChild(summary);
   container.appendChild(fileInput);
   container.appendChild(listContainer);
   pageContent.appendChild(container);
@@ -207,6 +256,18 @@ async function onMount(params = {}) {
   const filterCategory = document.getElementById('inventory-filter-category');
   const filterStock = document.getElementById('inventory-filter-stock');
   const sortEl = document.getElementById('inventory-sort');
+
+  const hashForQuery = window.location.hash || '';
+  const qIdx = hashForQuery.indexOf('?');
+  const queryPart = qIdx >= 0 ? hashForQuery.slice(qIdx + 1) : '';
+  const qs = new URLSearchParams(queryPart);
+  const stockParam = qs.get('stock');
+  if (stockParam === 'low' && filterStock) filterStock.value = 'low';
+  const attentionParam = qs.get('attention');
+  if (attentionParam === 'needs' && filterCategory) {
+    filterCategory.value = INVENTORY_LIST_FILTER.NEEDS_ATTENTION;
+  }
+
   [searchEl, filterCategory, filterStock, sortEl].forEach((el) => {
     if (el) el.addEventListener('change', () => loadInventory());
   });
@@ -222,7 +283,7 @@ async function onMount(params = {}) {
 }
 
 function applyFiltersAndSort(items, search, categoryFilter, lowStockOnly, sortBy) {
-  let list = [...items];
+  let list = items.map(normalizeInventoryItem);
   if (search) {
     const q = search.trim().toLowerCase();
     list = list.filter(
@@ -230,10 +291,21 @@ function applyFiltersAndSort(items, search, categoryFilter, lowStockOnly, sortBy
         (i.name && i.name.toLowerCase().includes(q)) ||
         (i.part_number && i.part_number.toLowerCase().includes(q)) ||
         (i.location && i.location.toLowerCase().includes(q)) ||
-        (i.category && i.category.toLowerCase().includes(q))
+        (i.category && i.category.toLowerCase().includes(q)) ||
+        (getInventoryDetail(i).sailmaker && getInventoryDetail(i).sailmaker.toLowerCase().includes(q)) ||
+        (getInventoryDetail(i).rigging_purpose &&
+          getInventoryDetail(i).rigging_purpose.toLowerCase().includes(q))
     );
   }
-  if (categoryFilter) list = list.filter((i) => i.category === categoryFilter);
+  if (categoryFilter === INVENTORY_LIST_FILTER.NEEDS_ATTENTION) {
+    list = list.filter(inventoryNeedsAttentionStrict);
+  } else if (categoryFilter === INVENTORY_LIST_FILTER.REPLACEMENT_DUE) {
+    list = list.filter(inventoryReplacementDueOrSoon);
+  } else if (categoryFilter === INVENTORY_LIST_FILTER.RIGGING_ALL) {
+    list = list.filter((i) => isRiggingCategory(i.category));
+  } else if (categoryFilter) {
+    list = list.filter((i) => i.category === categoryFilter);
+  }
   if (lowStockOnly === 'low') list = list.filter(isLowStock);
   const order = sortBy || 'name';
   list.sort((a, b) => {
@@ -245,9 +317,64 @@ function applyFiltersAndSort(items, search, categoryFilter, lowStockOnly, sortBy
       const sb = b.in_stock_level != null ? Number(b.in_stock_level) : -1;
       return sa - sb;
     }
+    if (order === 'condition') {
+      return (getInventoryDetail(a).condition || '').localeCompare(getInventoryDetail(b).condition || '');
+    }
     return 0;
   });
   return list;
+}
+
+function formatListSubtitle(item) {
+  const row = normalizeInventoryItem(item);
+  const d = getInventoryDetail(row);
+  const bits = [];
+  if (row.category) bits.push(row.category);
+  if (row.category === 'Sails' && (d.sail_type || row.type)) bits.push(d.sail_type || row.type);
+  else if (row.type) bits.push(row.type);
+  return bits.join(' · ');
+}
+
+function formatListStatus(item) {
+  const row = normalizeInventoryItem(item);
+  const useStock = categoryUsesStockSection(row.category);
+  if (useStock) {
+    const low = isLowStock(row);
+    const critical = isCriticalOutOfStock(row);
+    const stockClass = critical ? 'inventory-badge-critical' : low ? 'inventory-badge-low' : '';
+    const stockLabel = critical ? 'Critical: out of stock' : low ? 'Low stock' : 'OK';
+    const unit = row.unit || '';
+    const req = row.required_quantity != null ? Number(row.required_quantity) : '';
+    const stock = row.in_stock_level != null ? Number(row.in_stock_level) : '—';
+    const stockDisplay = unit ? `${stock} ${unit}` : stock;
+    return {
+      rowClass: `${low ? 'inventory-item-low' : ''} ${critical ? 'inventory-item-critical' : ''}`.trim(),
+      badgeClass: stockClass,
+      badgeLabel: stockLabel,
+      numbers: `Stock: ${stockDisplay}${req !== '' ? ` / Required: ${req}${unit ? ' ' + unit : ''}` : ''}`
+    };
+  }
+  const d = getInventoryDetail(row);
+  const cond = (d.condition || '').trim();
+  const off = inventoryRecommendedReplacementOffsetDays(row);
+  let badgeClass = '';
+  let badgeLabel = 'Asset';
+  if (inventoryNeedsAttentionStrict(row)) {
+    badgeClass = 'inventory-badge-low';
+    if (cond === 'Needs Replacement') badgeLabel = 'Needs replacement';
+    else if (cond === 'Needs Attention') badgeLabel = 'Needs attention';
+    else badgeLabel = 'Replacement overdue';
+  } else if (off !== null && off >= 0 && off <= 30) {
+    badgeClass = 'inventory-badge-low';
+    badgeLabel = off === 0 ? 'Replacement due today' : `Replacement in ${off}d`;
+  } else if (cond) {
+    badgeLabel = cond;
+  }
+  const extras = [];
+  if (row.category === 'Running Rigging' && d.rigging_purpose) extras.push(d.rigging_purpose);
+  if (row.category === 'Standing Rigging' && d.standing_element_type) extras.push(d.standing_element_type);
+  const numbers = extras.length ? extras.join(' · ') : cond || 'Quantity not tracked';
+  return { rowClass: '', badgeClass, badgeLabel, numbers };
 }
 
 async function loadInventory() {
@@ -260,12 +387,29 @@ async function loadInventory() {
   const lowStockOnly = document.getElementById('inventory-filter-stock')?.value || 'all';
   const sortBy = document.getElementById('inventory-sort')?.value || 'name';
 
+  const summaryEl = document.getElementById('inventory-summary');
+  if (summaryEl) {
+    const sum = inventorySummaryCounts(items);
+    if (items.length === 0) {
+      summaryEl.hidden = true;
+      summaryEl.textContent = '';
+    } else {
+      summaryEl.hidden = false;
+      const parts = [`${sum.total} item${sum.total === 1 ? '' : 's'}`];
+      if (sum.sails) parts.push(`${sum.sails} sail${sum.sails === 1 ? '' : 's'}`);
+      if (sum.winches) parts.push(`${sum.winches} winch${sum.winches === 1 ? '' : 'es'}`);
+      if (sum.rigging) parts.push(`${sum.rigging} rigging`);
+      if (sum.attention) parts.push(`${sum.attention} need attention`);
+      summaryEl.textContent = parts.join(' · ');
+    }
+  }
+
   const filtered = applyFiltersAndSort(items, search, categoryFilter, lowStockOnly, sortBy);
 
   if (!filtered.length) {
     const emptyMessage =
       items.length === 0
-        ? 'No inventory items yet. Add items to track onboard stock and get low-stock alerts.'
+        ? 'No inventory items yet. Add spares, consumables, sails, winches, rigging, or other gear.'
         : 'No items match your filters.';
     listContainer.innerHTML = `
       <div class="empty-state">
@@ -279,18 +423,12 @@ async function loadInventory() {
 
   listContainer.innerHTML = filtered
     .map((item) => {
-      const low = isLowStock(item);
-      const critical = isCriticalOutOfStock(item);
-      const stockClass = critical ? 'inventory-badge-critical' : low ? 'inventory-badge-low' : '';
-      const stockLabel = critical ? 'Critical: out of stock' : low ? 'Low stock' : 'OK';
+      const st = formatListStatus(item);
       const locationText = [item.location, item.position].filter(Boolean).join(' • ') || '—';
-      const unit = item.unit || '';
-      const req = item.required_quantity != null ? Number(item.required_quantity) : '';
-      const stock = item.in_stock_level != null ? Number(item.in_stock_level) : '—';
-      const stockDisplay = unit ? `${stock} ${unit}` : stock;
+      const sub = formatListSubtitle(item);
 
       return `
-      <div class="card inventory-item-card ${low ? 'inventory-item-low' : ''} ${critical ? 'inventory-item-critical' : ''}" data-item-id="${item.id}">
+      <div class="card inventory-item-card ${st.rowClass}" data-item-id="${item.id}">
         <div class="card-header">
           <div class="inventory-item-header-main">
             ${item.photo_url || getUploads('inventory', item.id, currentBoatId).length
@@ -298,11 +436,11 @@ async function loadInventory() {
               : ''}
             <div>
               <h3 class="card-title">${escapeHtml(item.name || 'Unnamed')}</h3>
-              <p class="text-muted">${escapeHtml(item.category || '')} ${item.category && item.type ? '•' : ''} ${escapeHtml(item.type || '')}</p>
+              <p class="text-muted">${escapeHtml(sub)}</p>
               <p class="inventory-item-location">${escapeHtml(locationText)}</p>
               <div class="inventory-item-stock-row">
-                <span class="inventory-badge ${stockClass}">${stockLabel}</span>
-                <span class="inventory-stock-numbers">Stock: ${stockDisplay}${req !== '' ? ` / Required: ${req}${unit ? ' ' + unit : ''}` : ''}</span>
+                <span class="inventory-badge ${st.badgeClass}">${escapeHtml(st.badgeLabel)}</span>
+                <span class="inventory-stock-numbers">${escapeHtml(st.numbers)}</span>
               </div>
             </div>
           </div>
@@ -358,6 +496,96 @@ function attachListHandlers() {
   };
 }
 
+function readDetailFromForm(category) {
+  const q = (id) => (document.getElementById(id)?.value ?? '').trim();
+  const chk = (id) => !!document.getElementById(id)?.checked;
+  const d = emptyDetail();
+  d.condition = q('inv_d_condition');
+  if (category === 'Sails') {
+    d.sail_type = q('inv_d_sail_type');
+    d.sailmaker = q('inv_d_sailmaker');
+    d.sail_material = q('inv_d_sail_material');
+    d.stored_location = q('inv_d_stored_location');
+    d.purchase_date = q('inv_d_purchase_date');
+    d.installed_date = q('inv_d_installed_date');
+    d.last_inspected_date = q('inv_d_last_inspected_date');
+  }
+  if (category === 'Winches') {
+    d.winch_size = q('inv_d_winch_size');
+    d.self_tailing = chk('inv_d_self_tailing');
+    d.electric_winch = chk('inv_d_electric_winch');
+    d.installed_date = q('inv_d_installed_date_w');
+    d.last_serviced_date = q('inv_d_last_serviced_date');
+  }
+  if (category === 'Running Rigging') {
+    d.rigging_purpose = q('inv_d_rigging_purpose');
+    d.rigging_use_location = q('inv_d_rigging_use_location');
+    d.line_material = q('inv_d_line_material');
+    d.line_diameter = q('inv_d_line_diameter');
+    d.line_length = q('inv_d_line_length');
+    d.installed_date = q('inv_d_installed_date_r');
+    d.last_replaced_date = q('inv_d_last_replaced_date');
+  }
+  if (category === 'Standing Rigging') {
+    d.standing_element_type = q('inv_d_standing_element_type');
+    d.standing_location_note = q('inv_d_standing_location_note');
+    d.installed_date = q('inv_d_installed_date_s');
+    d.last_inspected_date = q('inv_d_last_inspected_date_s');
+    d.recommended_replacement_date = q('inv_d_recommended_replacement_date');
+  }
+  if (category === 'Deck Hardware') {
+    d.deck_brand_model = q('inv_d_deck_brand_model');
+    d.installed_date = q('inv_d_installed_date_d');
+    d.last_inspected_date = q('inv_d_last_inspected_date_d');
+  }
+  if (categoryUsesStockSection(category)) {
+    d.purchase_date = q('inv_d_purchase_date_g');
+  }
+  return d;
+}
+
+function syncInventoryFormPanels() {
+  const cat = document.getElementById('inv_category')?.value || '';
+  const showStock = categoryUsesStockSection(cat);
+  const stockEl = document.getElementById('inv-section-stock');
+  if (stockEl) stockEl.style.display = showStock ? '' : 'none';
+  const genLife = document.getElementById('inv-section-lifecycle-general');
+  if (genLife) genLife.style.display = showStock ? '' : 'none';
+  const refSupplier = document.getElementById('inv_supplier_group');
+  if (refSupplier) refSupplier.style.display = cat === 'Winches' ? 'none' : '';
+  const typeLabel = document.getElementById('inv_type_label');
+  if (typeLabel) typeLabel.textContent = cat === 'Winches' ? 'Model' : 'Type / variant';
+  const typeInput = document.getElementById('inv_type');
+  if (typeInput) {
+    typeInput.placeholder =
+      cat === 'Winches' ? 'e.g. 40ST' : cat === 'Sails' ? 'Optional — or use sail type below' : 'e.g. Oil, filter';
+  }
+  const panels = ['Sails', 'Winches', 'Running Rigging', 'Standing Rigging', 'Deck Hardware'];
+  panels.forEach((c) => {
+    const el = document.getElementById(`inv-panel-${c.replace(/\s+/g, '-').toLowerCase()}`);
+    if (el) el.style.display = cat === c ? '' : 'none';
+  });
+  const tmplWrap = document.getElementById('inv_template_wrap');
+  if (tmplWrap) {
+    const isNew = tmplWrap.dataset.new === '1';
+    const hasTmpl = !!(isNew && INVENTORY_TEMPLATES[cat]?.length);
+    tmplWrap.style.display = hasTmpl ? '' : 'none';
+  }
+}
+
+function repopulateTemplateSelect(category) {
+  const sel = document.getElementById('inv_template');
+  if (!sel) return;
+  const list = INVENTORY_TEMPLATES[category] || [];
+  sel.innerHTML = '<option value="">— Optional —</option>';
+  list.forEach((t, i) => {
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = t.label;
+    sel.appendChild(opt);
+  });
+}
+
 async function showInventoryForm() {
   const items = currentBoatId ? await getInventory(currentBoatId) : [];
   const existing = editingId ? items.find((i) => i.id === editingId) : null;
@@ -368,6 +596,45 @@ async function showInventoryForm() {
 
   currentItemIdForUpload = existing?.id || editingId;
 
+  const d = getInventoryDetail(existing);
+  const sailTypeVal = d.sail_type || existing?.type || '';
+
+  const categoryOptionsHtml = [
+    '<option value="">Select...</option>',
+    '<optgroup label="Categories">',
+    ...MARINE_CATEGORIES.map(
+      ({ value, label }) =>
+        `<option value="${escapeHtml(value)}" ${existing?.category === value ? 'selected' : ''}>${escapeHtml(
+          label
+        )}</option>`
+    ),
+    '</optgroup>',
+    '<optgroup label="Earlier categories">',
+    ...LEGACY_INVENTORY_CATEGORIES.map(
+      ({ value, label }) =>
+        `<option value="${escapeHtml(value)}" ${existing?.category === value ? 'selected' : ''}>${escapeHtml(
+          label
+        )}</option>`
+    ),
+    '</optgroup>'
+  ].join('');
+
+  const conditionOptionsHtml = [
+    `<option value="" ${!d.condition ? 'selected' : ''}>—</option>`,
+    ...INVENTORY_CONDITIONS.filter((c) => c).map(
+      (c) =>
+        `<option value="${escapeHtml(c)}" ${d.condition === c ? 'selected' : ''}>${escapeHtml(c)}</option>`
+    )
+  ].join('');
+
+  const sailTypeOptionsHtml = [
+    `<option value="" ${!sailTypeVal ? 'selected' : ''}>—</option>`,
+    ...SAIL_TYPES.map(
+      (c) =>
+        `<option value="${escapeHtml(c)}" ${sailTypeVal === c ? 'selected' : ''}>${escapeHtml(c)}</option>`
+    )
+  ].join('');
+
   const formHtml = `
     <div class="card" id="inventory-form-card">
       <h3>${isNew ? 'Add Inventory Item' : 'Edit Inventory Item'}</h3>
@@ -376,34 +643,160 @@ async function showInventoryForm() {
           <h4>Item details</h4>
           <div class="form-group">
             <label for="inv_name">Name *</label>
-            <input type="text" id="inv_name" required value="${escapeHtml(existing?.name || '')}" placeholder="e.g. Engine oil 15W-40">
+            <input type="text" id="inv_name" required value="${escapeHtml(existing?.name || '')}" placeholder="e.g. Genoa, Port winch, Impeller kit">
           </div>
           <div class="form-row">
             <div class="form-group">
               <label for="inv_category">Category</label>
-              <select id="inv_category">
-                <option value="">Select...</option>
-                ${INVENTORY_CATEGORIES.map((c) => `<option value="${c}" ${existing?.category === c ? 'selected' : ''}>${c}</option>`).join('')}
-              </select>
+              <select id="inv_category">${categoryOptionsHtml}</select>
+            </div>
+            <div class="form-group" id="inv_template_wrap" data-new="${isNew ? '1' : '0'}" style="display:none">
+              <label for="inv_template">Quick-add template</label>
+              <select id="inv_template"><option value="">— Optional —</option></select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="inv_type" id="inv_type_label">Type / variant</label>
+              <input type="text" id="inv_type" value="${escapeHtml(existing?.type || '')}" placeholder="e.g. Oil, filter">
             </div>
             <div class="form-group">
-              <label for="inv_type">Type</label>
-              <input type="text" id="inv_type" value="${escapeHtml(existing?.type || '')}" placeholder="e.g. Oil, Filter">
+              <label for="inv_d_condition">Condition</label>
+              <select id="inv_d_condition">${conditionOptionsHtml}</select>
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
               <label for="inv_location">Location</label>
-              <input type="text" id="inv_location" value="${escapeHtml(existing?.location || '')}" placeholder="e.g. Engine bay">
+              <input type="text" id="inv_location" value="${escapeHtml(existing?.location || '')}" placeholder="e.g. Sail locker, Cockpit">
             </div>
             <div class="form-group">
-              <label for="inv_position">Position</label>
-              <input type="text" id="inv_position" value="${escapeHtml(existing?.position || '')}" placeholder="e.g. Starboard shelf">
+              <label for="inv_position">Position / note</label>
+              <input type="text" id="inv_position" value="${escapeHtml(existing?.position || '')}" placeholder="e.g. Port side">
             </div>
           </div>
         </div>
 
-        <div class="form-section">
+        <div class="form-section inv-cat-panel" id="inv-panel-sails" style="display:none">
+          <h4>Sail details</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="inv_d_sail_type">Sail type</label>
+              <select id="inv_d_sail_type">${sailTypeOptionsHtml}</select>
+            </div>
+            <div class="form-group">
+              <label for="inv_d_sailmaker">Sailmaker</label>
+              <input type="text" id="inv_d_sailmaker" value="${escapeHtml(d.sailmaker || '')}" placeholder="e.g. North, Doyle">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="inv_d_sail_material">Material</label>
+              <input type="text" id="inv_d_sail_material" value="${escapeHtml(d.sail_material || '')}" placeholder="e.g. Dacron, laminate">
+            </div>
+            <div class="form-group">
+              <label for="inv_d_stored_location">Stored location</label>
+              <input type="text" id="inv_d_stored_location" value="${escapeHtml(d.stored_location || '')}" placeholder="e.g. Forward locker">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="inv_d_purchase_date">Purchase date</label><input type="date" id="inv_d_purchase_date" value="${escapeHtml(d.purchase_date || '')}"></div>
+            <div class="form-group"><label for="inv_d_installed_date">Installed / bent on</label><input type="date" id="inv_d_installed_date" value="${escapeHtml(d.installed_date || '')}"></div>
+            <div class="form-group"><label for="inv_d_last_inspected_date">Last inspected</label><input type="date" id="inv_d_last_inspected_date" value="${escapeHtml(d.last_inspected_date || '')}"></div>
+          </div>
+        </div>
+
+        <div class="form-section inv-cat-panel" id="inv-panel-winches" style="display:none">
+          <h4>Winch details</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="inv_supplier_brand_w">Brand</label>
+              <input type="text" id="inv_supplier_brand_w" value="${escapeHtml(existing?.supplier_brand || '')}" placeholder="e.g. Lewmar, Harken">
+            </div>
+            <div class="form-group">
+              <label for="inv_type_w">Model</label>
+              <input type="text" id="inv_type_w" value="${escapeHtml(existing?.type || '')}" placeholder="e.g. 40ST">
+            </div>
+            <div class="form-group">
+              <label for="inv_d_winch_size">Size</label>
+              <input type="text" id="inv_d_winch_size" value="${escapeHtml(d.winch_size || '')}" placeholder="e.g. 40">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-row"><input type="checkbox" id="inv_d_self_tailing" ${d.self_tailing ? 'checked' : ''}><span>Self-tailing</span></label>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-row"><input type="checkbox" id="inv_d_electric_winch" ${d.electric_winch ? 'checked' : ''}><span>Electric</span></label>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="inv_d_installed_date_w">Installed date</label><input type="date" id="inv_d_installed_date_w" value="${escapeHtml(d.installed_date || '')}"></div>
+            <div class="form-group"><label for="inv_d_last_serviced_date">Last serviced</label><input type="date" id="inv_d_last_serviced_date" value="${escapeHtml(d.last_serviced_date || '')}"></div>
+          </div>
+        </div>
+
+        <div class="form-section inv-cat-panel" id="inv-panel-running-rigging" style="display:none">
+          <h4>Running rigging</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="inv_d_rigging_purpose">Purpose</label>
+              <input type="text" id="inv_d_rigging_purpose" value="${escapeHtml(d.rigging_purpose || '')}" placeholder="e.g. Halyard, Sheet">
+            </div>
+            <div class="form-group">
+              <label for="inv_d_rigging_use_location">Use / lead</label>
+              <input type="text" id="inv_d_rigging_use_location" value="${escapeHtml(d.rigging_use_location || '')}" placeholder="e.g. Masthead to cockpit">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="inv_d_line_material">Material</label><input type="text" id="inv_d_line_material" value="${escapeHtml(d.line_material || '')}" placeholder="e.g. Dyneema, polyester"></div>
+            <div class="form-group"><label for="inv_d_line_diameter">Diameter</label><input type="text" id="inv_d_line_diameter" value="${escapeHtml(d.line_diameter || '')}" placeholder="e.g. 10 mm"></div>
+            <div class="form-group"><label for="inv_d_line_length">Length</label><input type="text" id="inv_d_line_length" value="${escapeHtml(d.line_length || '')}" placeholder="e.g. 35 m"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="inv_d_installed_date_r">Installed date</label><input type="date" id="inv_d_installed_date_r" value="${escapeHtml(d.installed_date || '')}"></div>
+            <div class="form-group"><label for="inv_d_last_replaced_date">Last replaced</label><input type="date" id="inv_d_last_replaced_date" value="${escapeHtml(d.last_replaced_date || '')}"></div>
+          </div>
+        </div>
+
+        <div class="form-section inv-cat-panel" id="inv-panel-standing-rigging" style="display:none">
+          <h4>Standing rigging</h4>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="inv_d_standing_element_type">Element type</label>
+              <input type="text" id="inv_d_standing_element_type" value="${escapeHtml(d.standing_element_type || '')}" placeholder="e.g. Cap shroud, Forestay">
+            </div>
+            <div class="form-group">
+              <label for="inv_d_standing_location_note">Location / side</label>
+              <input type="text" id="inv_d_standing_location_note" value="${escapeHtml(d.standing_location_note || '')}" placeholder="e.g. Port, forward">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="inv_d_installed_date_s">Installed date</label><input type="date" id="inv_d_installed_date_s" value="${escapeHtml(d.installed_date || '')}"></div>
+            <div class="form-group"><label for="inv_d_last_inspected_date_s">Last inspected</label><input type="date" id="inv_d_last_inspected_date_s" value="${escapeHtml(d.last_inspected_date || '')}"></div>
+            <div class="form-group"><label for="inv_d_recommended_replacement_date">Recommended replacement</label><input type="date" id="inv_d_recommended_replacement_date" value="${escapeHtml(d.recommended_replacement_date || '')}"></div>
+          </div>
+        </div>
+
+        <div class="form-section inv-cat-panel" id="inv-panel-deck-hardware" style="display:none">
+          <h4>Deck hardware</h4>
+          <div class="form-group">
+            <label for="inv_d_deck_brand_model">Brand / model</label>
+            <input type="text" id="inv_d_deck_brand_model" value="${escapeHtml(d.deck_brand_model || '')}" placeholder="e.g. Spinlock XTS">
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label for="inv_d_installed_date_d">Installed date</label><input type="date" id="inv_d_installed_date_d" value="${escapeHtml(d.installed_date || '')}"></div>
+            <div class="form-group"><label for="inv_d_last_inspected_date_d">Last inspected</label><input type="date" id="inv_d_last_inspected_date_d" value="${escapeHtml(d.last_inspected_date || '')}"></div>
+          </div>
+        </div>
+
+        <div class="form-section" id="inv-section-lifecycle-general">
+          <h4>Optional tracking</h4>
+          <p class="text-muted" style="margin-top:0">Purchase date and key dates for parts and stores.</p>
+          <div class="form-row">
+            <div class="form-group"><label for="inv_d_purchase_date_g">Purchase date</label><input type="date" id="inv_d_purchase_date_g" value="${escapeHtml(d.purchase_date || '')}"></div>
+          </div>
+        </div>
+
+        <div class="form-section" id="inv-section-stock">
           <h4>Stock levels</h4>
           <div class="form-row">
             <div class="form-group">
@@ -425,7 +818,7 @@ async function showInventoryForm() {
           <div class="form-group">
             <label class="checkbox-row">
               <input type="checkbox" id="inv_critical_spare" ${existing?.critical_spare ? 'checked' : ''}>
-              <span>Critical spare (show stronger warning when out of stock)</span>
+              <span>Critical spare (stronger alert when out of stock)</span>
             </label>
           </div>
         </div>
@@ -437,8 +830,8 @@ async function showInventoryForm() {
               <label for="inv_part_number">Part number</label>
               <input type="text" id="inv_part_number" value="${escapeHtml(existing?.part_number || '')}">
             </div>
-            <div class="form-group">
-              <label for="inv_supplier_brand">Supplier / Brand</label>
+            <div class="form-group" id="inv_supplier_group">
+              <label for="inv_supplier_brand">Supplier / brand</label>
               <input type="text" id="inv_supplier_brand" value="${escapeHtml(existing?.supplier_brand || '')}">
             </div>
           </div>
@@ -448,7 +841,7 @@ async function showInventoryForm() {
           </div>
           <div class="form-group">
             <label for="inv_last_restocked_date">Last restocked date</label>
-            <input type="date" id="inv_last_restocked_date" value="${existing?.last_restocked_date || ''}">
+            <input type="date" id="inv_last_restocked_date" value="${escapeHtml(existing?.last_restocked_date || '')}">
           </div>
         </div>
 
@@ -477,6 +870,44 @@ async function showInventoryForm() {
 
   container.innerHTML = formHtml;
 
+  const catEl = document.getElementById('inv_category');
+  if (catEl) {
+    repopulateTemplateSelect(catEl.value);
+    catEl.addEventListener('change', () => {
+      repopulateTemplateSelect(catEl.value);
+      syncInventoryFormPanels();
+    });
+  }
+  const tmplEl = document.getElementById('inv_template');
+  if (tmplEl) {
+    tmplEl.addEventListener('change', () => {
+      const cat = document.getElementById('inv_category')?.value;
+      const list = INVENTORY_TEMPLATES[cat] || [];
+      const t = list[Number(tmplEl.value)];
+      if (!t) return;
+      const nameEl = document.getElementById('inv_name');
+      if (nameEl) nameEl.value = t.name || '';
+      const typeEl = document.getElementById('inv_type');
+      if (typeEl && t.type != null) typeEl.value = t.type;
+      if (t.detail && typeof t.detail === 'object') {
+        if (t.detail.sail_type) {
+          const st = document.getElementById('inv_d_sail_type');
+          if (st) st.value = t.detail.sail_type;
+        }
+        if (t.detail.standing_element_type) {
+          const st = document.getElementById('inv_d_standing_element_type');
+          if (st) st.value = t.detail.standing_element_type;
+        }
+        if (t.detail.rigging_purpose) {
+          const st = document.getElementById('inv_d_rigging_purpose');
+          if (st) st.value = t.detail.rigging_purpose;
+        }
+      }
+    });
+  }
+
+  syncInventoryFormPanels();
+
   const attachmentsList = document.getElementById('inventory-attachments-list');
   const addPhotoBtn = document.getElementById('inventory-add-photo-btn');
   if (attachmentsList) renderInventoryAttachments(attachmentsList);
@@ -497,10 +928,30 @@ async function showInventoryForm() {
     }
     setSaveButtonLoading(btn, true);
 
+    const category = document.getElementById('inv_category').value || null;
+    const dFromForm = readDetailFromForm(category);
+
+    if (category === 'Winches') {
+      const bw = document.getElementById('inv_supplier_brand_w')?.value?.trim() || '';
+      const tw = document.getElementById('inv_type_w')?.value?.trim() || '';
+      const refBrand = document.getElementById('inv_supplier_brand');
+      const refType = document.getElementById('inv_type');
+      if (refBrand) refBrand.value = bw;
+      if (refType) refType.value = tw;
+    }
+
+    let typeVal = document.getElementById('inv_type')?.value?.trim() || null;
+    if (category === 'Sails') {
+      const st = document.getElementById('inv_d_sail_type')?.value?.trim() || '';
+      if (st) typeVal = st;
+    }
+
+    const detailOut = mergeDetail(existing, dFromForm);
+
     const payload = {
       name: document.getElementById('inv_name').value.trim(),
-      category: document.getElementById('inv_category').value || null,
-      type: document.getElementById('inv_type').value.trim() || null,
+      category,
+      type: typeVal,
       location: document.getElementById('inv_location').value.trim() || null,
       position: document.getElementById('inv_position').value.trim() || null,
       required_quantity: document.getElementById('inv_required_quantity').value.trim() || null,
@@ -511,8 +962,14 @@ async function showInventoryForm() {
       supplier_brand: document.getElementById('inv_supplier_brand').value.trim() || null,
       url: document.getElementById('inv_url').value.trim() || null,
       last_restocked_date: document.getElementById('inv_last_restocked_date').value || null,
-      notes: document.getElementById('inv_notes').value.trim() || null
+      notes: document.getElementById('inv_notes').value.trim() || null,
+      detail: detailOut
     };
+
+    if (category === 'Winches') {
+      payload.supplier_brand = document.getElementById('inv_supplier_brand_w').value.trim() || null;
+      payload.type = document.getElementById('inv_type_w').value.trim() || null;
+    }
 
     try {
       if (isNew) {

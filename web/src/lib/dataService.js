@@ -12,7 +12,9 @@ import {
   projectsStorage,
   inventoryStorage,
   uploadsStorage,
-  calendarEventsStorage
+  calendarEventsStorage,
+  engineMaintenanceScheduleStorage,
+  sailsRiggingMaintenanceScheduleStorage
 } from './storage.js';
 
 // Boat limits (design allows future tiers to override without schema change)
@@ -35,6 +37,25 @@ function logSupabaseFallback(resource, error) {
   console.warn(
     `[BoatMatey] Cloud sync unavailable for ${resource}.`,
     error?.message || error
+  );
+}
+
+/**
+ * PostgREST PGRST205 / missing relation — table not in DB (migrations not applied) or schema cache stale.
+ * In that case we fall back to local storage so schedules still work on this device.
+ */
+function shouldFallbackMaintenanceScheduleToLocal(error) {
+  if (!error) return false;
+  const code = String(error.code || '');
+  const msg = String(error.message || '').toLowerCase();
+  const details = String(error.details || '').toLowerCase();
+  return (
+    code === 'PGRST205' ||
+    code === '42P01' ||
+    msg.includes('could not find the table') ||
+    msg.includes('schema cache') ||
+    (msg.includes('relation') && msg.includes('does not exist')) ||
+    details.includes('does not exist')
   );
 }
 
@@ -863,6 +884,7 @@ export async function deleteEngine(engineId) {
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
     enginesStorage.delete(engineId);
+    engineMaintenanceScheduleStorage.removeByEngineId(engineId);
     return;
   }
 
@@ -871,6 +893,357 @@ export async function deleteEngine(engineId) {
     console.error('deleteEngine error:', error);
   } else {
     enginesStorage.delete(engineId);
+    const { error: schedErr } = await supabase.from('engine_maintenance_schedules').delete().eq('engine_id', engineId);
+    if (schedErr) console.warn('deleteEngine: schedule cleanup:', schedErr.message || schedErr);
+    engineMaintenanceScheduleStorage.removeByEngineId(engineId);
+  }
+}
+
+function mapEngineMaintScheduleFromRemote(row, boatId) {
+  return {
+    id: row.id,
+    boat_id: boatId || row.boat_id,
+    engine_id: row.engine_id,
+    owner_id: row.owner_id,
+    task_name: row.task_name,
+    category: row.category,
+    notes: row.notes,
+    interval_months: row.interval_months,
+    interval_hours: row.interval_hours,
+    last_completed_date: row.last_completed_date,
+    last_completed_engine_hours:
+      row.last_completed_engine_hours != null ? Number(row.last_completed_engine_hours) : null,
+    is_active: row.is_active !== false,
+    template_key: row.template_key,
+    sort_order: row.sort_order ?? 0,
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
+}
+
+// ----------------- Engine maintenance schedules (planning; not service history) -----------------
+
+export async function getEngineMaintenanceSchedules(boatId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return engineMaintenanceScheduleStorage.getAll(boatId);
+  }
+
+  const { data, error } = await supabase
+    .from('engine_maintenance_schedules')
+    .select('*')
+    .eq('boat_id', boatId)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    if (shouldFallbackMaintenanceScheduleToLocal(error)) {
+      logSupabaseFallback('engine_maintenance_schedules', error);
+    } else {
+      console.error('getEngineMaintenanceSchedules error:', error);
+    }
+    return engineMaintenanceScheduleStorage.getAll(boatId);
+  }
+
+  const mapped = (data || []).map((r) => mapEngineMaintScheduleFromRemote(r, boatId));
+  engineMaintenanceScheduleStorage.replaceForBoat(boatId, mapped);
+  return mapped;
+}
+
+export async function createEngineMaintenanceSchedule(boatId, payload) {
+  if (await isBoatArchived(boatId)) return null;
+  const session = await getSession();
+  const months = payload.interval_months != null ? Number(payload.interval_months) : null;
+  const hours = payload.interval_hours != null ? Number(payload.interval_hours) : null;
+  if (!((months && months > 0) || (hours && hours > 0))) return null;
+
+  const rowLocal = {
+    engine_id: payload.engine_id,
+    task_name: (payload.task_name || '').trim() || 'Maintenance',
+    category: payload.category ?? null,
+    notes: payload.notes ?? null,
+    interval_months: months && months > 0 ? Math.round(months) : null,
+    interval_hours: hours && hours > 0 ? Math.round(hours) : null,
+    last_completed_date: payload.last_completed_date ?? null,
+    last_completed_engine_hours:
+      payload.last_completed_engine_hours != null && payload.last_completed_engine_hours !== ''
+        ? Number(payload.last_completed_engine_hours)
+        : null,
+    is_active: payload.is_active !== false,
+    template_key: payload.template_key ?? null,
+    sort_order: payload.sort_order != null ? Number(payload.sort_order) : 0
+  };
+
+  if (!session || !isSupabaseEnabled()) {
+    const toSave = { ...rowLocal, owner_id: 'local' };
+    engineMaintenanceScheduleStorage.save(toSave, boatId);
+    return engineMaintenanceScheduleStorage.get(toSave.id);
+  }
+
+  const { data, error } = await supabase
+    .from('engine_maintenance_schedules')
+    .insert({
+      boat_id: boatId,
+      engine_id: rowLocal.engine_id,
+      owner_id: session.user.id,
+      task_name: rowLocal.task_name,
+      category: rowLocal.category,
+      notes: rowLocal.notes,
+      interval_months: rowLocal.interval_months,
+      interval_hours: rowLocal.interval_hours,
+      last_completed_date: rowLocal.last_completed_date,
+      last_completed_engine_hours: rowLocal.last_completed_engine_hours,
+      is_active: rowLocal.is_active,
+      template_key: rowLocal.template_key,
+      sort_order: rowLocal.sort_order
+    })
+    .select('*')
+    .single();
+
+  if (error) {
+    if (shouldFallbackMaintenanceScheduleToLocal(error)) {
+      logSupabaseFallback('engine_maintenance_schedules', error);
+      const toSave = { ...rowLocal, owner_id: session.user?.id || 'local' };
+      engineMaintenanceScheduleStorage.save(toSave, boatId);
+      return engineMaintenanceScheduleStorage.get(toSave.id);
+    }
+    console.error('createEngineMaintenanceSchedule error:', error);
+    return null;
+  }
+  const mapped = mapEngineMaintScheduleFromRemote(data, boatId);
+  engineMaintenanceScheduleStorage.save(mapped, boatId);
+  return mapped;
+}
+
+export async function updateEngineMaintenanceSchedule(scheduleId, payload) {
+  const session = await getSession();
+  const existing = engineMaintenanceScheduleStorage.get(scheduleId);
+  const boatId = existing?.boat_id || payload.boat_id;
+
+  if (!session || !isSupabaseEnabled()) {
+    if (existing) {
+      engineMaintenanceScheduleStorage.save({ ...existing, ...payload, id: scheduleId }, boatId);
+    }
+    return;
+  }
+
+  const update = {};
+  if ('task_name' in payload) update.task_name = (payload.task_name || '').trim() || 'Maintenance';
+  if ('category' in payload) update.category = payload.category;
+  if ('notes' in payload) update.notes = payload.notes;
+  if ('interval_months' in payload)
+    update.interval_months = payload.interval_months != null ? Math.round(Number(payload.interval_months)) : null;
+  if ('interval_hours' in payload)
+    update.interval_hours = payload.interval_hours != null ? Math.round(Number(payload.interval_hours)) : null;
+  if ('last_completed_date' in payload) update.last_completed_date = payload.last_completed_date;
+  if ('last_completed_engine_hours' in payload) {
+    update.last_completed_engine_hours =
+      payload.last_completed_engine_hours != null && payload.last_completed_engine_hours !== ''
+        ? Number(payload.last_completed_engine_hours)
+        : null;
+  }
+  if ('is_active' in payload) update.is_active = !!payload.is_active;
+  if ('template_key' in payload) update.template_key = payload.template_key;
+  if ('sort_order' in payload) update.sort_order = payload.sort_order != null ? Number(payload.sort_order) : 0;
+
+  const { error } = await supabase.from('engine_maintenance_schedules').update(update).eq('id', scheduleId);
+  if (error) {
+    if (shouldFallbackMaintenanceScheduleToLocal(error)) {
+      logSupabaseFallback('engine_maintenance_schedules', error);
+      if (existing) {
+        engineMaintenanceScheduleStorage.save({ ...existing, ...update, id: scheduleId }, boatId);
+      }
+      return;
+    }
+    console.error('updateEngineMaintenanceSchedule error:', error);
+    return;
+  }
+  if (existing) {
+    engineMaintenanceScheduleStorage.save({ ...existing, ...update, id: scheduleId }, boatId);
+  }
+}
+
+export async function deleteEngineMaintenanceSchedule(scheduleId) {
+  const session = await getSession();
+  const existing = engineMaintenanceScheduleStorage.get(scheduleId);
+  if (!session || !isSupabaseEnabled()) {
+    engineMaintenanceScheduleStorage.delete(scheduleId);
+    return;
+  }
+  const { error } = await supabase.from('engine_maintenance_schedules').delete().eq('id', scheduleId);
+  if (error) {
+    if (shouldFallbackMaintenanceScheduleToLocal(error)) {
+      logSupabaseFallback('engine_maintenance_schedules', error);
+      engineMaintenanceScheduleStorage.delete(scheduleId);
+    } else {
+      console.error('deleteEngineMaintenanceSchedule error:', error);
+    }
+  } else {
+    engineMaintenanceScheduleStorage.delete(scheduleId);
+  }
+}
+
+function mapSailsRigMaintScheduleFromRemote(row, boatId) {
+  return {
+    id: row.id,
+    boat_id: boatId || row.boat_id,
+    owner_id: row.owner_id,
+    task_name: row.task_name,
+    category: row.category,
+    notes: row.notes,
+    interval_months: row.interval_months != null ? Number(row.interval_months) : null,
+    last_completed_date: row.last_completed_date,
+    is_active: row.is_active !== false,
+    template_key: row.template_key,
+    sort_order: row.sort_order ?? 0,
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
+}
+
+// ----------------- Sails & rigging maintenance schedules (calendar months only) -----------------
+
+export async function getSailsRiggingMaintenanceSchedules(boatId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return sailsRiggingMaintenanceScheduleStorage.getAll(boatId);
+  }
+
+  const { data, error } = await supabase
+    .from('sails_rigging_maintenance_schedules')
+    .select('*')
+    .eq('boat_id', boatId)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    if (shouldFallbackMaintenanceScheduleToLocal(error)) {
+      logSupabaseFallback('sails_rigging_maintenance_schedules', error);
+    } else {
+      console.error('getSailsRiggingMaintenanceSchedules error:', error);
+    }
+    return sailsRiggingMaintenanceScheduleStorage.getAll(boatId);
+  }
+
+  const mapped = (data || []).map((r) => mapSailsRigMaintScheduleFromRemote(r, boatId));
+  sailsRiggingMaintenanceScheduleStorage.replaceForBoat(boatId, mapped);
+  return mapped;
+}
+
+export async function createSailsRiggingMaintenanceSchedule(boatId, payload) {
+  if (await isBoatArchived(boatId)) return null;
+  const session = await getSession();
+  const months = payload.interval_months != null ? Number(payload.interval_months) : null;
+  if (!months || months <= 0) return null;
+
+  const rowLocal = {
+    task_name: (payload.task_name || '').trim() || 'Maintenance',
+    category: payload.category ?? null,
+    notes: payload.notes ?? null,
+    interval_months: Math.round(months),
+    last_completed_date: payload.last_completed_date ?? null,
+    is_active: payload.is_active !== false,
+    template_key: payload.template_key ?? null,
+    sort_order: payload.sort_order != null ? Number(payload.sort_order) : 0
+  };
+
+  if (!session || !isSupabaseEnabled()) {
+    const toSave = { ...rowLocal, owner_id: 'local' };
+    sailsRiggingMaintenanceScheduleStorage.save(toSave, boatId);
+    return sailsRiggingMaintenanceScheduleStorage.get(toSave.id);
+  }
+
+  const { data, error } = await supabase
+    .from('sails_rigging_maintenance_schedules')
+    .insert({
+      boat_id: boatId,
+      owner_id: session.user.id,
+      task_name: rowLocal.task_name,
+      category: rowLocal.category,
+      notes: rowLocal.notes,
+      interval_months: rowLocal.interval_months,
+      last_completed_date: rowLocal.last_completed_date,
+      is_active: rowLocal.is_active,
+      template_key: rowLocal.template_key,
+      sort_order: rowLocal.sort_order
+    })
+    .select('*')
+    .single();
+
+  if (error) {
+    if (shouldFallbackMaintenanceScheduleToLocal(error)) {
+      logSupabaseFallback('sails_rigging_maintenance_schedules', error);
+      const toSave = { ...rowLocal, owner_id: session.user?.id || 'local' };
+      sailsRiggingMaintenanceScheduleStorage.save(toSave, boatId);
+      return sailsRiggingMaintenanceScheduleStorage.get(toSave.id);
+    }
+    console.error('createSailsRiggingMaintenanceSchedule error:', error);
+    return null;
+  }
+  const mapped = mapSailsRigMaintScheduleFromRemote(data, boatId);
+  sailsRiggingMaintenanceScheduleStorage.save(mapped, boatId);
+  return mapped;
+}
+
+export async function updateSailsRiggingMaintenanceSchedule(scheduleId, payload) {
+  const session = await getSession();
+  const existing = sailsRiggingMaintenanceScheduleStorage.get(scheduleId);
+  const boatId = existing?.boat_id || payload.boat_id;
+
+  if (!session || !isSupabaseEnabled()) {
+    if (existing) {
+      sailsRiggingMaintenanceScheduleStorage.save({ ...existing, ...payload, id: scheduleId }, boatId);
+    }
+    return;
+  }
+
+  const update = {};
+  if ('task_name' in payload) update.task_name = (payload.task_name || '').trim() || 'Maintenance';
+  if ('category' in payload) update.category = payload.category;
+  if ('notes' in payload) update.notes = payload.notes;
+  if ('interval_months' in payload) {
+    const n = payload.interval_months != null ? Math.round(Number(payload.interval_months)) : null;
+    if (n && n > 0) update.interval_months = n;
+  }
+  if ('last_completed_date' in payload) update.last_completed_date = payload.last_completed_date;
+  if ('is_active' in payload) update.is_active = !!payload.is_active;
+  if ('template_key' in payload) update.template_key = payload.template_key;
+  if ('sort_order' in payload) update.sort_order = payload.sort_order != null ? Number(payload.sort_order) : 0;
+
+  const { error } = await supabase.from('sails_rigging_maintenance_schedules').update(update).eq('id', scheduleId);
+  if (error) {
+    if (shouldFallbackMaintenanceScheduleToLocal(error)) {
+      logSupabaseFallback('sails_rigging_maintenance_schedules', error);
+      if (existing) {
+        sailsRiggingMaintenanceScheduleStorage.save({ ...existing, ...update, id: scheduleId }, boatId);
+      }
+      return;
+    }
+    console.error('updateSailsRiggingMaintenanceSchedule error:', error);
+    return;
+  }
+  if (existing) {
+    sailsRiggingMaintenanceScheduleStorage.save({ ...existing, ...update, id: scheduleId }, boatId);
+  }
+}
+
+export async function deleteSailsRiggingMaintenanceSchedule(scheduleId) {
+  const session = await getSession();
+  const existing = sailsRiggingMaintenanceScheduleStorage.get(scheduleId);
+  if (!session || !isSupabaseEnabled()) {
+    sailsRiggingMaintenanceScheduleStorage.delete(scheduleId);
+    return;
+  }
+  const { error } = await supabase.from('sails_rigging_maintenance_schedules').delete().eq('id', scheduleId);
+  if (error) {
+    if (shouldFallbackMaintenanceScheduleToLocal(error)) {
+      logSupabaseFallback('sails_rigging_maintenance_schedules', error);
+      sailsRiggingMaintenanceScheduleStorage.delete(scheduleId);
+    } else {
+      console.error('deleteSailsRiggingMaintenanceSchedule error:', error);
+    }
+  } else {
+    sailsRiggingMaintenanceScheduleStorage.delete(scheduleId);
   }
 }
 
@@ -2597,7 +2970,9 @@ export async function getInventory(boatId) {
   const list = (data || []).map((row) => ({
     ...row,
     boat_id: boatId,
-    critical_spare: !!row.critical_spare
+    critical_spare: !!row.critical_spare,
+    detail:
+      row.detail && typeof row.detail === 'object' && !Array.isArray(row.detail) ? row.detail : {}
   }));
   inventoryStorage.replaceForBoat(boatId, list);
   return list;
@@ -2622,7 +2997,11 @@ export async function createInventoryItem(boatId, payload) {
       supplier_brand: payload.supplier_brand || null,
       critical_spare: !!payload.critical_spare,
       last_restocked_date: payload.last_restocked_date || null,
-      unit: payload.unit || null
+      unit: payload.unit || null,
+      detail:
+        payload.detail && typeof payload.detail === 'object' && !Array.isArray(payload.detail)
+          ? payload.detail
+          : {}
     };
     inventoryStorage.save(item, boatId);
     return inventoryStorage.get(item.id) || item;
@@ -2645,7 +3024,11 @@ export async function createInventoryItem(boatId, payload) {
     supplier_brand: payload.supplier_brand || null,
     critical_spare: !!payload.critical_spare,
     last_restocked_date: payload.last_restocked_date || null,
-    unit: payload.unit || null
+    unit: payload.unit || null,
+    detail:
+      payload.detail && typeof payload.detail === 'object' && !Array.isArray(payload.detail)
+        ? payload.detail
+        : {}
   };
 
   const { data, error } = await supabase
@@ -2698,6 +3081,12 @@ export async function updateInventoryItem(itemId, payload) {
     last_restocked_date: payload.last_restocked_date ?? null,
     unit: payload.unit ?? null
   };
+  if (payload.detail !== undefined) {
+    updateRow.detail =
+      payload.detail && typeof payload.detail === 'object' && !Array.isArray(payload.detail)
+        ? payload.detail
+        : {};
+  }
 
   const { error } = await supabase
     .from('boat_inventory')

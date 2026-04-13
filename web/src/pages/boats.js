@@ -27,6 +27,7 @@ import {
 } from '../lib/dataService.js';
 import { getActiveBoatLimit } from '../lib/subscription.js';
 import { canAccessRoute } from '../lib/access.js';
+import { consumeOpenAddBoatOnHome } from '../lib/firstRunOnboarding.js';
 
 let editingBoatId = null;
 
@@ -202,6 +203,9 @@ function createMaydayCard(boats) {
 
 async function onMount() {
   await loadBoats();
+  if (consumeOpenAddBoatOnHome()) {
+    await onAddBoatClick();
+  }
 }
 
 async function loadBoats() {
@@ -730,7 +734,7 @@ async function saveBoat() {
   editingBoatId = null;
   boatFormNativePhotoFile = null;
   if (isFirstBoat && newBoatId) {
-    navigate(`/boat/${newBoatId}`);
+    navigate('/');
     return;
   }
   loadBoats();

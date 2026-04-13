@@ -343,7 +343,8 @@ export function buildPdfReport(data, options = {}) {
       y = newY;
       const stock = item.in_stock_level != null && item.required_quantity != null ? ` (${item.in_stock_level}/${item.required_quantity})` : '';
       const critical = item.critical_spare ? ' [Critical]' : '';
-      doc.text(`${item.name || 'Item'}${stock}${critical}`, MARGIN, y);
+      const cat = item.category ? ` [${item.category}]` : '';
+      doc.text(`${item.name || 'Item'}${cat}${stock}${critical}`, MARGIN, y);
       y += LINE_HEIGHT;
       if (item.location) y = addLabelValue(doc, 'Location', item.location, y);
       if (item.notes) y = addWrappedText(doc, item.notes, y);

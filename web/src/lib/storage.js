@@ -16,6 +16,10 @@ const STORAGE_KEYS = {
   INVENTORY: 'boatmatey_inventory', // Scoped by boat_id
   UPLOADS: 'boatmatey_uploads', // Scoped by boat_id
   CALENDAR_EVENTS: 'boatmatey_calendar_events', // Scoped by boat_id
+  /** Per-engine maintenance plans (intervals, last done); scoped by boat_id */
+  ENGINE_MAINTENANCE_SCHEDULES: 'boatmatey_engine_maintenance_schedules',
+  /** Sail & rigging maintenance plans (calendar months only); scoped by boat_id */
+  SAILS_RIGGING_MAINTENANCE_SCHEDULES: 'boatmatey_sails_rigging_maintenance_schedules',
   SETTINGS: 'boatmatey_settings',
   /** Per-boat ISO timestamp when dashboard onboarding first reached “setup complete” (reminder flow done). */
   BOAT_DASHBOARD_SETUP_COMPLETE_AT: 'boatmatey_boat_dashboard_setup_complete_at'
@@ -133,6 +137,9 @@ export const boatsStorage = {
     const inventory = inventoryStorage.getAll().filter(i => i.boat_id !== boatId);
     storage.set(STORAGE_KEYS.INVENTORY, inventory);
 
+    const maintSched = engineMaintenanceScheduleStorage.getAll().filter(s => s.boat_id !== boatId);
+    storage.set(STORAGE_KEYS.ENGINE_MAINTENANCE_SCHEDULES, maintSched);
+
     const uploads = uploadsStorage.getAll().filter(u => u.boat_id !== boatId);
     storage.set(STORAGE_KEYS.UPLOADS, uploads);
 
@@ -234,6 +241,105 @@ export const enginesStorage = {
     const all = this.getAll().filter(e => e.boat_id !== boatId);
     const withBoatId = (engines || []).map(e => ({ ...e, boat_id: boatId }));
     return storage.set(STORAGE_KEYS.ENGINES, all.concat(withBoatId));
+  }
+};
+
+/**
+ * Engine maintenance schedule rows (planning layer; scoped by boat_id, keyed by engine_id).
+ */
+export const engineMaintenanceScheduleStorage = {
+  getAll(boatId = null) {
+    const all = storage.get(STORAGE_KEYS.ENGINE_MAINTENANCE_SCHEDULES, []);
+    if (boatId) return all.filter((s) => s.boat_id === boatId);
+    return all;
+  },
+
+  getForEngine(engineId) {
+    return this.getAll().filter((s) => s.engine_id === engineId);
+  },
+
+  get(id) {
+    return this.getAll().find((s) => s.id === id) || null;
+  },
+
+  save(row, boatId = null) {
+    const all = this.getAll();
+    const bid = boatId || row.boat_id;
+    if (row.id) {
+      const index = all.findIndex((s) => s.id === row.id);
+      if (index >= 0) {
+        all[index] = { ...row, boat_id: bid, updated_at: new Date().toISOString() };
+      } else {
+        all.push({ ...row, boat_id: bid, created_at: new Date().toISOString() });
+      }
+    } else {
+      row.id = `ems_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      row.boat_id = bid;
+      row.created_at = new Date().toISOString();
+      all.push(row);
+    }
+    return storage.set(STORAGE_KEYS.ENGINE_MAINTENANCE_SCHEDULES, all);
+  },
+
+  delete(id) {
+    const filtered = this.getAll().filter((s) => s.id !== id);
+    return storage.set(STORAGE_KEYS.ENGINE_MAINTENANCE_SCHEDULES, filtered);
+  },
+
+  replaceForBoat(boatId, rows) {
+    const all = this.getAll().filter((s) => s.boat_id !== boatId);
+    const next = (rows || []).map((r) => ({ ...r, boat_id: boatId }));
+    return storage.set(STORAGE_KEYS.ENGINE_MAINTENANCE_SCHEDULES, all.concat(next));
+  },
+
+  removeByEngineId(engineId) {
+    const filtered = this.getAll().filter((s) => s.engine_id !== engineId);
+    return storage.set(STORAGE_KEYS.ENGINE_MAINTENANCE_SCHEDULES, filtered);
+  }
+};
+
+/**
+ * Sails & rigging maintenance schedule rows (planning; calendar months only).
+ */
+export const sailsRiggingMaintenanceScheduleStorage = {
+  getAll(boatId = null) {
+    const all = storage.get(STORAGE_KEYS.SAILS_RIGGING_MAINTENANCE_SCHEDULES, []);
+    if (boatId) return all.filter((s) => s.boat_id === boatId);
+    return all;
+  },
+
+  get(id) {
+    return this.getAll().find((s) => s.id === id) || null;
+  },
+
+  save(row, boatId = null) {
+    const all = this.getAll();
+    const bid = boatId || row.boat_id;
+    if (row.id) {
+      const index = all.findIndex((s) => s.id === row.id);
+      if (index >= 0) {
+        all[index] = { ...row, boat_id: bid, updated_at: new Date().toISOString() };
+      } else {
+        all.push({ ...row, boat_id: bid, created_at: new Date().toISOString() });
+      }
+    } else {
+      row.id = `srms_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      row.boat_id = bid;
+      row.created_at = new Date().toISOString();
+      all.push(row);
+    }
+    return storage.set(STORAGE_KEYS.SAILS_RIGGING_MAINTENANCE_SCHEDULES, all);
+  },
+
+  delete(id) {
+    const filtered = this.getAll().filter((s) => s.id !== id);
+    return storage.set(STORAGE_KEYS.SAILS_RIGGING_MAINTENANCE_SCHEDULES, filtered);
+  },
+
+  replaceForBoat(boatId, rows) {
+    const all = this.getAll().filter((s) => s.boat_id !== boatId);
+    const next = (rows || []).map((r) => ({ ...r, boat_id: boatId }));
+    return storage.set(STORAGE_KEYS.SAILS_RIGGING_MAINTENANCE_SCHEDULES, all.concat(next));
   }
 };
 

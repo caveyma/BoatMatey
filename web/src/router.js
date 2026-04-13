@@ -3,8 +3,12 @@
  */
 
 import { supabase } from './lib/supabaseClient.js';
-import { getSessionWithTimeout } from './lib/dataService.js';
+import { getSessionWithTimeout, getBoats } from './lib/dataService.js';
 import { canAccessRoute } from './lib/access.js';
+import {
+  isSkipZeroBoatOnboardingThisLoad,
+  peekOpenAddBoatOnHome
+} from './lib/firstRunOnboarding.js';
 import { refreshBoatUploadsFromCloud } from './lib/uploads.js';
 // Note: subscription check moved to auth flow, not route access
 
@@ -56,6 +60,7 @@ function applyPageColor(path) {
   else if (path.includes('/projects')) key = 'projects';
   else if (path.includes('/inventory')) key = 'inventory';
   else if (path.includes('/reminder')) key = 'calendar';
+  else if (path.includes('/onboarding')) key = 'boat';
 
   if (key) document.body.classList.add(`page-color-${key}`);
 }
@@ -149,6 +154,30 @@ async function loadRoute(path) {
     window.location.hash = accessCheck.redirectTo;
     currentRoute = null;
     return;
+  }
+
+  if (pathNorm === '/onboarding') {
+    try {
+      const boats = await getBoats();
+      if (boats.length > 0) {
+        navigate('/');
+        return;
+      }
+    } catch (e) {
+      console.warn('[Router] Onboarding boat check failed, continuing:', e?.message || e);
+    }
+  }
+
+  if (pathNorm === '/' && !peekOpenAddBoatOnHome()) {
+    try {
+      const boats = await getBoats();
+      if (boats.length === 0 && !isSkipZeroBoatOnboardingThisLoad()) {
+        navigate('/onboarding');
+        return;
+      }
+    } catch (e) {
+      console.warn('[Router] Home onboarding gate failed, showing home:', e?.message || e);
+    }
   }
 
   const match = matchRoute(pathNorm);

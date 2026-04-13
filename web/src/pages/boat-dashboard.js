@@ -7,7 +7,25 @@ import { navigate } from '../router.js';
 import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
 import { showToast } from '../components/toast.js';
-import { getBoat, getEngines, getServiceEntries, getHaulouts, getProjects, getInventory, getEquipment, getLogbook, getLinks, getFuelLogs, getBatteries, getBoatElectrical, getBoatDistressInfo, touchBoatDashboardOpen } from '../lib/dataService.js';
+import {
+  getBoat,
+  getEngines,
+  getServiceEntries,
+  getHaulouts,
+  getProjects,
+  getInventory,
+  getEquipment,
+  getLogbook,
+  getLinks,
+  getFuelLogs,
+  getBatteries,
+  getBoatElectrical,
+  getBoatDistressInfo,
+  getCalendarEvents,
+  getEngineMaintenanceSchedules,
+  getSailsRiggingMaintenanceSchedules,
+  touchBoatDashboardOpen
+} from '../lib/dataService.js';
 import {
   boatsStorage,
   enginesStorage,
@@ -19,15 +37,24 @@ import {
   safetyEquipmentStorage,
   shipsLogStorage,
   linksStorage,
-  boatDashboardSetupCompleteStorage
+  boatDashboardSetupCompleteStorage,
+  sailsRiggingMaintenanceScheduleStorage
 } from '../lib/storage.js';
+import { computeSailsRiggingScheduleStatus } from '../lib/sailsRiggingMaintenanceScheduleDue.js';
 import {
   canAccessCard,
   shouldShowPremiumBadge,
   canAccessPremiumFeature,
-  getBasicPlanRecordLimit
+  getBasicPlanRecordLimit,
+  canAccessRoute
 } from '../lib/access.js';
+import { buildBoatActionDashboardModel } from '../lib/boatActionDashboardData.js';
 import { hasActiveSubscription } from '../lib/subscription.js';
+import {
+  inventorySummaryCounts,
+  inventoryItemNeedsReview,
+  normalizeInventoryItem
+} from '../lib/inventoryMarine.js';
 
 /** Short benefit-led line for premium-locked dashboard cards (free users). */
 const PREMIUM_CARD_TEASER = {
@@ -35,7 +62,7 @@ const PREMIUM_CARD_TEASER = {
   electrical: 'Track batteries and avoid failures',
   haulout: 'Plan and track haul-out work',
   projects: 'Plan projects and track issues',
-  inventory: 'Spares and stores with low-stock alerts',
+  inventory: 'Spares, stores, sails, winches, and rigging',
   navigation: 'Navigation kit and warranty dates',
   safety: 'Safety gear, inspections and expiry dates',
   log: 'Log your trips and journeys',
@@ -66,6 +93,8 @@ const fuelPerformanceIconUrl = new URL('../assets/fuel-performance.png', import.
 const electricalBatteryIconUrl = new URL('../assets/electrical-battery.png', import.meta.url).href;
 const projectIconUrl = new URL('../assets/Project.png', import.meta.url).href;
 const inventoryIconUrl = new URL('../assets/inventory.png', import.meta.url).href;
+/** Same asset as home fleet calendar card (`boats.js`). */
+const calendarCardIconUrl = new URL('../assets/calendar-card.png', import.meta.url).href;
 let currentBoatId = null;
 let currentBoat = null;
 
@@ -168,8 +197,22 @@ function getStatusText(cardId, boatId) {
     case 'watermaker':
       return 'Track watermaker service';
 
-    case 'sails-rigging':
-      return 'Sails & rigging';
+    case 'sails-rigging': {
+      const boat = boatsStorage.get(boatId);
+      if (boat?.boat_type !== 'sailing') return 'Sails & rigging';
+      const rows = sailsRiggingMaintenanceScheduleStorage.getAll(boatId).filter((s) => s.is_active !== false);
+      if (rows.length === 0) return 'Details saved · no schedule yet';
+      let overdueN = 0;
+      let soonN = 0;
+      for (const s of rows) {
+        const st = computeSailsRiggingScheduleStatus(s);
+        if (st === 'overdue') overdueN += 1;
+        else if (st === 'due_soon') soonN += 1;
+      }
+      if (overdueN > 0) return `${overdueN} rigging schedule overdue`;
+      if (soonN > 0) return `${soonN} rigging due within 30 days`;
+      return `${rows.length} rigging schedule item${rows.length !== 1 ? 's' : ''}`;
+    }
 
     case 'fuel':
       return '…';
@@ -181,15 +224,24 @@ function getStatusText(cardId, boatId) {
       return '…';
 
     case 'inventory': {
-      const items = inventoryStorage.getAll(boatId);
+      const items = inventoryStorage.getAll(boatId).map(normalizeInventoryItem);
+      const sum = inventorySummaryCounts(items);
       const lowCount = items.filter((i) => (i.in_stock_level != null ? Number(i.in_stock_level) : 0) <= (i.required_quantity != null ? Number(i.required_quantity) : 0)).length;
       const criticalCount = items.filter((i) => !!i.critical_spare && (i.in_stock_level == null || Number(i.in_stock_level) === 0)).length;
       let line;
       if (items.length === 0) line = 'No items';
       else {
-        const parts = [`${items.length} item${items.length !== 1 ? 's' : ''}`];
-        if (lowCount > 0) parts.push(`${lowCount} low`);
+        const parts = [`${sum.total} item${sum.total !== 1 ? 's' : ''}`];
+        if (sum.sails || sum.winches || sum.rigging) {
+          const seg = [];
+          if (sum.sails) seg.push(`${sum.sails} sail${sum.sails !== 1 ? 's' : ''}`);
+          if (sum.winches) seg.push(`${sum.winches} winch${sum.winches === 1 ? '' : 'es'}`);
+          if (sum.rigging) seg.push(`${sum.rigging} rigging`);
+          parts.push(seg.join(', '));
+        }
+        if (sum.attention) parts.push(`${sum.attention} need attention`);
         if (criticalCount > 0) parts.push(`${criticalCount} critical`);
+        else if (lowCount > 0) parts.push(`${lowCount} low stock`);
         line = parts.join(' · ');
       }
       return withBasicPlanUsageLine('inventory', boatId, line);
@@ -266,6 +318,258 @@ function createCard(id, title, iconName, route, boatId) {
   return card;
 }
 
+function escapeHtmlDash(s) {
+  if (s == null || s === '') return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+const ATTENTION_TILE_ICONS = {
+  overdue: 'wrench',
+  soon: 'calendar',
+  issues: 'clipboard',
+  stock: 'inventory'
+};
+
+/**
+ * Fills the action dashboard host (needs attention, recent activity, quick actions).
+ */
+function mountBoatActionDashboard(boatId, model, isArchived) {
+  const host = document.getElementById('boat-action-dashboard');
+  if (!host) return;
+
+  host.innerHTML = '';
+  if (isArchived) {
+    const wrap = document.createElement('div');
+    wrap.className = 'card boat-action-dash-archive-hint';
+    wrap.innerHTML =
+      '<p class="text-muted" style="margin:0;">This boat is archived. Use the cards below to view records only.</p>';
+    host.appendChild(wrap);
+    return;
+  }
+
+  const { counts, overdue, dueSoon, recentTop, openIssues, hasMaintenanceScheduleAttention } = model;
+  const serviceBase = `/boat/${boatId}/service`;
+  const issuesTarget = `/boat/${boatId}/projects?type=Issue&status=active&archived=active`;
+
+  const anyAttention = counts.overdue + counts.dueSoon + counts.openIssues + counts.lowStock > 0;
+
+  function makeAttentionTile(label, count, path, kind) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    const n = Number(count) || 0;
+    const zeroClass = anyAttention && n === 0 ? ' boat-action-dash-tile--zero' : '';
+    btn.className = `boat-action-dash-tile boat-action-dash-tile--${kind}${zeroClass}`;
+    const iconName = ATTENTION_TILE_ICONS[kind] || 'clipboard';
+    btn.innerHTML = `
+      <span class="boat-action-dash-tile-icon" aria-hidden="true">${renderIcon(iconName)}</span>
+      <span class="boat-action-dash-tile-value">${n}</span>
+      <span class="boat-action-dash-tile-label">${escapeHtmlDash(label)}</span>
+      <span class="boat-action-dash-tile-hint">Open</span>
+    `;
+    btn.addEventListener('click', () => navigate(path));
+    return btn;
+  }
+
+  const needs = document.createElement('section');
+  needs.className = 'boat-action-dash-section boat-action-dash-needs';
+  needs.setAttribute('aria-labelledby', 'boat-dash-needs-title');
+
+  const h2 = document.createElement('h2');
+  h2.className = 'boat-action-dash-section-title boat-action-dash-needs-title';
+  h2.id = 'boat-dash-needs-title';
+  h2.textContent = 'Needs attention';
+  needs.appendChild(h2);
+
+  if (!anyAttention) {
+    const allClear = document.createElement('div');
+    allClear.className = 'boat-action-dash-all-clear';
+    allClear.innerHTML = `
+      <div class="boat-action-dash-all-clear-icon" aria-hidden="true">${renderIcon('check')}</div>
+      <p class="boat-action-dash-all-clear-title">Nothing needs attention right now</p>
+      <p class="boat-action-dash-all-clear-sub text-muted">You are on top of due dates, open issues, and inventory levels for this boat.</p>
+    `;
+    needs.appendChild(allClear);
+  } else {
+    const grid = document.createElement('div');
+    grid.className = 'boat-action-dash-needs-grid';
+    grid.appendChild(makeAttentionTile('Overdue', counts.overdue, `${serviceBase}?due=overdue`, 'overdue'));
+    grid.appendChild(makeAttentionTile('Due in 30 days', counts.dueSoon, `${serviceBase}?due=due_soon`, 'soon'));
+    grid.appendChild(makeAttentionTile('Open issues', counts.openIssues, issuesTarget, 'issues'));
+    grid.appendChild(makeAttentionTile('Low stock', counts.lowStock, `/boat/${boatId}/inventory?stock=low`, 'stock'));
+    needs.appendChild(grid);
+
+    if (hasMaintenanceScheduleAttention) {
+      const hint = document.createElement('p');
+      hint.className = 'text-muted boat-action-dash-schedule-hint';
+      hint.style.cssText = 'margin: 0.5rem 0 0; font-size: 0.9rem;';
+      hint.textContent =
+        'Counts and the list below include engine and sail & rigging maintenance schedules where applicable. The service “Overdue / Due in 30 days” shortcuts still open your service history only.';
+      needs.appendChild(hint);
+    }
+
+    if (openIssues && openIssues.length > 0) {
+      const preview = document.createElement('div');
+      preview.className = 'boat-action-dash-open-preview';
+      const n = openIssues.length;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'boat-action-dash-open-preview-btn';
+      btn.textContent = `${n} open issue${n === 1 ? '' : 's'} need review`;
+      btn.addEventListener('click', () => navigate(issuesTarget));
+      preview.appendChild(btn);
+      needs.appendChild(preview);
+    }
+
+    if (overdue.length > 0 || dueSoon.length > 0) {
+      const list = document.createElement('ul');
+      list.className = 'boat-action-dash-due-list';
+      const lines = [];
+      overdue.slice(0, 4).forEach((row) => lines.push({ ...row, tag: 'Overdue' }));
+      dueSoon.slice(0, 4).forEach((row) => lines.push({ ...row, tag: 'Due' }));
+      lines.slice(0, 6).forEach((row) => {
+        const li = document.createElement('li');
+        const a = document.createElement('button');
+        a.type = 'button';
+        a.className = 'boat-action-dash-due-line';
+        a.innerHTML = `<span class="boat-action-dash-due-tag">${escapeHtmlDash(row.tag)}</span><span class="boat-action-dash-due-meta">${escapeHtmlDash(row.dateStr)}</span><span class="boat-action-dash-due-label">${escapeHtmlDash(row.label)}</span>`;
+        a.addEventListener('click', () => navigate(row.path));
+        li.appendChild(a);
+        list.appendChild(li);
+      });
+      needs.appendChild(list);
+    }
+  }
+
+  host.appendChild(needs);
+
+  const recentSec = document.createElement('section');
+  recentSec.className = 'boat-action-dash-section boat-action-dash-recent';
+  const hRecent = document.createElement('h2');
+  hRecent.className = 'boat-action-dash-section-title';
+  hRecent.textContent = 'Recent activity';
+  recentSec.appendChild(hRecent);
+
+  if (!recentTop.length) {
+    const box = document.createElement('div');
+    box.className = 'boat-action-dash-recent-empty card';
+    const p = document.createElement('p');
+    p.className = 'boat-action-dash-recent-empty-text text-muted';
+    p.textContent = 'No activity yet — start by logging your first service or a fuel entry.';
+    box.appendChild(p);
+    const row = document.createElement('div');
+    row.className = 'boat-action-dash-recent-empty-actions';
+    const svc = document.createElement('button');
+    svc.type = 'button';
+    svc.className = 'btn-primary boat-action-dash-inline-btn';
+    svc.textContent = 'Add service';
+    svc.addEventListener('click', () => navigate(`/boat/${boatId}/service/new`));
+    const fuel = document.createElement('button');
+    fuel.type = 'button';
+    fuel.className = 'btn-secondary boat-action-dash-inline-btn';
+    fuel.textContent = 'Add fuel log';
+    fuel.addEventListener('click', () => navigate(`/boat/${boatId}/fuel`));
+    row.appendChild(svc);
+    row.appendChild(fuel);
+    box.appendChild(row);
+    recentSec.appendChild(box);
+  } else {
+    const ul = document.createElement('ul');
+    ul.className = 'boat-action-dash-recent-list';
+    recentTop.forEach((row) => {
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'boat-action-dash-recent-row';
+      btn.innerHTML = `<span class="boat-action-dash-recent-type">${escapeHtmlDash(row.type)}</span><span class="boat-action-dash-recent-title">${escapeHtmlDash(row.title)}</span><span class="boat-action-dash-recent-date">${escapeHtmlDash(row.dateStr)}</span>`;
+      btn.addEventListener('click', () => navigate(row.path));
+      li.appendChild(btn);
+      ul.appendChild(li);
+    });
+    recentSec.appendChild(ul);
+  }
+  host.appendChild(recentSec);
+
+  const quick = document.createElement('section');
+  quick.className = 'boat-action-dash-section boat-action-dash-quick';
+  const hQuick = document.createElement('h2');
+  hQuick.className = 'boat-action-dash-section-title';
+  hQuick.textContent = 'Quick actions';
+  quick.appendChild(hQuick);
+
+  const qGrid = document.createElement('div');
+  qGrid.className = 'boat-action-dash-quick-grid';
+
+  /** Same icon shell and card colour token as main dashboard cards (`createCard`). */
+  function quickTileWithCardIcon(label, path, imageUrl, cardColorId, title) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = `boat-action-dash-quick-tile card-color-${cardColorId}`;
+    if (title) b.title = title;
+
+    const iconOuter = document.createElement('span');
+    iconOuter.className = 'boat-action-dash-quick-tile-icon boat-action-dash-quick-tile-icon--bitmap';
+
+    const badge = document.createElement('span');
+    badge.className =
+      'dashboard-card-icon-badge dashboard-card-icon-bitmap boat-action-dash-quick-tile-icon-badge';
+    badge.setAttribute('aria-hidden', 'true');
+
+    const img = document.createElement('img');
+    img.src = imageUrl;
+    img.alt = '';
+    img.className = 'dashboard-card-icon-img';
+
+    badge.appendChild(img);
+    iconOuter.appendChild(badge);
+
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'boat-action-dash-quick-tile-label';
+    labelSpan.textContent = label;
+
+    b.appendChild(iconOuter);
+    b.appendChild(labelSpan);
+    b.addEventListener('click', () => navigate(path));
+    return b;
+  }
+
+  qGrid.appendChild(
+    quickTileWithCardIcon('Add service', `/boat/${boatId}/service/new`, serviceIconUrl, 'service', 'Add a service entry')
+  );
+  qGrid.appendChild(
+    quickTileWithCardIcon(
+      'Add issue / project',
+      `/boat/${boatId}/projects/new`,
+      projectIconUrl,
+      'projects',
+      'Add a project or issue'
+    )
+  );
+  qGrid.appendChild(
+    quickTileWithCardIcon(
+      'Add passage log',
+      `/boat/${boatId}/log/new`,
+      logIconUrl,
+      'log',
+      'Add a passage log entry'
+    )
+  );
+  const calPath = canAccessRoute('/calendar') ? '/calendar' : `/boat/${boatId}/reminder`;
+  qGrid.appendChild(
+    quickTileWithCardIcon(
+      canAccessRoute('/calendar') ? 'Calendar' : 'Reminder',
+      calPath,
+      calendarCardIconUrl,
+      'calendar',
+      canAccessRoute('/calendar') ? 'Calendar & alerts' : 'Maintenance reminder'
+    )
+  );
+
+  quick.appendChild(qGrid);
+  host.appendChild(quick);
+}
+
 function render() {
   const container = document.createElement('div');
   container.className = 'container';
@@ -304,17 +608,37 @@ function render() {
   const isArchived = currentBoat.status === 'archived';
 
   const wrapper = document.createElement('div');
+  wrapper.className = 'boat-action-dashboard-page';
 
-  const header = createYachtHeader(boat.boat_name || 'Boat Dashboard', { showSettings: true });
+  const header = createYachtHeader(boat.boat_name || 'Boat Dashboard', {
+    showSettings: true
+  });
   wrapper.appendChild(header);
+
+  const tagline = document.createElement('p');
+  tagline.id = 'boat-dashboard-tagline';
+  tagline.className = 'boat-dashboard-tagline text-muted';
+  tagline.setAttribute('aria-live', 'polite');
+  wrapper.appendChild(tagline);
 
   const pageContent = document.createElement('div');
   pageContent.className = 'page-content';
   pageContent.appendChild(createBackButton());
 
+  const primaryStack = document.createElement('div');
+  primaryStack.className = 'boat-dashboard-primary-stack';
+
+  const actionDashHost = document.createElement('div');
+  actionDashHost.id = 'boat-action-dashboard';
+  actionDashHost.className = 'boat-action-dashboard';
+  primaryStack.appendChild(actionDashHost);
+
   const onboardingHost = document.createElement('div');
   onboardingHost.id = 'boat-dashboard-onboarding';
-  pageContent.appendChild(onboardingHost);
+  onboardingHost.className = 'boat-dashboard-setup-host';
+  primaryStack.appendChild(onboardingHost);
+
+  pageContent.appendChild(primaryStack);
 
   if (isArchived) {
     const banner = document.createElement('div');
@@ -334,13 +658,19 @@ function render() {
     </button>
     <p class="text-muted" style="font-size: 0.875rem; margin-top: 0.35rem;">Download a complete PDF report for this boat.</p>
   `;
-  pageContent.appendChild(exportRow);
+
+  const modulesRegion = document.createElement('div');
+  modulesRegion.className = 'boat-dashboard-modules-region';
+  modulesRegion.appendChild(exportRow);
 
   const grid = document.createElement('div');
   grid.className = 'dashboard-grid';
 
   const cards = [
     { id: 'boat', title: 'Boat Details', icon: 'boat', route: `/boat/${currentBoatId}/details` },
+    ...(currentBoat.boat_type === 'sailing'
+      ? [{ id: 'sails-rigging', title: 'Sails & Rigging', icon: 'sail', route: `/boat/${currentBoatId}/sails-rigging` }]
+      : []),
     { id: 'engines', title: 'Engines', icon: 'engine', route: `/boat/${currentBoatId}/engines` },
     { id: 'service', title: 'Service History', icon: 'wrench', route: `/boat/${currentBoatId}/service` },
     ...(currentBoat.watermaker_installed
@@ -352,9 +682,6 @@ function render() {
     { id: 'haulout', title: 'Haul-Out Maintenance', icon: 'wrench', route: `/boat/${currentBoatId}/haulout` },
     { id: 'projects', title: 'Projects & Issues', icon: 'clipboard', route: `/boat/${currentBoatId}/projects` },
     { id: 'inventory', title: 'Inventory', icon: 'inventory', route: `/boat/${currentBoatId}/inventory` },
-    ...(currentBoat.boat_type === 'sailing'
-      ? [{ id: 'sails-rigging', title: 'Sails & Rigging', icon: 'sail', route: `/boat/${currentBoatId}/sails-rigging` }]
-      : []),
     { id: 'navigation', title: 'Navigation Equipment', icon: 'chart', route: `/boat/${currentBoatId}/navigation` },
     { id: 'safety', title: 'Safety Equipment', icon: 'shield', route: `/boat/${currentBoatId}/safety` },
     { id: 'log', title: 'Passage Log', icon: 'book', route: `/boat/${currentBoatId}/log` },
@@ -366,7 +693,8 @@ function render() {
   });
 
   container.appendChild(grid);
-  pageContent.appendChild(container);
+  modulesRegion.appendChild(container);
+  pageContent.appendChild(modulesRegion);
   wrapper.appendChild(pageContent);
 
   return wrapper;
@@ -401,7 +729,7 @@ function renderBoatDashboardOnboarding(boatId) {
   const stepClass = (done) => (done ? 'dashboard-onboarding-step is-done' : 'dashboard-onboarding-step');
 
   const stepsBlock = `
-      <h3 class="dashboard-onboarding-title">Get started</h3>
+      <h3 class="dashboard-onboarding-title">Get your boat set up</h3>
       <ol class="dashboard-onboarding-list">
         <li class="${stepClass(hasEngine)}">
           <span class="dashboard-onboarding-label">Add your engine</span>
@@ -445,9 +773,11 @@ function renderBoatDashboardOnboarding(boatId) {
   }
 
   host.innerHTML = `
-    <div class="dashboard-onboarding card">
-      ${cardInner}
-    </div>
+    <section class="boat-dashboard-setup-section" aria-label="Setup checklist">
+      <div class="dashboard-onboarding card boat-dashboard-setup-card">
+        ${cardInner}
+      </div>
+    </section>
   `;
 
   host.querySelectorAll('.dashboard-onboarding-link, .dashboard-onboarding-reminder-link').forEach((a) => {
@@ -481,7 +811,7 @@ async function onMount() {
       currentBoat = b;
     }
     // Fetch and sync all section data so card counts are correct
-    await Promise.all([
+    const loadResults = await Promise.all([
       getEngines(boatId),
       getServiceEntries(boatId),
       getHaulouts(boatId),
@@ -493,12 +823,29 @@ async function onMount() {
       getLinks(boatId),
       getFuelLogs(boatId),
       getBatteries(boatId),
-      getBoatElectrical(boatId)
+      getBoatElectrical(boatId),
+      getCalendarEvents(boatId),
+      getEngineMaintenanceSchedules(boatId),
+      boatsStorage.get(boatId)?.boat_type === 'sailing'
+        ? getSailsRiggingMaintenanceSchedules(boatId)
+        : Promise.resolve([])
     ]);
+    const fuelLogs = loadResults[9] || [];
+    const calendarEvents = loadResults[12] || [];
+
+    const actionModel = buildBoatActionDashboardModel(boatId, { fuelLogs, calendarEvents });
+    const isBoatArchivedNow = (boatsStorage.get(boatId)?.status || 'active') === 'archived';
+    mountBoatActionDashboard(boatId, actionModel, isBoatArchivedNow);
+
+    const taglineEl = document.getElementById('boat-dashboard-tagline');
+    if (taglineEl) {
+      taglineEl.textContent = isBoatArchivedNow ? 'Archived boat — viewing records only' : actionModel.tagline || '';
+    }
 
     const statusElements = document.querySelectorAll('.dashboard-card-status');
     const cardIds = [
       'boat',
+      ...(currentBoat?.boat_type === 'sailing' ? ['sails-rigging'] : []),
       'engines',
       'service',
       ...(currentBoat?.watermaker_installed ? ['watermaker'] : []),
@@ -508,7 +855,6 @@ async function onMount() {
       'haulout',
       'projects',
       'inventory',
-      ...(currentBoat?.boat_type === 'sailing' ? ['sails-rigging'] : []),
       'navigation',
       'safety',
       'log',
@@ -552,14 +898,30 @@ async function onMount() {
     if (inventoryCard) {
       const existingBadge = inventoryCard.querySelector('.dashboard-card-inventory-badge');
       if (existingBadge) existingBadge.remove();
-      const items = inventoryStorage.getAll(boatId);
+      const items = inventoryStorage.getAll(boatId).map(normalizeInventoryItem);
       const lowCount = items.filter((i) => (i.in_stock_level != null ? Number(i.in_stock_level) : 0) <= (i.required_quantity != null ? Number(i.required_quantity) : 0)).length;
       const criticalCount = items.filter((i) => !!i.critical_spare && (i.in_stock_level == null || Number(i.in_stock_level) === 0)).length;
-      if (criticalCount > 0 || lowCount > 0) {
+      const attentionCount = items.filter((i) => inventoryItemNeedsReview(i)).length;
+      if (criticalCount > 0 || lowCount > 0 || attentionCount > 0) {
         const badge = document.createElement('div');
-        badge.className = 'dashboard-card-inventory-badge' + (criticalCount > 0 ? ' dashboard-card-inventory-badge-critical' : '');
-        badge.setAttribute('aria-label', criticalCount > 0 ? `${criticalCount} critical out of stock` : `${lowCount} low stock`);
-        badge.textContent = criticalCount > 0 ? criticalCount : lowCount;
+        let extra = '';
+        let label = '';
+        let n = 0;
+        if (criticalCount > 0) {
+          extra = ' dashboard-card-inventory-badge-critical';
+          label = `${criticalCount} critical out of stock`;
+          n = criticalCount;
+        } else if (lowCount > 0) {
+          label = `${lowCount} low stock`;
+          n = lowCount;
+        } else {
+          extra = ' dashboard-card-inventory-badge-attention';
+          label = `${attentionCount} inventory items need attention`;
+          n = attentionCount;
+        }
+        badge.className = 'dashboard-card-inventory-badge' + extra;
+        badge.setAttribute('aria-label', label);
+        badge.textContent = n;
         inventoryCard.appendChild(badge);
       }
     }

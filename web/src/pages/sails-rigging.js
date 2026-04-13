@@ -12,6 +12,7 @@ import { getBoat, updateBoat, isBoatArchived } from '../lib/dataService.js';
 import { boatsStorage } from '../lib/storage.js';
 import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
 import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
+import { mountSailsRiggingMaintenanceScheduleSection } from '../components/sailsRiggingMaintenanceScheduleSection.js';
 
 let currentBoatId = null;
 let currentBoat = null;
@@ -43,11 +44,16 @@ function render(params = {}) {
   const container = document.createElement('div');
   container.className = 'container';
 
+  const scheduleHost = document.createElement('div');
+  scheduleHost.id = 'sails-rigging-schedule-host';
+  scheduleHost.className = 'sails-rigging-schedule-host';
+  container.appendChild(scheduleHost);
+
   const form = document.createElement('form');
   form.className = 'form-container';
   form.id = 'sails-rigging-form';
   form.innerHTML = `
-    <p class="text-muted" style="margin-bottom: 1rem;">To record a service for sails and rigging, use the <strong>Service</strong> card and choose &quot;N/A – Sails &amp; Rigging&quot; as the engine.</p>
+    <p class="text-muted" style="margin-bottom: 1rem;">To record completed work, use the <strong>Service</strong> card: set <strong>Service area</strong> to <strong>Sail &amp; rigging (boat-level)</strong>, then choose a specific service type (e.g. Winches, Sails, Running rigging).</p>
     <div class="form-group">
       <label for="mainsail_details">Mainsail</label>
       <textarea id="mainsail_details" name="mainsail_details" rows="3" placeholder="Make, size, condition, reefing, battens, sail cover..."></textarea>
@@ -128,6 +134,13 @@ async function onMount(params = {}) {
     populateForm(getSailsData(currentBoat));
 
     const archived = await isBoatArchived(boatId);
+    const scheduleMountEl = document.getElementById('sails-rigging-schedule-host');
+    if (scheduleMountEl) {
+      await mountSailsRiggingMaintenanceScheduleSection(scheduleMountEl, {
+        boatId,
+        archived
+      });
+    }
     if (archived) {
       const form = document.getElementById('sails-rigging-form');
       if (form) {

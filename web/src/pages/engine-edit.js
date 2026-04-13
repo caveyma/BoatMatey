@@ -8,6 +8,7 @@ import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getEngines, createEngine, updateEngine } from '../lib/dataService.js';
+import { mountEngineMaintenanceScheduleSection } from '../components/engineMaintenanceScheduleSection.js';
 
 function render(params = {}) {
   const boatId = params?.id || window.routeParams?.id;
@@ -54,6 +55,10 @@ function render(params = {}) {
         <div class="form-group">
           <label for="engine_hp">Horsepower</label>
           <input type="number" id="engine_hp" placeholder="Horsepower">
+        </div>
+        <div class="form-group">
+          <label for="engine_meter_hours">Current engine hours (meter)</label>
+          <input type="number" step="0.1" id="engine_meter_hours" placeholder="Total hours on engine meter">
         </div>
         <div class="form-group">
           <label for="engine_fuel_type">Fuel Type</label>
@@ -126,6 +131,7 @@ function render(params = {}) {
         </div>
       </form>
     </div>
+    <div id="engine-maint-schedule-host" class="container" style="padding-left:0;padding-right:0;max-width:100%;"></div>
   `;
 
   pageContent.appendChild(container);
@@ -146,16 +152,23 @@ async function onMount(params = {}) {
     if (form) form.querySelectorAll('input, select, textarea, button').forEach(el => { el.disabled = true; });
   }
 
+  let loadedEngine = null;
   if (!isNew) {
     const engines = await getEngines(boatId);
-    const engine = engines.find((e) => e.id === engineId);
-    if (engine) {
+    loadedEngine = engines.find((e) => e.id === engineId) || null;
+    if (loadedEngine) {
+      const engine = loadedEngine;
       const set = (id, value) => { const el = document.getElementById(id); if (el) el.value = value || ''; };
       set('engine_label', engine.label);
       set('engine_manufacturer', engine.manufacturer);
       set('engine_model', engine.model);
       set('engine_serial', engine.serial_number);
       set('engine_hp', engine.horsepower);
+      const mh = document.getElementById('engine_meter_hours');
+      if (mh) {
+        const v = engine.engine_meter_hours;
+        mh.value = v != null && v !== '' ? String(v) : '';
+      }
       set('engine_fuel_type', engine.fuel_type);
       set('engine_drive_type', engine.drive_type);
       set('engine_install_date', engine.install_date);
@@ -171,6 +184,17 @@ async function onMount(params = {}) {
     }
   }
 
+  const schedHost = document.getElementById('engine-maint-schedule-host');
+  if (schedHost) {
+    await mountEngineMaintenanceScheduleSection(schedHost, {
+      boatId,
+      engineId,
+      engine: loadedEngine,
+      isNew,
+      archived
+    });
+  }
+
   document.getElementById('engine-cancel-btn')?.addEventListener('click', () => {
     navigate(`/boat/${boatId}/engines`);
   });
@@ -182,6 +206,7 @@ async function onMount(params = {}) {
     setSaveButtonLoading(form, true);
     try {
     const get = (id) => (document.getElementById(id)?.value || '').trim();
+    const meterRaw = (document.getElementById('engine_meter_hours')?.value || '').trim();
     const engine = {
       id: engineId,
       label: get('engine_label'),
@@ -189,6 +214,7 @@ async function onMount(params = {}) {
       model: get('engine_model'),
       serial_number: get('engine_serial'),
       horsepower: get('engine_hp') ? parseInt(get('engine_hp'), 10) : null,
+      engine_meter_hours: meterRaw ? parseFloat(meterRaw) : null,
       fuel_type: get('engine_fuel_type'),
       drive_type: get('engine_drive_type'),
       install_date: get('engine_install_date') || null,
@@ -215,6 +241,10 @@ async function onMount(params = {}) {
         install_date: engine.install_date,
         warranty_expiry_date: engine.warranty_expiry_date,
         warranty_reminder_minutes: engine.warranty_reminder_minutes ?? 10080,
+        engine_meter_hours:
+          engine.engine_meter_hours != null && Number.isFinite(engine.engine_meter_hours)
+            ? engine.engine_meter_hours
+            : null,
         gearbox_manufacturer: engine.gearbox_manufacturer,
         gearbox_model: engine.gearbox_model,
         gearbox_serial_number: engine.gearbox_serial_number,
