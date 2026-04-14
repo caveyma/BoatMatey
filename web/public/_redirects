@@ -1,3 +1,4 @@
-# SPA fallback for /app only. Do NOT add /* /index.html so /, /robots.txt, /sitemap.xml serve as static files.
+# App is hash-routed (#/...), so only /app and /app/ should rewrite.
+# Avoid broad /app/* rewrites, which can cause JS chunk requests to be served as HTML.
 /app     /app/index.html  200
-/app/*   /app/index.html  200
+/app/    /app/index.html  200

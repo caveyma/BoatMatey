@@ -74,13 +74,109 @@ function openModal(htmlInner, onMountModal) {
   return { overlay, close };
 }
 
+/** Wider modal for scrollable lists (e.g. archived schedules). */
+function openWideModal(htmlInner, onMountModal) {
+  let root = document.getElementById('modal-root');
+  if (!root) {
+    root = document.createElement('div');
+    root.id = 'modal-root';
+    root.className = 'modal-root';
+    document.body.appendChild(root);
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-modal-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.innerHTML = `
+    <div class="confirm-modal" style="max-width: min(560px, 94vw); max-height: 90vh; display: flex; flex-direction: column;">
+      ${htmlInner}
+    </div>
+  `;
+  root.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('confirm-modal-visible'));
+
+  const close = () => {
+    overlay.classList.add('confirm-modal-exit');
+    setTimeout(() => overlay.remove(), 200);
+  };
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+
+  if (onMountModal) onMountModal(overlay, close);
+  return { overlay, close };
+}
+
 /**
  * @param {HTMLElement} host
- * @param {{ boatId: string, archived: boolean }} opts
+ * @param {{ boatId: string, archived: boolean, targetScheduleId?: string|null, onboardingSchedule?: string|null }} opts
  */
 export async function mountSailsRiggingMaintenanceScheduleSection(host, opts) {
-  const { boatId, archived } = opts;
+  const { boatId, archived, targetScheduleId = null, onboardingSchedule = null } = opts;
+  const onboardingPreset = (() => {
+    if (!onboardingSchedule) return null;
+    const key = String(onboardingSchedule).trim().toLowerCase();
+    if (key === 'winch' || key === 'winch_service') return { task_name: 'Winch service', category: 'Winches', interval_months: 6 };
+    if (key === 'rigging' || key === 'rigging_inspection') return { task_name: 'Rigging inspection', category: 'Rigging', interval_months: 6 };
+    return { task_name: 'Sailing maintenance reminder', category: 'Rigging', interval_months: 12 };
+  })();
+  let onboardingModalOpened = false;
+  function focusScheduleRowIfNeeded() {
+    if (!targetScheduleId) return;
+    const selectorId = window.CSS?.escape ? CSS.escape(String(targetScheduleId)) : String(targetScheduleId);
+    const row = host.querySelector(`.sails-rig-maint-schedule-row[data-schedule-id="${selectorId}"]`);
+    if (!row) return;
+    row.classList.add('maintenance-row-focus-target');
+    try {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch (_) {
+      row.scrollIntoView();
+    }
+    window.setTimeout(() => {
+      row.classList.remove('maintenance-row-focus-target');
+    }, 2200);
+  }
+
   if (!host || !boatId) return () => {};
+  const collapseKey = `bm:sails-rig-maint-collapsed:${boatId}`;
+  let isCollapsed = false;
+  try {
+    isCollapsed = sessionStorage.getItem(collapseKey) === '1';
+  } catch (_) {}
+
+  function renderSummary(overdueCount, dueSoonCount, totalCount) {
+    const el = host.querySelector('#sails-rig-maint-schedule-summary');
+    if (!el) return;
+    if (!totalCount) {
+      el.textContent = 'No scheduled maintenance yet';
+      return;
+    }
+    el.textContent = `${overdueCount} overdue \u2022 ${dueSoonCount} due soon \u2022 ${totalCount} items`;
+  }
+
+  function applyCollapsedUi() {
+    const content = host.querySelector('#sails-rig-maint-schedule-content');
+    const chevron = host.querySelector('#sails-rig-maint-schedule-chevron');
+    const toggle = host.querySelector('#sails-rig-maint-schedule-toggle');
+    if (content) content.style.display = isCollapsed ? 'none' : 'block';
+    if (chevron) chevron.classList.toggle('is-expanded', !isCollapsed);
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+      toggle.setAttribute(
+        'aria-label',
+        isCollapsed ? 'Expand sails and rigging maintenance section' : 'Collapse sails and rigging maintenance section'
+      );
+    }
+  }
+
+  function setCollapsed(next) {
+    isCollapsed = !!next;
+    try {
+      sessionStorage.setItem(collapseKey, isCollapsed ? '1' : '0');
+    } catch (_) {}
+    applyCollapsedUi();
+  }
 
   function renderShell() {
     host.innerHTML = '';
@@ -88,17 +184,36 @@ export async function mountSailsRiggingMaintenanceScheduleSection(host, opts) {
     card.className = 'card';
     card.id = 'sails-rig-maint-schedule-card';
     card.innerHTML = `
-      <h3>Sails & rigging maintenance schedule</h3>
-      <p class="text-muted" style="margin-top:0;">
-        Plan recurring inspections and service by calendar. Logging completed work stays on the <strong>Service</strong> page — this section only tracks what is due next.
-      </p>
-      <div id="sails-rig-maint-schedule-body"></div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.75rem;flex-wrap:wrap;">
+        <button type="button" class="maintenance-section-toggle" id="sails-rig-maint-schedule-toggle" aria-expanded="true">
+          <span id="sails-rig-maint-schedule-chevron" class="record-expand-chevron is-expanded" aria-hidden="true">▶</span>
+          <span>
+            <h3 style="margin:0;">Sails & rigging maintenance schedule</h3>
+            <p id="sails-rig-maint-schedule-summary" class="text-muted maintenance-section-summary" style="margin:0.15rem 0 0;">No scheduled maintenance yet</p>
+          </span>
+        </button>
+        ${archived ? '' : '<button type="button" class="btn-link" id="sails_rig_maint_archived_btn">Archived</button>'}
+      </div>
+      <div id="sails-rig-maint-schedule-content">
+        <p class="text-muted" style="margin-top:0;">
+          Plan recurring inspections and service by calendar. Logging completed work stays on the <strong>Service</strong> page — this section only tracks what is due next.
+        </p>
+        <div id="sails-rig-maint-schedule-body"></div>
+      </div>
     `;
     host.appendChild(card);
+    host.querySelector('#sails-rig-maint-schedule-toggle')?.addEventListener('click', () => {
+      setCollapsed(!isCollapsed);
+    });
+    applyCollapsedUi();
   }
 
   renderShell();
   const body = () => host.querySelector('#sails-rig-maint-schedule-body');
+
+  if (!archived) {
+    host.querySelector('#sails_rig_maint_archived_btn')?.addEventListener('click', () => openArchivedModal());
+  }
 
   let teardown = false;
   const refresh = async () => {
@@ -108,7 +223,6 @@ export async function mountSailsRiggingMaintenanceScheduleSection(host, opts) {
     b.innerHTML = '<p class="text-muted">Loading…</p>';
     const all = await getSailsRiggingMaintenanceSchedules(boatId);
     const rows = all.filter((s) => s.is_active !== false);
-    const archivedRows = all.filter((s) => s.is_active === false);
 
     const lines = rows
       .map((s) => {
@@ -117,6 +231,17 @@ export async function mountSailsRiggingMaintenanceScheduleSection(host, opts) {
         return { s, st, nextDueDate };
       })
       .sort((a, b) => (a.s.task_name || '').localeCompare(b.s.task_name || ''));
+    const overdueCount = lines.filter((x) => x.st === 'overdue').length;
+    const dueSoonCount = lines.filter((x) => x.st === 'due_soon').length;
+    renderSummary(overdueCount, dueSoonCount, lines.length);
+    const hasStored = (() => {
+      try {
+        return sessionStorage.getItem(collapseKey) != null;
+      } catch (_) {
+        return false;
+      }
+    })();
+    if (!hasStored) setCollapsed(overdueCount === 0);
 
     const rowsHtml = lines.length
       ? lines
@@ -127,7 +252,7 @@ export async function mountSailsRiggingMaintenanceScheduleSection(host, opts) {
                 ? escapeHtml(nextDueDate)
                 : '<span class="text-muted">—</span>';
             return `
-          <div class="sails-rig-maint-schedule-row card" style="margin-bottom: var(--spacing-md); padding: var(--spacing-md);">
+          <div class="sails-rig-maint-schedule-row card" data-schedule-id="${escapeHtml(s.id)}" style="margin-bottom: var(--spacing-md); padding: var(--spacing-md);">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;flex-wrap:wrap;">
               <div>
                 <strong>${escapeHtml((s.task_name || '').trim() || 'Task')}</strong>
@@ -178,11 +303,6 @@ export async function mountSailsRiggingMaintenanceScheduleSection(host, opts) {
         <button type="button" class="btn-primary" id="sails_rig_maint_add_custom">${renderIcon('plus')} Custom item</button>
       </div>
       `
-      }
-      ${
-        archivedRows.length && !archived
-          ? `<p class="text-muted" style="font-size:0.85rem;">${archivedRows.length} archived item(s) hidden.</p>`
-          : ''
       }
     `;
 
@@ -255,7 +375,68 @@ export async function mountSailsRiggingMaintenanceScheduleSection(host, opts) {
         });
       });
     }
+    if (!archived && onboardingPreset && !onboardingModalOpened) {
+      onboardingModalOpened = true;
+      openEditDialog(null, onboardingPreset, true);
+    }
+    focusScheduleRowIfNeeded();
   };
+
+  async function openArchivedModal() {
+    const all = await getSailsRiggingMaintenanceSchedules(boatId);
+    const archivedList = all
+      .filter((s) => s.is_active === false)
+      .sort((a, b) => (a.task_name || '').localeCompare(b.task_name || ''));
+
+    const listHtml = archivedList.length
+      ? archivedList
+          .map((s) => {
+            const interval = formatSailsScheduleIntervalSummary(s);
+            return `
+          <div class="card" style="margin-bottom: var(--spacing-md); padding: var(--spacing-md);">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;flex-wrap:wrap;">
+              <div>
+                <strong>${escapeHtml((s.task_name || '').trim() || 'Task')}</strong>
+                ${s.category ? `<span class="text-muted" style="font-size:0.9rem;"> · ${escapeHtml(s.category)}</span>` : ''}
+                <div class="text-muted" style="font-size:0.9rem;margin-top:0.25rem;">${escapeHtml(interval)}</div>
+              </div>
+              <span class="badge badge-secondary">Archived</span>
+            </div>
+            ${s.notes ? `<p class="text-muted" style="margin:0.5rem 0 0;font-size:0.9rem;">${escapeHtml(s.notes)}</p>` : ''}
+            <div class="form-actions" style="margin-top:0.75rem;margin-bottom:0;">
+              <button type="button" class="btn-secondary sails-archived-restore" data-id="${escapeHtml(s.id)}">Restore</button>
+            </div>
+          </div>`;
+          })
+          .join('')
+      : '<p class="text-muted" style="margin:0;">No archived items</p>';
+
+    openWideModal(
+      `
+      <h2 class="confirm-modal-title">Archived Items</h2>
+      <p class="text-muted" style="margin-top:0;">These schedules are not shown in your active list or dashboard reminders.</p>
+      <div style="overflow-y:auto;flex:1;min-height:0;margin-top:0.5rem;padding-right:2px;">
+        ${listHtml}
+      </div>
+      <div class="confirm-modal-actions" style="margin-top: var(--spacing-md); flex-shrink: 0;">
+        <button type="button" class="btn-secondary" id="sails_archived_modal_close">Close</button>
+      </div>
+    `,
+      (overlay, close) => {
+        overlay.querySelector('#sails_archived_modal_close').onclick = () => close();
+        overlay.querySelectorAll('.sails-archived-restore').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const id = btn.getAttribute('data-id');
+            await updateSailsRiggingMaintenanceSchedule(id, { is_active: true, boat_id: boatId });
+            await getSailsRiggingMaintenanceSchedules(boatId);
+            showToast('Schedule restored', 'info');
+            close();
+            refresh();
+          });
+        });
+      }
+    );
+  }
 
   function openCompleteDialog(schedule) {
     const today = new Date();
@@ -308,7 +489,7 @@ export async function mountSailsRiggingMaintenanceScheduleSection(host, opts) {
     );
   }
 
-  function openEditDialog(existing, prefill = null) {
+  function openEditDialog(existing, prefill = null, onboardingMode = false) {
     const e = existing || {};
     const p = prefill || {};
     const task = e.task_name ?? p.task_name ?? '';
@@ -319,28 +500,28 @@ export async function mountSailsRiggingMaintenanceScheduleSection(host, opts) {
 
     openModal(
       `
-      <h2 class="confirm-modal-title">${existing ? 'Edit schedule' : 'Add schedule'}</h2>
-      <p class="text-muted" style="margin-top:0;">Interval is in whole months (calendar-based).</p>
+      <h2 class="confirm-modal-title">${existing ? 'Edit schedule' : (onboardingMode ? 'Set your first reminder' : 'Add schedule')}</h2>
+      <p class="text-muted" style="margin-top:0;">${onboardingMode ? 'Choose what to track and set a repeat interval.' : 'Interval is in whole months (calendar-based).'}</p>
       <div class="form-group">
         <label for="srms_task">Task name</label>
         <input type="text" id="srms_task" class="form-control" value="${escapeHtml(task)}" required />
       </div>
-      <div class="form-group">
+      ${onboardingMode ? '' : `<div class="form-group">
         <label for="srms_cat">Category (optional)</label>
         <input type="text" id="srms_cat" class="form-control" value="${escapeHtml(cat)}" placeholder="e.g. Standing rigging" />
-      </div>
+      </div>`}
       <div class="form-group">
         <label for="srms_im">Interval (months) *</label>
         <input type="number" min="1" id="srms_im" class="form-control" value="${im !== '' && im != null ? escapeHtml(String(im)) : ''}" placeholder="e.g. 12" required />
       </div>
-      <div class="form-group">
+      ${onboardingMode ? '' : `<div class="form-group">
         <label for="srms_last">Last completed (optional)</label>
         <input type="date" id="srms_last" class="form-control" value="${escapeHtml(e.last_completed_date || '')}" />
       </div>
       <div class="form-group">
         <label for="srms_notes">Notes (optional)</label>
         <textarea id="srms_notes" class="form-control" rows="2">${escapeHtml(notes)}</textarea>
-      </div>
+      </div>`}
       <div class="confirm-modal-actions">
         <button type="button" class="btn-secondary" id="srms_edit_cancel">Cancel</button>
         <button type="button" class="btn-primary" id="srms_edit_save">Save</button>
@@ -363,10 +544,10 @@ export async function mountSailsRiggingMaintenanceScheduleSection(host, opts) {
           const lastRaw = overlay.querySelector('#srms_last')?.value?.trim();
           const payload = {
             task_name: taskName,
-            category: overlay.querySelector('#srms_cat')?.value?.trim() || null,
-            notes: overlay.querySelector('#srms_notes')?.value?.trim() || null,
+            category: onboardingMode ? (cat || null) : (overlay.querySelector('#srms_cat')?.value?.trim() || null),
+            notes: onboardingMode ? null : (overlay.querySelector('#srms_notes')?.value?.trim() || null),
             interval_months: imN,
-            last_completed_date: lastRaw || null,
+            last_completed_date: onboardingMode ? null : (lastRaw || null),
             template_key: tplKey || null,
             is_active: true
           };

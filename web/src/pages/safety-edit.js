@@ -11,8 +11,7 @@ import { confirmAction } from '../components/confirmModal.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getEquipment, createEquipment, updateEquipment } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
-import { blockFreePlanRecordLimitIfNeeded } from '../lib/premiumSaveGate.js';
-import { safetyEquipmentStorage } from '../lib/storage.js';
+import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
 import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 
 const SAFETY_TYPES = ['Liferaft', 'EPIRB', 'Fire Extinguisher', 'Flares', 'First Aid Kit', 'Life Jacket', 'Other'];
@@ -242,10 +241,7 @@ async function onMount(params = {}) {
     e.preventDefault();
     if (archived) return;
     const willCreate = isNew || (itemId && String(itemId).startsWith('safety_'));
-    if (
-      willCreate &&
-      blockFreePlanRecordLimitIfNeeded('safety', safetyEquipmentStorage.getAll(boatId).length)
-    ) {
+    if (willCreate && blockPremiumSaveIfNeeded()) {
       return;
     }
     const form = e.target;
@@ -275,9 +271,9 @@ async function onMount(params = {}) {
   });
 
   insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-safety'), {
-    headline: 'Preview: Safety equipment',
+    headline: 'Premium preview: Safety equipment',
     detail:
-      'Basic plan: 1 equipment item per boat. Upgrade for unlimited inspections and expiry tracking.'
+      'Track service intervals and expiry dates for safety gear. Upgrade to save safety equipment records.'
   });
 }
 

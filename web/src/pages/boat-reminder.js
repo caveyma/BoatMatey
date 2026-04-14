@@ -67,7 +67,7 @@ async function onMount(params = {}) {
     root.innerHTML = `
       <div class="card">
         <p class="text-muted">You do not have a next service due date set yet.</p>
-        <p style="margin-top: 0.75rem;"><a href="#/boat/${boatId}/service" class="btn-link">Open Service History</a></p>
+        <p style="margin-top: 0.75rem;"><a href="#/boat/${boatId}/reminder/setup" class="btn-link">Set reminder</a></p>
         <p class="text-muted" style="margin-top: 1rem; font-size: 0.9rem;">The full Calendar &amp; Alerts module is included with Premium.</p>
       </div>
     `;

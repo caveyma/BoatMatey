@@ -12,28 +12,22 @@ import { hasActiveSubscription } from './subscription.js';
 // On boat dashboard: boat (Boat Details), engines, mayday, links
 // Settings = /account, User Guide = /guide (handled by route, not dashboard card)
 // ---------------------------------------------------------------------------
-// Free: boat details, engines, one service entry per boat (enforced in UI + DB), mayday, links,
-// plus limited records on projects, inventory, navigation, safety, passage log (see BASIC_PLAN_RECORD_LIMITS).
+// Free: boat details, engines, one service entry per boat (enforced in UI + DB), mayday, links.
 export const FREE_DASHBOARD_CARD_IDS = [
   'boat',
   'engines',
   'service',
   'mayday',
-  'links',
-  'projects',
-  'inventory',
-  'navigation',
-  'safety',
-  'log'
+  'links'
 ];
 
-/** Max records per boat on Basic (free) plan for these modules; premium = unlimited. */
+/** Legacy per-module limits kept for compatibility with older prompts/components. */
 export const BASIC_PLAN_RECORD_LIMITS = {
-  projects: 2,
-  inventory: 2,
-  navigation: 1,
-  safety: 1,
-  log: 2
+  projects: 0,
+  inventory: 0,
+  navigation: 0,
+  safety: 0,
+  log: 0
 };
 
 /** @param {keyof typeof BASIC_PLAN_RECORD_LIMITS} cardId */

@@ -42,14 +42,14 @@ function render() {
       <div style="display:flex; justify-content:center; margin-bottom: 0.75rem;">
         ${renderLogoFull(220)}
       </div>
-      <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem;">You've started tracking your boat — keep it going</h2>
-      <p class="text-muted" style="font-size: 0.95rem;">New subscribers get <strong>1 month free</strong>—no charge until your trial ends. Then £29.99/year.</p>
+      <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem;">Your boat setup is saved - unlock full BoatMatey</h2>
+      <p class="text-muted" style="font-size: 0.95rem;">You have completed your first setup. Start your <strong>1 month free</strong> trial to unlock full long-term management. Then £29.99/year.</p>
     </div>
 
     <div id="subscription-progress-summary" class="subscription-progress-wrap" style="margin-bottom: 1rem;"></div>
 
-    <p style="font-size: 0.9rem; margin: 0 0 0.5rem; text-align: center;"><strong>Start your free trial today — no charge for 1 month</strong></p>
-    <p class="text-muted" style="font-size: 0.85rem; margin: 0 0 1rem; text-align: center;">Without Premium, you won't be able to track additional services or reminders</p>
+    <p style="font-size: 0.9rem; margin: 0 0 0.5rem; text-align: center;"><strong>Start your free trial today - no charge for 1 month</strong></p>
+    <p class="text-muted" style="font-size: 0.85rem; margin: 0 0 1rem; text-align: center;">Free proves your first workflow. Premium unlocks full boat management.</p>
 
     <div class="subscription-plan" style="
       background: linear-gradient(135deg, var(--bm-teal) 0%, var(--bm-teal-2) 100%);
@@ -84,19 +84,19 @@ function render() {
       <div style="text-align: left; font-size: 0.9rem;">
         <div style="margin-bottom: 0.5rem; display: flex; align-items: center;">
           <span style="margin-right: 0.5rem;">✓</span>
-          <span>Never miss a service again</span>
+          <span>Unlimited service history and due tracking</span>
         </div>
         <div style="margin-bottom: 0.5rem; display: flex; align-items: center;">
           <span style="margin-right: 0.5rem;">✓</span>
-          <span>Track all maintenance in one place</span>
+          <span>Engine and sailing / rigging maintenance schedules</span>
         </div>
         <div style="margin-bottom: 0.5rem; display: flex; align-items: center;">
           <span style="margin-right: 0.5rem;">✓</span>
-          <span>Get reminders before things go wrong</span>
+          <span>Inventory, stock tracking, and parts used in services</span>
         </div>
         <div style="display: flex; align-items: center;">
           <span style="margin-right: 0.5rem;">✓</span>
-          <span>Keep a full service history for resale</span>
+          <span>Projects &amp; issues, passage log, alerts, export, and multiple boats</span>
         </div>
       </div>
     </div>
@@ -141,7 +141,7 @@ function render() {
       </div>
       <div style="background: #f0f8ff; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
         <p style="margin: 0 0 0.75rem; color: #1e5a8e; font-size: 0.9rem; text-align: center;">
-          <strong>Complete your purchase in the app.</strong> Download BoatMatey on your device, then subscribe inside the app.
+          <strong>Complete your purchase in the app.</strong> Your boat setup is already saved. Download BoatMatey on your device, sign in, then start your trial inside the app.
         </p>
         <div class="subscription-store-buttons" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 12px;">
           <a href="${APP_STORE_URL}" target="_blank" rel="noopener" class="subscription-store-btn" style="display: flex; align-items: center; justify-content: center; background: transparent;">
@@ -171,7 +171,7 @@ function render() {
         <p style="margin: 0 0 0.5rem;"><strong>When am I charged?</strong> After your 1‑month free trial. You can cancel before the trial ends and won’t be charged.</p>
         <p style="margin: 0 0 0.5rem;"><strong>How do I cancel?</strong> Open your device Settings → Subscriptions (or App Store / Play Store subscriptions), find BoatMatey and cancel. Access continues until the end of the current period.</p>
         <p style="margin: 0 0 0.5rem;"><strong>What if I already have an account?</strong> Tap “Restore Purchases” to link this device to your existing subscription.</p>
-        <p style="margin: 0;"><strong>What’s included?</strong> 5 active boats, unlimited archived boats, unlimited engines and equipment, service history, logbook, calendar and cloud sync.</p>
+        <p style="margin: 0;"><strong>What’s included?</strong> Unlimited service history, engine and rigging schedules, inventory &amp; stock tracking, parts used in services, projects &amp; issues, passage log, calendar alerts, export boat report, and multiple boats.</p>
       </div>
     </details>
 
@@ -261,8 +261,8 @@ async function fillSubscriptionProgressSummary() {
     boatId = sessionStorage.getItem('bm_onboarding_context_boat');
   } catch (_) {}
   let engineDone = false;
-  let serviceDone = false;
   let reminderDone = false;
+  let serviceDone = false;
   if (boatId) {
     try {
       const [engines, services] = await Promise.all([getEngines(boatId), getServiceEntries(boatId)]);
@@ -280,8 +280,8 @@ async function fillSubscriptionProgressSummary() {
     <p style="font-size: 0.8rem; font-weight: 600; margin: 0 0 0.35rem; color: var(--bm-navy, #0f172a);">Your progress</p>
     <ul style="list-style: none; padding: 0; margin: 0; text-align: left; font-size: 0.9rem;">
       ${item('Engine added', engineDone)}
-      ${item('Service logged', serviceDone)}
       ${item('Reminder set', reminderDone)}
+      ${item('Service history added (optional)', serviceDone)}
     </ul>
   `;
 }

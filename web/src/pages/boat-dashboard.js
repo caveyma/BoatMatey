@@ -38,6 +38,7 @@ import {
   shipsLogStorage,
   linksStorage,
   boatDashboardSetupCompleteStorage,
+  engineMaintenanceScheduleStorage,
   sailsRiggingMaintenanceScheduleStorage
 } from '../lib/storage.js';
 import { computeSailsRiggingScheduleStatus } from '../lib/sailsRiggingMaintenanceScheduleDue.js';
@@ -99,6 +100,29 @@ let currentBoatId = null;
 let currentBoat = null;
 
 const SETUP_COMPLETE_NUDGE_MS = 24 * 60 * 60 * 1000;
+
+function getBoatSetupState(boatId) {
+  const engines = enginesStorage.getAll(boatId);
+  const services = serviceHistoryStorage.getAll(boatId);
+  const hasEngine = engines.length > 0;
+  const hasServiceHistory = services.length > 0;
+  const engineSchedules = engineMaintenanceScheduleStorage
+    .getAll(boatId)
+    .filter((s) => s.is_active !== false);
+  const sailsSchedules = sailsRiggingMaintenanceScheduleStorage
+    .getAll(boatId)
+    .filter((s) => s.is_active !== false);
+  const hasReminderFlow = engineSchedules.length > 0 || sailsSchedules.length > 0;
+  const requiredCompletedCount = [hasEngine, hasReminderFlow].filter(Boolean).length;
+  return {
+    hasEngine,
+    hasServiceHistory,
+    hasReminderFlow,
+    requiredCompletedCount,
+    optionalServiceDone: hasServiceHistory,
+    isComplete: hasEngine && hasReminderFlow
+  };
+}
 
 /** Appends "· used/limit Basic" on free plan for modules with Basic limits. */
 function withBasicPlanUsageLine(cardId, boatId, baseLine) {
@@ -194,8 +218,23 @@ function getStatusText(cardId, boatId) {
       return withBasicPlanUsageLine('projects', boatId, line);
     }
     
-    case 'watermaker':
-      return 'Track watermaker service';
+    case 'watermaker': {
+      const boat = boatsStorage.get(boatId);
+      const wm = boat?.watermaker_data;
+      const services = Array.isArray(wm?.services) ? wm.services : [];
+      const unit = wm?.unit || {};
+      const hasUnit = !!(unit.make_model || unit.location || unit.capacity || unit.serial_number);
+      if (services.length === 0 && !hasUnit) return 'Open to add unit & services';
+      if (services.length === 0) return 'No services logged yet';
+      const nextDue =
+        wm?.next_service_due || [...services].map((s) => s.next_service_due).filter(Boolean).sort().slice(-1)[0];
+      if (nextDue) {
+        const d = new Date(`${nextDue}T12:00:00`);
+        if (!Number.isNaN(d.getTime())) return `Next due ${d.toLocaleDateString()}`;
+        return `Next due ${nextDue}`;
+      }
+      return `${services.length} service log${services.length === 1 ? '' : 's'}`;
+    }
 
     case 'sails-rigging': {
       const boat = boatsStorage.get(boatId);
@@ -325,17 +364,17 @@ function escapeHtmlDash(s) {
   return d.innerHTML;
 }
 
-const ATTENTION_TILE_ICONS = {
-  overdue: 'wrench',
-  soon: 'calendar',
-  issues: 'clipboard',
-  stock: 'inventory'
+const ATTENTION_TILE_META = {
+  overdue: { iconUrl: serviceIconUrl, cardColorId: 'service' },
+  soon: { iconUrl: calendarCardIconUrl, cardColorId: 'calendar' },
+  issues: { iconUrl: projectIconUrl, cardColorId: 'projects' },
+  stock: { iconUrl: inventoryIconUrl, cardColorId: 'inventory' }
 };
 
 /**
  * Fills the action dashboard host (needs attention, recent activity, quick actions).
  */
-function mountBoatActionDashboard(boatId, model, isArchived) {
+function mountBoatActionDashboard(boatId, model, isArchived, setupState) {
   const host = document.getElementById('boat-action-dashboard');
   if (!host) return;
 
@@ -349,7 +388,7 @@ function mountBoatActionDashboard(boatId, model, isArchived) {
     return;
   }
 
-  const { counts, overdue, dueSoon, recentTop, openIssues, hasMaintenanceScheduleAttention } = model;
+  const { counts, attentionRows = [], recentTop, openIssues, hasMaintenanceScheduleAttention } = model;
   const serviceBase = `/boat/${boatId}/service`;
   const issuesTarget = `/boat/${boatId}/projects?type=Issue&status=active&archived=active`;
 
@@ -360,10 +399,14 @@ function mountBoatActionDashboard(boatId, model, isArchived) {
     btn.type = 'button';
     const n = Number(count) || 0;
     const zeroClass = anyAttention && n === 0 ? ' boat-action-dash-tile--zero' : '';
-    btn.className = `boat-action-dash-tile boat-action-dash-tile--${kind}${zeroClass}`;
-    const iconName = ATTENTION_TILE_ICONS[kind] || 'clipboard';
+    const meta = ATTENTION_TILE_META[kind] || ATTENTION_TILE_META.issues;
+    btn.className = `boat-action-dash-tile boat-action-dash-tile--${kind} card-color-${meta.cardColorId}${zeroClass}`;
     btn.innerHTML = `
-      <span class="boat-action-dash-tile-icon" aria-hidden="true">${renderIcon(iconName)}</span>
+      <span class="boat-action-dash-tile-icon boat-action-dash-tile-icon--bitmap" aria-hidden="true">
+        <span class="dashboard-card-icon-badge dashboard-card-icon-bitmap boat-action-dash-tile-icon-badge">
+          <img src="${meta.iconUrl}" alt="" class="dashboard-card-icon-img">
+        </span>
+      </span>
       <span class="boat-action-dash-tile-value">${n}</span>
       <span class="boat-action-dash-tile-label">${escapeHtmlDash(label)}</span>
       <span class="boat-action-dash-tile-hint">Open</span>
@@ -382,7 +425,108 @@ function mountBoatActionDashboard(boatId, model, isArchived) {
   h2.textContent = 'Needs attention';
   needs.appendChild(h2);
 
-  if (!anyAttention) {
+  const showSetupHero = !!setupState && !setupState.isComplete;
+  const postSetupFreeConversion =
+    !hasActiveSubscription() &&
+    !!setupState &&
+    setupState.isComplete &&
+    !anyAttention &&
+    !(counts.inventoryReview > 0);
+  if (!anyAttention && showSetupHero) {
+    const setup = document.createElement('div');
+    setup.className = 'boat-action-dash-setup-hero card';
+    const reminderAction = `/boat/${boatId}/reminder/setup`;
+    const premiumNudge =
+      !hasActiveSubscription() && (setupState.requiredCompletedCount > 0 || setupState.optionalServiceDone);
+    setup.innerHTML = `
+      <p class="boat-action-dash-setup-title">Finish setting up your boat</p>
+      <p class="boat-action-dash-setup-sub text-muted">Set your first reminder to start tracking maintenance.</p>
+      <p class="boat-action-dash-setup-progress">${setupState.requiredCompletedCount} of 2 required steps completed</p>
+      <div class="boat-action-dash-setup-steps">
+        <button type="button" class="boat-action-dash-setup-step ${setupState.hasEngine ? 'is-done' : ''}" data-setup-path="/boat/${boatId}/engines">
+          <span class="boat-action-dash-setup-step-label">Add your engine</span>
+          <span class="boat-action-dash-setup-step-state">${setupState.hasEngine ? 'Done' : 'Add engine'}</span>
+        </button>
+        <button type="button" class="boat-action-dash-setup-step ${setupState.hasReminderFlow ? 'is-done' : ''}" data-setup-path="${reminderAction}">
+          <span class="boat-action-dash-setup-step-label">Set your first reminder</span>
+          <span class="boat-action-dash-setup-step-state">${setupState.hasReminderFlow ? 'Done' : 'Set reminder'}</span>
+        </button>
+        <button type="button" class="boat-action-dash-setup-step boat-action-dash-setup-step-optional ${setupState.hasServiceHistory ? 'is-done' : ''}" data-setup-path="/boat/${boatId}/service/new">
+          <span class="boat-action-dash-setup-step-label">Add service history (optional)</span>
+          <span class="boat-action-dash-setup-step-state">${setupState.hasServiceHistory ? 'Added' : 'Add past service'}</span>
+        </button>
+      </div>
+      ${
+        premiumNudge
+          ? `<div class="boat-action-dash-setup-premium">
+              <p class="boat-action-dash-setup-premium-copy">You&apos;re on the free plan. Upgrade for unlimited service history, inventory &amp; stock tracking, schedules, projects &amp; issues, passage log, and export reports.</p>
+              <button type="button" class="btn-secondary boat-action-dash-setup-premium-btn">Start free trial</button>
+            </div>`
+          : ''
+      }
+    `;
+    setup.querySelectorAll('[data-setup-path]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const path = btn.getAttribute('data-setup-path');
+        if (!path) return;
+        if (path.includes('/service/new') && setupState.hasServiceHistory) {
+          navigate(`/boat/${boatId}/service`);
+          return;
+        }
+        if (
+          path.endsWith('/service/new') &&
+          btn.classList.contains('boat-action-dash-setup-step') &&
+          !btn.classList.contains('boat-action-dash-setup-step-optional') &&
+          !setupState.hasEngine
+        ) {
+          navigate(`/boat/${boatId}/engines`);
+          return;
+        }
+        navigate(path);
+      });
+    });
+    const premiumBtn = setup.querySelector('.boat-action-dash-setup-premium-btn');
+    if (premiumBtn) premiumBtn.addEventListener('click', () => navigate('/subscription'));
+    needs.appendChild(setup);
+  } else if (!anyAttention && postSetupFreeConversion) {
+    const wrap = document.createElement('div');
+    wrap.className = 'boat-action-dash-conversion-hero card';
+    wrap.innerHTML = `
+      <div class="boat-action-dash-conversion-success">
+        <div class="boat-action-dash-conversion-success-icon" aria-hidden="true">${renderIcon('check')}</div>
+        <div>
+          <p class="boat-action-dash-conversion-title">Your boat is now being tracked</p>
+          <p class="boat-action-dash-conversion-sub text-muted">Your first maintenance reminder is set. BoatMatey will surface what is due next as dates approach.</p>
+        </div>
+      </div>
+      <div class="boat-action-dash-conversion-premium" role="region" aria-label="Premium upgrade">
+        <p class="boat-action-dash-conversion-premium-lead">You&apos;ve started tracking — now unlock the full management system.</p>
+        <ul class="boat-action-dash-conversion-premium-list">
+          <li>Unlimited service history</li>
+          <li>Full inventory &amp; stock tracking</li>
+          <li>Projects &amp; issues</li>
+          <li>Sailing &amp; rigging schedules</li>
+          <li>Passage log</li>
+          <li>Calendar alerts</li>
+          <li>Export boat report</li>
+        </ul>
+        <button type="button" class="btn-primary boat-action-dash-conversion-trial-btn">Start Free Trial – Unlock Full Boat Management</button>
+        <p class="boat-action-dash-conversion-footnote">
+          Free plan active: 1 service entry per boat. Your setup reminder keeps this boat on the radar — Premium unlocks unlimited history, inventory, projects, passage log, calendar alerts, and export.
+          <a href="#/boat/${boatId}/reminder" class="btn-link boat-action-dash-conversion-reminder-link">Review reminder</a>
+        </p>
+      </div>
+    `;
+    wrap.querySelector('.boat-action-dash-conversion-trial-btn')?.addEventListener('click', () => navigate('/subscription'));
+    wrap.querySelectorAll('.boat-action-dash-conversion-reminder-link').forEach((a) => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        const href = a.getAttribute('href') || '';
+        navigate(href.replace(/^#/, ''));
+      });
+    });
+    needs.appendChild(wrap);
+  } else if (!anyAttention) {
     const allClear = document.createElement('div');
     allClear.className = 'boat-action-dash-all-clear';
     allClear.innerHTML = `
@@ -405,7 +549,7 @@ function mountBoatActionDashboard(boatId, model, isArchived) {
       hint.className = 'text-muted boat-action-dash-schedule-hint';
       hint.style.cssText = 'margin: 0.5rem 0 0; font-size: 0.9rem;';
       hint.textContent =
-        'Counts and the list below include engine and sail & rigging maintenance schedules where applicable. The service “Overdue / Due in 30 days” shortcuts still open your service history only.';
+        'Counts and the list below include engine and sail & rigging maintenance schedules where applicable.';
       needs.appendChild(hint);
     }
 
@@ -422,18 +566,16 @@ function mountBoatActionDashboard(boatId, model, isArchived) {
       needs.appendChild(preview);
     }
 
-    if (overdue.length > 0 || dueSoon.length > 0) {
+    if (attentionRows.length > 0) {
       const list = document.createElement('ul');
       list.className = 'boat-action-dash-due-list';
-      const lines = [];
-      overdue.slice(0, 4).forEach((row) => lines.push({ ...row, tag: 'Overdue' }));
-      dueSoon.slice(0, 4).forEach((row) => lines.push({ ...row, tag: 'Due' }));
-      lines.slice(0, 6).forEach((row) => {
+      attentionRows.slice(0, 6).forEach((row) => {
         const li = document.createElement('li');
         const a = document.createElement('button');
         a.type = 'button';
         a.className = 'boat-action-dash-due-line';
-        a.innerHTML = `<span class="boat-action-dash-due-tag">${escapeHtmlDash(row.tag)}</span><span class="boat-action-dash-due-meta">${escapeHtmlDash(row.dateStr)}</span><span class="boat-action-dash-due-label">${escapeHtmlDash(row.label)}</span>`;
+        const dateText = row.dateStr || '\u2014';
+        a.innerHTML = `<span class="boat-action-dash-due-tag">${escapeHtmlDash(row.status)}</span><span class="boat-action-dash-due-meta">${escapeHtmlDash(dateText)}</span><span class="boat-action-dash-due-label">${escapeHtmlDash(row.title)}</span><span class="boat-action-dash-due-context">${escapeHtmlDash(row.context)}</span>`;
         a.addEventListener('click', () => navigate(row.path));
         li.appendChild(a);
         list.appendChild(li);
@@ -456,7 +598,11 @@ function mountBoatActionDashboard(boatId, model, isArchived) {
     box.className = 'boat-action-dash-recent-empty card';
     const p = document.createElement('p');
     p.className = 'boat-action-dash-recent-empty-text text-muted';
-    p.textContent = 'No activity yet — start by logging your first service or a fuel entry.';
+    p.textContent = showSetupHero
+      ? 'Start by setting your first reminder to activate due tracking.'
+      : postSetupFreeConversion
+        ? 'Your reminder is active — add a service log when you complete work, or unlock Premium for full history.'
+        : 'No activity yet — start by logging your first service or a fuel entry.';
     box.appendChild(p);
     const row = document.createElement('div');
     row.className = 'boat-action-dash-recent-empty-actions';
@@ -468,8 +614,11 @@ function mountBoatActionDashboard(boatId, model, isArchived) {
     const fuel = document.createElement('button');
     fuel.type = 'button';
     fuel.className = 'btn-secondary boat-action-dash-inline-btn';
-    fuel.textContent = 'Add fuel log';
-    fuel.addEventListener('click', () => navigate(`/boat/${boatId}/fuel`));
+    fuel.textContent = showSetupHero ? 'Set reminder' : 'Add fuel log';
+    fuel.addEventListener('click', () => {
+      if (showSetupHero) navigate(`/boat/${boatId}/reminder/setup`);
+      else navigate(`/boat/${boatId}/fuel`);
+    });
     row.appendChild(svc);
     row.appendChild(fuel);
     box.appendChild(row);
@@ -673,9 +822,7 @@ function render() {
       : []),
     { id: 'engines', title: 'Engines', icon: 'engine', route: `/boat/${currentBoatId}/engines` },
     { id: 'service', title: 'Service History', icon: 'wrench', route: `/boat/${currentBoatId}/service` },
-    ...(currentBoat.watermaker_installed
-      ? [{ id: 'watermaker', title: 'Watermaker Service', icon: 'droplet', route: `/boat/${currentBoatId}/watermaker` }]
-      : []),
+    { id: 'watermaker', title: 'Watermaker Service', icon: 'droplet', route: `/boat/${currentBoatId}/watermaker` },
     { id: 'fuel', title: 'Fuel & Performance', icon: 'fuel', route: `/boat/${currentBoatId}/fuel` },
     { id: 'electrical', title: 'Electrical & Batteries', icon: 'battery', route: `/boat/${currentBoatId}/electrical` },
     { id: 'mayday', title: 'Mayday / Distress Call', icon: 'mayday', route: `/boat/${currentBoatId}/mayday` },
@@ -700,7 +847,7 @@ function render() {
   return wrapper;
 }
 
-function renderBoatDashboardOnboarding(boatId) {
+function renderBoatDashboardOnboarding(boatId, setupState, opts = {}) {
   const host = document.getElementById('boat-dashboard-onboarding');
   if (!host || !boatId) return;
   if (hasActiveSubscription()) {
@@ -708,12 +855,12 @@ function renderBoatDashboardOnboarding(boatId) {
     host.hidden = true;
     return;
   }
-  host.hidden = false;
-  const engines = enginesStorage.getAll(boatId);
-  const services = serviceHistoryStorage.getAll(boatId);
-  const hasEngine = engines.length > 0;
-  const hasService = services.length > 0;
-  const hasReminderFlow = services.some((s) => !!s.next_service_due);
+  if (!setupState || !setupState.isComplete) {
+    host.innerHTML = '';
+    host.hidden = true;
+    return;
+  }
+  const hasReminderFlow = setupState.hasReminderFlow;
 
   let setupCompleteAtMs = null;
   if (hasReminderFlow) {
@@ -726,51 +873,46 @@ function renderBoatDashboardOnboarding(boatId) {
     !Number.isNaN(setupCompleteAtMs) &&
     Date.now() - setupCompleteAtMs >= SETUP_COMPLETE_NUDGE_MS;
 
-  const stepClass = (done) => (done ? 'dashboard-onboarding-step is-done' : 'dashboard-onboarding-step');
-
-  const stepsBlock = `
-      <h3 class="dashboard-onboarding-title">Get your boat set up</h3>
-      <ol class="dashboard-onboarding-list">
-        <li class="${stepClass(hasEngine)}">
-          <span class="dashboard-onboarding-label">Add your engine</span>
-          ${hasEngine ? '<span class="text-muted">Done</span>' : `<a href="#/boat/${boatId}/engines" class="btn-link dashboard-onboarding-link">Add engine</a>`}
-        </li>
-        <li class="${stepClass(hasService)}">
-          <span class="dashboard-onboarding-label">Log your first service</span>
-          ${hasService ? '<span class="text-muted">Done</span>' : `<a href="#/boat/${boatId}/service/new" class="btn-link dashboard-onboarding-link">Add service entry</a>`}
-        </li>
-        <li class="${stepClass(hasReminderFlow)}">
-          <span class="dashboard-onboarding-label">Set next due date &amp; reminder</span>
-          ${hasReminderFlow ? '<span class="text-muted">Done</span>' : hasService ? `<a href="#/boat/${boatId}/service/${services[0].id}" class="btn-link dashboard-onboarding-link">Open service entry</a>` : '<span class="text-muted">After you add a service</span>'}
-        </li>
-      </ol>`;
+  const conversionHeroShown = !!opts.conversionHeroShown;
 
   const completedSetupBlock = `
-      <p class="dashboard-onboarding-success">You&apos;re now set up 👍</p>
-      <p class="dashboard-onboarding-reinforcement">Your boat is being tracked and your first reminder is in place.</p>
-      <p style="margin-top: 0.75rem;"><a href="#/boat/${boatId}/reminder" class="btn-link dashboard-onboarding-reminder-link">View your reminder</a></p>
-      <div class="dashboard-onboarding-upgrade">
-        <p class="dashboard-onboarding-upgrade-text">You&apos;re currently on the free plan.<br>Unlock full access to properly look after your boat and stay on top of everything.</p>
+      <div class="dashboard-conversion-cta" role="region" aria-label="Premium upgrade">
+        <p class="dashboard-conversion-cta-title">Your boat is now being tracked</p>
+        <p class="dashboard-conversion-cta-sub">Your first reminder is live. Upgrade to unlock full boat management.</p>
+        <ul class="dashboard-conversion-cta-list">
+          <li>Unlimited service history</li>
+          <li>Full inventory &amp; stock tracking</li>
+          <li>Projects &amp; issues and passage log</li>
+          <li>Sailing &amp; rigging schedules</li>
+          <li>Calendar alerts and export boat report</li>
+        </ul>
         <button type="button" class="btn-primary dashboard-onboarding-trial-btn">Unlock Full Access &amp; Start Free Trial</button>
+        <p class="dashboard-conversion-cta-footnote">
+          Free plan active: 1 service entry per boat. Upgrade for unlimited logs and the full management modules.
+          <a href="#/boat/${boatId}/reminder" class="btn-link dashboard-onboarding-reminder-link">View reminder</a>
+        </p>
       </div>`;
 
   const day2NudgeBlock = `
-      <p class="dashboard-onboarding-success">You&apos;re back 👍</p>
-      <p class="dashboard-onboarding-reinforcement">Your boat is now being tracked. Keep everything up to date so you do not miss anything important.</p>
-      <div class="dashboard-onboarding-upgrade">
-        <p class="dashboard-onboarding-upgrade-text">You&apos;re currently on the free plan.<br>Unlock full access to properly look after your boat and stay on top of everything.</p>
-        <button type="button" class="btn-primary dashboard-onboarding-trial-btn">Unlock Full Access &amp; Start Free Trial</button>
+      <div class="dashboard-day2-nudge" role="region" aria-label="Premium reminder">
+        <p class="dashboard-day2-nudge-title">Still on the free plan?</p>
+        <p class="dashboard-day2-nudge-sub text-muted">When you are ready, unlock full boat management with a free trial.</p>
+        <button type="button" class="btn-secondary dashboard-onboarding-trial-btn">Start Free Trial</button>
       </div>`;
 
   let cardInner = '';
-  if (showDay2Nudge) {
-    cardInner = day2NudgeBlock;
-  } else {
-    cardInner = stepsBlock;
-    if (hasReminderFlow) {
-      cardInner += completedSetupBlock;
-    }
+  if (conversionHeroShown) {
+    if (showDay2Nudge) cardInner = day2NudgeBlock;
+  } else if (hasReminderFlow || showDay2Nudge) {
+    cardInner = completedSetupBlock;
   }
+
+  if (!cardInner) {
+    host.innerHTML = '';
+    host.hidden = true;
+    return;
+  }
+  host.hidden = false;
 
   host.innerHTML = `
     <section class="boat-dashboard-setup-section" aria-label="Setup checklist">
@@ -834,8 +976,31 @@ async function onMount() {
     const calendarEvents = loadResults[12] || [];
 
     const actionModel = buildBoatActionDashboardModel(boatId, { fuelLogs, calendarEvents });
+    const setupState = getBoatSetupState(boatId);
+    const { counts: dashCounts } = actionModel;
+    const anyDashAttention =
+      dashCounts.overdue + dashCounts.dueSoon + dashCounts.openIssues + dashCounts.lowStock > 0;
+    const conversionHeroShown =
+      !hasActiveSubscription() &&
+      !!setupState?.isComplete &&
+      !anyDashAttention &&
+      !(dashCounts.inventoryReview > 0);
+    console.log('[BoatMatey] Dashboard due items count', {
+      overdue: actionModel.overdue.length,
+      dueSoon: actionModel.dueSoon.length
+    });
+    console.log(
+      '[BoatMatey] Dashboard due items ids/types/dates',
+      [...actionModel.overdue, ...actionModel.dueSoon].map((row) => ({
+        id: row.id || row.sourceId || null,
+        type: row.kind || 'unknown',
+        status: actionModel.overdue.includes(row) ? 'overdue' : 'due_soon',
+        date: row.dateStr || null,
+        label: row.label || ''
+      }))
+    );
     const isBoatArchivedNow = (boatsStorage.get(boatId)?.status || 'active') === 'archived';
-    mountBoatActionDashboard(boatId, actionModel, isBoatArchivedNow);
+    mountBoatActionDashboard(boatId, actionModel, isBoatArchivedNow, setupState);
 
     const taglineEl = document.getElementById('boat-dashboard-tagline');
     if (taglineEl) {
@@ -848,7 +1013,7 @@ async function onMount() {
       ...(currentBoat?.boat_type === 'sailing' ? ['sails-rigging'] : []),
       'engines',
       'service',
-      ...(currentBoat?.watermaker_installed ? ['watermaker'] : []),
+      'watermaker',
       'fuel',
       'electrical',
       'mayday',
@@ -892,7 +1057,7 @@ async function onMount() {
       maydayCardStatus.textContent = distressInfo ? 'Ready' : 'Not set';
     }
 
-    renderBoatDashboardOnboarding(boatId);
+    renderBoatDashboardOnboarding(boatId, setupState, { conversionHeroShown });
 
     const inventoryCard = document.querySelector('.dashboard-card[data-card-id="inventory"]');
     if (inventoryCard) {

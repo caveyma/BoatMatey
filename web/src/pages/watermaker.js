@@ -2,7 +2,7 @@
  * Watermaker Page
  * Boat-level unit details + multiple service entries.
  * Next service due is added to the calendar with a 1-day reminder.
- * Only shown when "Watermaker installed" is enabled in Boat Details.
+ * The Watermaker Service card is always available from the boat dashboard.
  */
 
 import { navigate } from '../router.js';

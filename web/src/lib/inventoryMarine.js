@@ -41,23 +41,13 @@ export const LEGACY_INVENTORY_CATEGORIES = [
   { value: 'Galley', label: 'Galley' },
   { value: 'Spares', label: 'Spares' },
   { value: 'Deck Gear', label: 'Deck Gear' },
-  { value: 'Safety', label: 'Safety' },
-  { value: 'Misc', label: 'Misc' }
+  { value: 'Safety', label: 'Safety' }
 ];
-
-const ASSET_CATEGORIES_NO_STOCK = new Set([
-  'Sails',
-  'Winches',
-  'Running Rigging',
-  'Standing Rigging',
-  'Deck Hardware'
-]);
 
 const RIGGING_CATEGORIES = new Set(['Running Rigging', 'Standing Rigging']);
 
-export function categoryUsesStockSection(category) {
-  if (!category) return true;
-  return !ASSET_CATEGORIES_NO_STOCK.has(category);
+export function categoryUsesStockSection(_category) {
+  return true;
 }
 
 export function isRiggingCategory(category) {
@@ -79,6 +69,7 @@ export function getInventoryDetail(item) {
 
 export function emptyDetail() {
   return {
+    track_stock_quantity: true,
     condition: '',
     purchase_date: '',
     installed_date: '',
@@ -106,6 +97,23 @@ export function emptyDetail() {
 
 export function mergeDetail(existingItem, partial) {
   return { ...emptyDetail(), ...getInventoryDetail(existingItem), ...partial };
+}
+
+/**
+ * Per-item stock behavior:
+ * - explicit detail.track_stock_quantity wins
+ * - legacy rows fall back to presence of stock-ish fields on that item
+ */
+export function inventoryItemTracksStock(item) {
+  const row = normalizeInventoryItem(item || {});
+  const d = row.detail || {};
+  if (typeof d.track_stock_quantity === 'boolean') return d.track_stock_quantity;
+  return (
+    row.in_stock_level != null ||
+    row.required_quantity != null ||
+    !!row.unit ||
+    !!row.critical_spare
+  );
 }
 
 function startOfTodayLocal(ref = new Date()) {

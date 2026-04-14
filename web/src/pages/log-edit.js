@@ -8,8 +8,7 @@ import { navigate } from '../router.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getLogbook, createLogEntry, updateLogEntry } from '../lib/dataService.js';
-import { blockFreePlanRecordLimitIfNeeded } from '../lib/premiumSaveGate.js';
-import { shipsLogStorage } from '../lib/storage.js';
+import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
 import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 
 const MAX_DAILY_DAYS = 60;
@@ -353,10 +352,7 @@ async function onMount(params = {}) {
   document.getElementById('log-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (archived) return;
-    if (
-      isNew &&
-      blockFreePlanRecordLimitIfNeeded('log', shipsLogStorage.getAll(boatId).length)
-    ) {
+    if (isNew && blockPremiumSaveIfNeeded()) {
       return;
     }
     const form = e.target;
@@ -414,9 +410,9 @@ async function onMount(params = {}) {
   });
 
   insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-log'), {
-    headline: 'Preview: Passage log',
+    headline: 'Premium preview: Passage log',
     detail:
-      'Basic plan: up to 2 passage logs per boat. Upgrade for an unlimited logbook.'
+      'Capture routes, daily notes, and engine hours for every trip. Upgrade to save passage logs.'
   });
 }
 

@@ -10,8 +10,7 @@
     "cap:ios": "npm run build && cd .. && npx cap sync ios"
   },
   "devDependencies": {
-    "@capacitor/assets": "^3.0.5",
-    "vite": "^7.2.4"
+    "vite": "^7.3.2"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.1",

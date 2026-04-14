@@ -19,7 +19,7 @@ export function blockPremiumSaveIfNeeded() {
 }
 
 const LIMIT_COPY = {
-  projects: 'projects and issues (combined, not archived)',
+  projects: 'projects and issues',
   inventory: 'inventory items',
   navigation: 'navigation equipment items',
   safety: 'safety equipment items',
@@ -36,11 +36,14 @@ export function blockFreePlanRecordLimitIfNeeded(limitType, currentCount) {
   if (hasActiveSubscription()) return false;
   const limit = BASIC_PLAN_RECORD_LIMITS[limitType];
   if (limit == null) return false;
-  if (currentCount < limit) return false;
+  if (limit > 0 && currentCount < limit) return false;
   const label = LIMIT_COPY[limitType] || 'records';
   showSubscriptionUpsellModal({
-    title: "You've reached your Basic plan limit",
-    message: `Your plan includes ${limit} ${label} per boat. Upgrade for unlimited records.`
+    title: 'Premium feature',
+    message:
+      limit > 0
+        ? `Your free plan includes up to ${limit} ${label} per boat. Upgrade for unlimited records.`
+        : `Free plan preview only. Upgrade to save ${label}.`
   });
   return true;
 }

@@ -117,6 +117,11 @@ function populateForm(data) {
 
 async function onMount(params = {}) {
   const boatId = params?.id || window.routeParams?.id;
+  const hash = window.location.hash || '';
+  const queryString = hash.includes('?') ? hash.split('?')[1] : '';
+  const query = new URLSearchParams(queryString);
+  const targetScheduleId = query.get('schedule') || null;
+  const onboardingSchedule = query.get('onboarding_schedule') || null;
   if (boatId) {
     currentBoatId = boatId;
     try {
@@ -138,7 +143,9 @@ async function onMount(params = {}) {
     if (scheduleMountEl) {
       await mountSailsRiggingMaintenanceScheduleSection(scheduleMountEl, {
         boatId,
-        archived
+        archived,
+        targetScheduleId,
+        onboardingSchedule
       });
     }
     if (archived) {

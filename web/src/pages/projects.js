@@ -22,8 +22,7 @@ import {
   LIMITED_UPLOAD_SIZE_BYTES,
   LIMITED_UPLOADS_PER_ENTITY
 } from '../lib/uploads.js';
-import { blockFreePlanRecordLimitIfNeeded } from '../lib/premiumSaveGate.js';
-import { projectsStorage } from '../lib/storage.js';
+import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
 import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 
 const CATEGORIES = ['Electronics', 'Mechanical', 'Plumbing', 'Electrical', 'Hull / Deck', 'Interior', 'Safety', 'Other'];
@@ -209,9 +208,9 @@ async function onMount(params = {}) {
     editingId = projectId === 'new' ? `project_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` : projectId;
     await showProjectForm();
     insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-projects'), {
-      headline: 'Preview: Projects & Issues',
+      headline: 'Premium preview: Projects & issues',
       detail:
-        'Basic plan: up to 2 projects and issues combined per boat (not archived). Upgrade for unlimited items and attachments.'
+        'Plan jobs, log faults, and keep attachments in one workflow. Upgrade to save projects and issue tracking.'
     });
     return;
   }
@@ -281,9 +280,9 @@ async function onMount(params = {}) {
   if (sortByEl) sortByEl.addEventListener('change', () => { sortBy = sortByEl.value; loadProjects(); });
 
   insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-projects'), {
-    headline: 'Preview: Projects & Issues',
+    headline: 'Premium preview: Projects & issues',
     detail:
-      'Basic plan: up to 2 projects and issues combined per boat (not archived). Upgrade for unlimited items and attachments.'
+      'Plan jobs, log faults, and keep attachments in one workflow. Upgrade to save projects and issue tracking.'
   });
 
   loadProjects();
@@ -584,9 +583,7 @@ function openQuickAddIssueModal() {
         showToast('Severity is required', 'error');
         return;
       }
-      const activeProjectCount = () =>
-        projectsStorage.getAll(currentBoatId).filter((p) => !p.archived_at).length;
-      if (blockFreePlanRecordLimitIfNeeded('projects', activeProjectCount())) return;
+      if (blockPremiumSaveIfNeeded()) return;
       setSaveButtonLoading(saveBtn, true);
       try {
         const payload = {
@@ -892,9 +889,7 @@ async function showProjectForm() {
       return;
     }
     const isNew = !existing || existing.id !== editingId;
-    const activeProjectCount = () =>
-      projectsStorage.getAll(currentBoatId).filter((p) => !p.archived_at).length;
-    if (isNew && blockFreePlanRecordLimitIfNeeded('projects', activeProjectCount())) return;
+    if (isNew && blockPremiumSaveIfNeeded()) return;
     setSaveButtonLoading(saveBtn, true);
     try {
       if (isNew) {

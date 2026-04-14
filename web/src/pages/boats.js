@@ -563,6 +563,7 @@ function showBoatForm() {
           <select id="boat_type">
             <option value="motor" ${(boat?.boat_type || 'motor') === 'motor' ? 'selected' : ''}>Motor boat</option>
             <option value="sailing" ${boat?.boat_type === 'sailing' ? 'selected' : ''}>Sailing boat</option>
+            <option value="rib" ${boat?.boat_type === 'rib' ? 'selected' : ''}>RIB</option>
           </select>
           <p class="text-muted" style="margin-top: 0.25rem; font-size: 0.875rem;">Sailing boats get a Sails & Rigging card and sail/rigging service options.</p>
         </div>

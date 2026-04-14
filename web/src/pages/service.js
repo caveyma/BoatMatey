@@ -15,7 +15,10 @@ import {
   updateServiceEntry,
   deleteServiceEntry,
   getEngines,
-  getEngineMaintenanceSchedules
+  getEngineMaintenanceSchedules,
+  getSailsRiggingMaintenanceSchedules,
+  getInventory,
+  replaceServiceInventoryLinks
 } from '../lib/dataService.js';
 import { findSchedulesMatchingServiceEntry } from '../lib/engineMaintenanceScheduleDue.js';
 import { offerUpdateEngineSchedulesAfterService } from '../lib/offerEngineScheduleAfterService.js';
@@ -24,10 +27,14 @@ import { hasActiveSubscription } from '../lib/subscription.js';
 import { syncCalendarNotifications } from './calendar.js';
 import { showServiceHistoryLimitModal } from '../components/subscriptionUpsellModal.js';
 import { currencySymbol, CURRENCIES } from '../lib/currency.js';
-import { enginesStorage } from '../lib/storage.js';
+import {
+  enginesStorage,
+  engineMaintenanceScheduleStorage,
+  sailsRiggingMaintenanceScheduleStorage
+} from '../lib/storage.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
 import { enableRecordCardExpand } from '../utils/recordCardExpand.js';
-import { serviceEntryMatchesDueFilter } from '../lib/serviceDueFilter.js';
+import { buildDueMaintenanceRows, DUE_SOON_DAYS } from '../lib/serviceDueFilter.js';
 import {
   LEGACY_SAILING_SERVICE_TYPE,
   SAILING_SERVICE_TYPES,
@@ -39,6 +46,7 @@ import {
   getSailingChecklistSectionsForType,
   formatSailingServiceDetailSummary
 } from '../lib/sailingServiceEntryConfig.js';
+import { inventoryItemTracksStock } from '../lib/inventoryMarine.js';
 
 let editingId = null;
 /** Snapshot of the entry being edited (for re-rendering sailing targets after type/area changes). */
@@ -52,6 +60,10 @@ let serviceFileInput = null;
 let currentServiceIdForUpload = null;
 /** Engines used when building the service form; fallback for checklist when storage is empty or out of sync */
 let serviceFormEngines = [];
+/** Boat inventory rows for the related-inventory picker (current boat). */
+let serviceFormInventoryItems = [];
+/** Linked inventory usage rows by inventory item id for the open service form */
+let serviceFormLinkedInventoryRowsById = new Map();
 
 // DIY checklist definition – grouped by section
 // Each item will become a checkbox the user can tick
@@ -927,6 +939,7 @@ async function onMount(params = {}) {
   const qIdx = hashForQuery.indexOf('?');
   const queryPart = qIdx >= 0 ? hashForQuery.slice(qIdx + 1) : '';
   const dueParam = new URLSearchParams(queryPart).get('due');
+  console.log('[BoatMatey] Service History query param due received', dueParam || '');
   if (dueParam === 'overdue' || dueParam === 'due_soon') {
     const dueSel = document.getElementById('service-due-filter');
     if (dueSel) dueSel.value = dueParam;
@@ -980,6 +993,12 @@ async function onMount(params = {}) {
     });
   }
 
+  if (currentBoatId) {
+    await Promise.all([
+      getEngineMaintenanceSchedules(currentBoatId),
+      getSailsRiggingMaintenanceSchedules(currentBoatId)
+    ]);
+  }
   loadServices();
 }
 
@@ -1050,11 +1069,80 @@ async function loadServices() {
   const q = (document.getElementById('service-search')?.value || '').trim().toLowerCase();
   const sortVal = document.getElementById('service-sort')?.value || 'newest';
   const dueFilter = document.getElementById('service-due-filter')?.value || '';
-  let services = allServiceEntries.filter(s => {
+  const engines = currentBoatId ? await getEngines(currentBoatId) : [];
+  const dueRowsAll = currentBoatId
+    ? buildDueMaintenanceRows({
+        boatId: currentBoatId,
+        serviceEntries: allServiceEntries,
+        engineSchedules: engineMaintenanceScheduleStorage.getAll(currentBoatId),
+        sailsSchedules: sailsRiggingMaintenanceScheduleStorage.getAll(currentBoatId),
+        engines
+      })
+    : [];
+  const dueRowsFiltered = dueRowsAll.filter((row) => {
+    if (dueFilter && row.status !== dueFilter) return false;
+    if (filterEngineId === '__boat_level__') {
+      if (row.engineId) return false;
+    } else if (filterEngineId && row.engineId !== filterEngineId) return false;
+    if (!q) return true;
+    const blob = `${row.label || ''} ${row.kind || ''} ${row.dateStr || ''}`.toLowerCase();
+    return blob.includes(q);
+  });
+
+  if (dueFilter === 'overdue' || dueFilter === 'due_soon') {
+    console.log(
+      '[BoatMatey] Service History filtered items ids/types/dates',
+      dueRowsFiltered.map((row) => ({
+        id: row.id || row.sourceId || null,
+        type: row.kind || 'unknown',
+        status: row.status,
+        date: row.dateStr || null,
+        label: row.label || ''
+      }))
+    );
+    if (dueRowsFiltered.length === 0) {
+      listContainer.innerHTML = allServiceEntries.length === 0
+        ? `
+      <div class="empty-state">
+        <div class="empty-state-icon">${renderIcon('wrench')}</div>
+        <p>No service entries yet</p>
+        ${!serviceArchived ? `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); window.servicePageTryAdd()">${renderIcon('plus')} Add Service Entry</button></div>` : ''}
+      </div>
+    `
+        : (dueFilter === 'overdue'
+          ? '<p class="text-muted">No maintenance items are currently overdue.</p>'
+          : `<p class="text-muted">No maintenance items are due in the next ${DUE_SOON_DAYS} days.</p>`);
+      attachHandlers();
+      updateServiceFreeLimitUi();
+      return;
+    }
+
+    listContainer.innerHTML = dueRowsFiltered
+      .map((row) => `
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">${new Date((row.dateStr || '') + 'T12:00:00').toLocaleDateString()}</h3>
+            <p class="text-muted">${row.status === 'overdue' ? 'Overdue' : 'Due in 30 days'} • ${escapeOptionLabel(row.kind || '')}</p>
+          </div>
+        </div>
+        <div>
+          <p><strong>${escapeOptionLabel(row.label || '')}</strong></p>
+          <p class="text-muted"><strong>Due date:</strong> ${new Date((row.dateStr || '') + 'T12:00:00').toLocaleDateString()}</p>
+          <button type="button" class="btn-link" onclick="event.preventDefault(); window.navigate('${row.path}')">Open item</button>
+        </div>
+      </div>
+    `)
+      .join('');
+    attachHandlers();
+    updateServiceFreeLimitUi();
+    return;
+  }
+
+  let services = allServiceEntries.filter((s) => {
     if (filterEngineId === '__boat_level__') {
       if (s.engine_id) return false;
     } else if (filterEngineId && s.engine_id !== filterEngineId) return false;
-    if (!serviceEntryMatchesDueFilter(s, dueFilter)) return false;
     if (!q) return true;
     const dateStr = s.date ? new Date(s.date).toLocaleDateString().toLowerCase() : '';
     const type = (s.service_type || '').toLowerCase();
@@ -1068,13 +1156,6 @@ async function loadServices() {
   });
 
   if (services.length === 0) {
-    const dueF = document.getElementById('service-due-filter')?.value || '';
-    let filteredHint = '';
-    if (allServiceEntries.length > 0 && dueF === 'overdue') {
-      filteredHint = '<p class="text-muted">No service entries have an overdue next due date. Clear the filter or set next due on an entry.</p>';
-    } else if (allServiceEntries.length > 0 && dueF === 'due_soon') {
-      filteredHint = '<p class="text-muted">No service entries are due in the next 30 days.</p>';
-    }
     listContainer.innerHTML = allServiceEntries.length === 0
       ? `
       <div class="empty-state">
@@ -1083,13 +1164,12 @@ async function loadServices() {
         ${!serviceArchived ? `<div class="empty-state-actions"><button type="button" class="btn-primary" onclick="event.preventDefault(); window.servicePageTryAdd()">${renderIcon('plus')} Add Service Entry</button></div>` : ''}
       </div>
     `
-      : filteredHint || `<p class="text-muted">No service entries match your filters.</p>`;
+      : `<p class="text-muted">No service entries match your filters.</p>`;
     attachHandlers();
     updateServiceFreeLimitUi();
     return;
   }
 
-  const engines = currentBoatId ? await getEngines(currentBoatId) : [];
   const getEngineLabel = (id) => {
     if (id == null || id === '') return 'Sail & rigging (boat-level)';
     const engine = engines.find(e => e.id === id);
@@ -1119,6 +1199,14 @@ async function loadServices() {
       ? `<p class="text-muted"><strong>Details:</strong> ${escapeOptionLabel(sailingExtra)}</p>`
       : '';
 
+    const invItems = service.linked_inventory_items;
+    const invLinkedHtml =
+      Array.isArray(invItems) && invItems.length
+        ? `<p class="text-muted"><strong>Related inventory:</strong> ${invItems
+            .map((it) => escapeOptionLabel(it.name || 'Item'))
+            .join(', ')}</p>`
+        : '';
+
     return `
     <div class="card">
       <div class="card-header">
@@ -1135,6 +1223,7 @@ async function loadServices() {
         ${service.engine_id && service.engine_hours != null ? `<p><strong>Engine hours:</strong> ${service.engine_hours}</p>` : ''}
         ${service.cost != null ? `<p><strong>Cost:</strong> ${currencySymbol(service.cost_currency)}${Number(service.cost).toFixed(2)}</p>` : ''}
         ${sailingExtraHtml}
+        ${invLinkedHtml}
         ${diySummary}
         ${service.notes ? `<p><strong>Notes:</strong> ${service.notes}</p>` : ''}
         ${service.next_service_due && service.next_service_reminder_minutes > 0 ? `<p class="service-entry-reminder text-muted"><strong>Reminder:</strong> Next due ${new Date(service.next_service_due + 'T12:00:00').toLocaleDateString()} · ${reminderLeadLabel(service.next_service_reminder_minutes)}</p>` : service.next_service_due ? `<p class="text-muted"><strong>Next due:</strong> ${new Date(service.next_service_due + 'T12:00:00').toLocaleDateString()}</p>` : ''}
@@ -1262,6 +1351,251 @@ function attachServiceAttachmentHandlers() {
       loadServices();
       showToast('Attachment removed', 'info');
     });
+  });
+}
+
+const INV_CAT_SAILING_PRIORITY = new Set([
+  'Sails',
+  'Winches',
+  'Running Rigging',
+  'Standing Rigging',
+  'Deck Hardware'
+]);
+const INV_CAT_ENGINE_PRIORITY = new Set([
+  'Spare Parts',
+  'Consumables',
+  'Engine',
+  'Spares',
+  'Electrical',
+  'Plumbing'
+]);
+
+function getServiceInventoryPickerContext() {
+  const engineRaw = document.getElementById('service_engine')?.value?.trim();
+  return engineRaw ? 'engine' : 'sailing';
+}
+
+function sortInventoryForServicePicker(items, context) {
+  const priority = context === 'sailing' ? INV_CAT_SAILING_PRIORITY : INV_CAT_ENGINE_PRIORITY;
+  return [...items].sort((a, b) => {
+    const ap = priority.has(a.category) ? 0 : 1;
+    const bp = priority.has(b.category) ? 0 : 1;
+    if (ap !== bp) return ap - bp;
+    return (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+  });
+}
+
+function makeDefaultServiceInventoryLinkRow(item) {
+  const stockTracked = inventoryItemTracksStock(item);
+  return {
+    inventory_item_id: item?.id,
+    quantity_used: stockTracked ? 1 : null,
+    affects_stock: stockTracked
+  };
+}
+
+function syncServiceLinkedRowsToHidden() {
+  const el = document.getElementById('service-linked-inventory-json');
+  if (!el) return;
+  const rows = [...serviceFormLinkedInventoryRowsById.values()].map((r) => ({
+    inventory_item_id: r.inventory_item_id,
+    quantity_used:
+      r.quantity_used == null || r.quantity_used === '' ? null : Number(r.quantity_used),
+    affects_stock: !!r.affects_stock
+  }));
+  el.value = JSON.stringify(rows);
+}
+
+function renderServiceRelatedInventoryRows() {
+  const host = document.getElementById('service-related-inventory-chips');
+  if (!host) return;
+  const byId = new Map(serviceFormInventoryItems.map((i) => [i.id, i]));
+  const rows = [...serviceFormLinkedInventoryRowsById.values()];
+  if (!rows.length) {
+    host.innerHTML = '<p class="text-muted" style="margin:0;font-size:0.9rem;">None selected.</p>';
+    return;
+  }
+  host.innerHTML = rows
+    .map((row) => {
+      const item = byId.get(row.inventory_item_id);
+      const stockTracked = item ? inventoryItemTracksStock(item) : !!row.affects_stock;
+      const name = item?.name || 'Item';
+      const sub = [item?.category, item?.location].filter(Boolean).join(' · ');
+      return `
+      <div class="service-inv-link-row" data-inv-id="${escapeOptionLabel(row.inventory_item_id)}">
+        <div class="service-inv-link-main">
+          <strong>${escapeOptionLabel(name)}</strong>
+          ${sub ? `<span class="text-muted"> · ${escapeOptionLabel(sub)}</span>` : ''}
+        </div>
+        ${
+          stockTracked
+            ? `<div class="service-inv-link-usage">
+                <label>Qty used
+                  <input type="number" min="0.01" step="any" class="form-control service-inv-qty" data-inv-id="${escapeOptionLabel(row.inventory_item_id)}" value="${row.quantity_used ?? 1}">
+                </label>
+                <label class="checkbox-row" style="margin:0;">
+                  <input type="checkbox" class="service-inv-affects" data-inv-id="${escapeOptionLabel(row.inventory_item_id)}" ${row.affects_stock ? 'checked' : ''}>
+                  <span>Reduce stock</span>
+                </label>
+              </div>`
+            : `<p class="text-muted" style="margin:0.25rem 0 0;font-size:0.85rem;">Asset / non-stock: linked for service history only.</p>`
+        }
+        <button type="button" class="btn-link btn-danger service-inv-chip-remove" data-inv-id="${escapeOptionLabel(row.inventory_item_id)}" title="Remove">Remove</button>
+      </div>`;
+    })
+    .join('');
+
+  host.querySelectorAll('.service-inv-chip-remove').forEach((btn) => {
+    btn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      const rid = btn.getAttribute('data-inv-id');
+      if (!rid) return;
+      serviceFormLinkedInventoryRowsById.delete(rid);
+      syncServiceLinkedRowsToHidden();
+      renderServiceRelatedInventoryRows();
+    });
+  });
+  host.querySelectorAll('.service-inv-qty').forEach((input) => {
+    input.addEventListener('input', () => {
+      const rid = input.getAttribute('data-inv-id');
+      if (!rid || !serviceFormLinkedInventoryRowsById.has(rid)) return;
+      const current = serviceFormLinkedInventoryRowsById.get(rid);
+      serviceFormLinkedInventoryRowsById.set(rid, {
+        ...current,
+        quantity_used: input.value
+      });
+      syncServiceLinkedRowsToHidden();
+    });
+  });
+  host.querySelectorAll('.service-inv-affects').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      const rid = cb.getAttribute('data-inv-id');
+      if (!rid || !serviceFormLinkedInventoryRowsById.has(rid)) return;
+      const current = serviceFormLinkedInventoryRowsById.get(rid);
+      serviceFormLinkedInventoryRowsById.set(rid, {
+        ...current,
+        affects_stock: !!cb.checked
+      });
+      syncServiceLinkedRowsToHidden();
+    });
+  });
+}
+
+function openServiceInventoryPickerModal() {
+  const overlay = document.getElementById('service-inventory-picker-overlay');
+  if (!overlay) return;
+  const ctx = getServiceInventoryPickerContext();
+  const sorted = sortInventoryForServicePicker(serviceFormInventoryItems, ctx);
+  const searchEl = document.getElementById('service-inventory-picker-search');
+  const listEl = document.getElementById('service-inventory-picker-list');
+
+  function renderList(filterQ) {
+    if (!listEl) return;
+    const q = (filterQ || '').trim().toLowerCase();
+    const rows = !q
+      ? sorted
+      : sorted.filter((it) => {
+          const blob = `${it.name || ''} ${it.category || ''} ${it.part_number || ''} ${it.location || ''}`.toLowerCase();
+          return blob.includes(q);
+        });
+    if (!rows.length) {
+      listEl.innerHTML = q
+        ? '<p class="text-muted" style="margin:0;">No items match.</p>'
+        : '<p class="text-muted" style="margin:0;">No inventory items for this boat yet. Add them from Inventory.</p>';
+      return;
+    }
+    listEl.innerHTML = rows
+      .map((it) => {
+        const checked = serviceFormLinkedInventoryRowsById.has(it.id) ? 'checked' : '';
+        const sub = [it.category, it.location].filter(Boolean).join(' · ');
+        return `
+          <label class="checkbox-row service-inv-picker-row" style="display:flex;align-items:flex-start;gap:0.5rem;">
+            <input type="checkbox" class="service-inv-picker-cb" data-inv-id="${escapeOptionLabel(it.id)}" ${checked}>
+            <span><strong>${escapeOptionLabel(it.name || 'Unnamed')}</strong>${sub ? `<br><span class="text-muted" style="font-size:0.85rem;">${escapeOptionLabel(sub)}</span>` : ''}</span>
+          </label>`;
+      })
+      .join('');
+    listEl.querySelectorAll('.service-inv-picker-cb').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        const id = cb.getAttribute('data-inv-id');
+        if (!id) return;
+        if (cb.checked) {
+          if (!serviceFormLinkedInventoryRowsById.has(id)) {
+            serviceFormLinkedInventoryRowsById.set(id, makeDefaultServiceInventoryLinkRow(it));
+          }
+        } else {
+          serviceFormLinkedInventoryRowsById.delete(id);
+        }
+      });
+    });
+  }
+
+  if (searchEl) searchEl.value = '';
+  renderList('');
+  if (searchEl) {
+    searchEl.oninput = () => renderList(searchEl.value);
+  }
+
+  overlay.hidden = false;
+  overlay.classList.add('confirm-modal-visible');
+  overlay.setAttribute('aria-hidden', 'false');
+
+  const close = () => {
+    overlay.hidden = true;
+    overlay.classList.remove('confirm-modal-visible');
+    overlay.setAttribute('aria-hidden', 'true');
+    syncServiceLinkedRowsToHidden();
+    renderServiceRelatedInventoryRows();
+    overlay.onclick = null;
+  };
+
+  const doneBtn = document.getElementById('service-inventory-picker-done');
+  const cancelBtn = document.getElementById('service-inventory-picker-cancel');
+  if (doneBtn) doneBtn.onclick = () => close();
+  if (cancelBtn) cancelBtn.onclick = () => close();
+  overlay.onclick = (ev) => {
+    if (ev.target === overlay) close();
+  };
+}
+
+function initServiceRelatedInventorySection(entry) {
+  const rows = Array.isArray(entry?.linked_inventory_links) && entry.linked_inventory_links.length
+    ? entry.linked_inventory_links
+    : Array.isArray(entry?.linked_inventory_item_ids)
+      ? entry.linked_inventory_item_ids.map((id) => ({
+        inventory_item_id: id,
+        quantity_used: null,
+        affects_stock: false
+      }))
+      : [];
+  serviceFormLinkedInventoryRowsById = new Map(
+    rows
+      .filter((r) => r?.inventory_item_id)
+      .map((r) => [
+        r.inventory_item_id,
+        {
+          inventory_item_id: r.inventory_item_id,
+          quantity_used: r.quantity_used ?? null,
+          affects_stock: !!r.affects_stock
+        }
+      ])
+  );
+  // Ensure selected rows have defaults consistent with each item's stock behavior.
+  for (const [id, row] of serviceFormLinkedInventoryRowsById.entries()) {
+    const item = serviceFormInventoryItems.find((x) => x.id === id);
+    const stockTracked = inventoryItemTracksStock(item);
+    serviceFormLinkedInventoryRowsById.set(id, {
+      inventory_item_id: id,
+      quantity_used: stockTracked ? (row.quantity_used ?? 1) : null,
+      affects_stock: stockTracked ? (typeof row.affects_stock === 'boolean' ? row.affects_stock : true) : false
+    });
+  }
+  syncServiceLinkedRowsToHidden();
+  renderServiceRelatedInventoryRows();
+
+  document.getElementById('service-related-inventory-add')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    openServiceInventoryPickerModal();
   });
 }
 
@@ -1453,6 +1787,13 @@ async function showServiceForm() {
           <label for="service_notes">Notes</label>
           <textarea id="service_notes" rows="4">${entry?.notes || ''}</textarea>
         </div>
+        <div class="card" id="service-related-inventory-card" style="margin-top: 1rem;">
+          <h4>Related inventory items</h4>
+          <p class="text-muted" style="font-size: 0.875rem; margin-top: 0;">Optional — link gear or parts from Inventory. Stock-tracked items can record quantity used and reduce stock.</p>
+          <div id="service-related-inventory-chips" class="service-related-inventory-chips"></div>
+          <input type="hidden" id="service-linked-inventory-json" value="">
+          <button type="button" class="btn-secondary" id="service-related-inventory-add">${renderIcon('plus')} Add or change…</button>
+        </div>
         <div class="card" id="service-next-due-card" style="margin-top: 1rem;">
           <h4>Next service due${isNewFreeTierEntry ? '' : ' (optional)'}</h4>
           <p class="text-muted" style="font-size: 0.875rem;">${isNewFreeTierEntry ? 'Set a due date to create your free reminder (1 day before by default). Full Calendar is a Premium feature.' : `Set a due date to get a reminder on this device before it is due.${!hasActiveSubscription() ? ' Full Calendar &amp; Alerts is a Premium feature.' : ''}`}</p>
@@ -1500,8 +1841,26 @@ async function showServiceForm() {
     </div>
   `;
 
+  const inventoryPickerModalHtml = `
+    <div id="service-inventory-picker-overlay" class="confirm-modal-overlay" hidden aria-hidden="true" style="z-index: 1100;">
+      <div class="confirm-modal" style="max-width: 420px; max-height: 88vh; display: flex; flex-direction: column;">
+        <h4 class="confirm-modal-title" style="margin-top: 0;">Choose inventory items</h4>
+        <p class="text-muted" style="font-size: 0.875rem;">Items on this boat only. Sail &amp; rigging services list deck and rigging categories first; engine-area services list spares and consumables first.</p>
+        <input type="search" id="service-inventory-picker-search" class="form-control" placeholder="Search…" aria-label="Search inventory" style="margin-bottom: 0.75rem;">
+        <div id="service-inventory-picker-list" style="overflow-y: auto; flex: 1; min-height: 120px; max-height: 50vh; margin-bottom: 1rem;"></div>
+        <div class="confirm-modal-actions" style="margin-top: 0;">
+          <button type="button" class="btn-secondary" id="service-inventory-picker-cancel">Cancel</button>
+          <button type="button" class="btn-primary" id="service-inventory-picker-done">Done</button>
+        </div>
+      </div>
+    </div>
+  `;
+
   const listContainer = document.getElementById('service-list');
-  listContainer.insertAdjacentHTML('afterbegin', formHtml);
+  listContainer.insertAdjacentHTML('afterbegin', formHtml + inventoryPickerModalHtml);
+
+  serviceFormInventoryItems = currentBoatId ? await getInventory(currentBoatId) : [];
+  initServiceRelatedInventorySection(entry);
 
   syncServiceTypeDropdown();
   restoreServiceTypeFromEntry(entry);
@@ -1992,6 +2351,42 @@ async function saveService() {
 
   const costEl = document.getElementById('service_cost');
   const costVal = costEl?.value?.trim();
+  const linkedInvRaw = document.getElementById('service-linked-inventory-json')?.value || '[]';
+  let linked_inventory_links = [];
+  try {
+    linked_inventory_links = JSON.parse(linkedInvRaw);
+  } catch (_) {
+    linked_inventory_links = [];
+  }
+  linked_inventory_links = (Array.isArray(linked_inventory_links) ? linked_inventory_links : [])
+    .filter((r) => r && r.inventory_item_id)
+    .map((r) => ({
+      inventory_item_id: r.inventory_item_id,
+      quantity_used:
+        r.quantity_used == null || r.quantity_used === '' ? null : Number(r.quantity_used),
+      affects_stock: !!r.affects_stock
+    }));
+  const invById = new Map(serviceFormInventoryItems.map((it) => [it.id, it]));
+  for (const row of linked_inventory_links) {
+    const inv = invById.get(row.inventory_item_id);
+    if (!inv) continue;
+    const stockTracked = inventoryItemTracksStock(inv);
+    if (stockTracked && row.affects_stock) {
+      const qty = Number(row.quantity_used);
+      if (!Number.isFinite(qty) || qty <= 0) {
+        showToast(`Enter quantity used for "${inv.name || 'Item'}".`, 'error');
+        setSaveButtonLoading(form, false);
+        return;
+      }
+      const stock = inv.in_stock_level == null || inv.in_stock_level === '' ? 0 : Number(inv.in_stock_level);
+      if (qty > stock) {
+        showToast(`"${inv.name || 'Item'}" only has ${stock} in stock.`, 'error');
+        setSaveButtonLoading(form, false);
+        return;
+      }
+    }
+  }
+
   const entry = {
     id: editingId,
     date: document.getElementById('service_date').value,
@@ -2014,12 +2409,15 @@ async function saveService() {
     next_service_due: nextDueVal,
     next_service_reminder_minutes: nextReminderMins,
     pro_meta: proMeta,
-    sailing_service_detail
+    sailing_service_detail,
+    linked_inventory_links
   };
 
   // Pass full entry so checklist, DIY/pro meta, and all details are persisted (Supabase description + local storage)
+  let resolvedServiceId = null;
   if (editingId && String(editingId).includes('-')) {
     await updateServiceEntry(editingId, entry);
+    resolvedServiceId = editingId;
   } else {
     const created = await createServiceEntry(currentBoatId, entry);
     if (created && created._saveFailed) {
@@ -2041,6 +2439,25 @@ async function saveService() {
     }
     if (created?.currencyFallback) {
       showToast('Entry saved. For currency labels (e.g. USD), run the database migration: add cost_currency to service_entries.', 'info');
+    }
+    resolvedServiceId =
+      created && typeof created === 'object' && created.id ? created.id : entry.id;
+  }
+
+  if (resolvedServiceId) {
+    try {
+      const stockTrackedById = new Map(
+        serviceFormInventoryItems.map((item) => [item.id, inventoryItemTracksStock(item)])
+      );
+      await replaceServiceInventoryLinks(
+        resolvedServiceId,
+        currentBoatId,
+        linked_inventory_links,
+        { stockTrackedById }
+      );
+    } catch (linkErr) {
+      showToast(linkErr?.message || 'Could not save related inventory usage.', 'error');
+      return;
     }
   }
   try {

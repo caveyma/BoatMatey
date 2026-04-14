@@ -75,15 +75,113 @@ function openModal(htmlInner, onMountModal) {
   return { overlay, close };
 }
 
+/** Wider modal for scrollable lists (e.g. archived schedules). */
+function openWideModal(htmlInner, onMountModal) {
+  let root = document.getElementById('modal-root');
+  if (!root) {
+    root = document.createElement('div');
+    root.id = 'modal-root';
+    root.className = 'modal-root';
+    document.body.appendChild(root);
+  }
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-modal-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.innerHTML = `
+    <div class="confirm-modal" style="max-width: min(560px, 94vw); max-height: 90vh; display: flex; flex-direction: column;">
+      ${htmlInner}
+    </div>
+  `;
+  root.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add('confirm-modal-visible'));
+
+  const close = () => {
+    overlay.classList.add('confirm-modal-exit');
+    setTimeout(() => overlay.remove(), 200);
+  };
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+  });
+
+  if (onMountModal) onMountModal(overlay, close);
+  return { overlay, close };
+}
+
 /**
  * @param {HTMLElement} host
- * @param {{ boatId: string, engineId: string, engine: object|null, isNew: boolean, archived: boolean }} opts
+ * @param {{ boatId: string, engineId: string, engine: object|null, isNew: boolean, archived: boolean, targetScheduleId?: string|null, onboardingSchedule?: string|null }} opts
  */
 export async function mountEngineMaintenanceScheduleSection(host, opts) {
-  const { boatId, engineId, engine, isNew, archived } = opts;
+  const { boatId, engineId, engine, isNew, archived, targetScheduleId = null, onboardingSchedule = null } = opts;
+  const onboardingPreset = (() => {
+    if (!onboardingSchedule) return null;
+    const key = String(onboardingSchedule).trim().toLowerCase();
+    if (key === 'engine' || key === 'engine_service') return { task_name: 'Engine service', category: 'Engine', interval_months: 12, interval_hours: 100 };
+    if (key === 'winch' || key === 'winch_service') return { task_name: 'Winch service', category: 'Deck hardware', interval_months: 6, interval_hours: null };
+    if (key === 'rigging' || key === 'rigging_inspection') return { task_name: 'Rigging inspection', category: 'Rigging', interval_months: 6, interval_hours: null };
+    if (key === 'haulout') return { task_name: 'Haul-out maintenance', category: 'Hull / Deck', interval_months: 12, interval_hours: null };
+    return { task_name: 'Maintenance reminder', category: null, interval_months: 12, interval_hours: null };
+  })();
+  let onboardingModalOpened = false;
+  function focusScheduleRowIfNeeded() {
+    if (!targetScheduleId) return;
+    const selectorId = window.CSS?.escape ? CSS.escape(String(targetScheduleId)) : String(targetScheduleId);
+    const row = host.querySelector(`.engine-maint-schedule-row[data-schedule-id="${selectorId}"]`);
+    if (!row) return;
+    row.classList.add('maintenance-row-focus-target');
+    try {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch (_) {
+      row.scrollIntoView();
+    }
+    window.setTimeout(() => {
+      row.classList.remove('maintenance-row-focus-target');
+    }, 2200);
+  }
+
   if (!host || !boatId) return () => {};
 
   const meterHours = getEngineMeterReadingHours(engine);
+  const collapseKey = `bm:engine-maint-collapsed:${boatId}:${engineId}`;
+  let isCollapsed = false;
+  try {
+    isCollapsed = sessionStorage.getItem(collapseKey) === '1';
+  } catch (_) {}
+
+  function renderSummary(overdueCount, dueSoonCount, totalCount) {
+    const el = host.querySelector('#engine-maint-schedule-summary');
+    if (!el) return;
+    if (!totalCount) {
+      el.textContent = 'No scheduled maintenance yet';
+      return;
+    }
+    el.textContent = `${overdueCount} overdue \u2022 ${dueSoonCount} due soon \u2022 ${totalCount} items`;
+  }
+
+  function applyCollapsedUi() {
+    const content = host.querySelector('#engine-maint-schedule-content');
+    const chevron = host.querySelector('#engine-maint-schedule-chevron');
+    const toggle = host.querySelector('#engine-maint-schedule-toggle');
+    if (content) content.style.display = isCollapsed ? 'none' : 'block';
+    if (chevron) chevron.classList.toggle('is-expanded', !isCollapsed);
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+      toggle.setAttribute(
+        'aria-label',
+        isCollapsed ? 'Expand scheduled maintenance section' : 'Collapse scheduled maintenance section'
+      );
+    }
+  }
+
+  function setCollapsed(next) {
+    isCollapsed = !!next;
+    try {
+      sessionStorage.setItem(collapseKey, isCollapsed ? '1' : '0');
+    } catch (_) {}
+    applyCollapsedUi();
+  }
 
   function renderShell() {
     host.innerHTML = '';
@@ -91,18 +189,37 @@ export async function mountEngineMaintenanceScheduleSection(host, opts) {
     card.className = 'card';
     card.id = 'engine-maint-schedule-card';
     card.innerHTML = `
-      <h3>Scheduled maintenance</h3>
-      <p class="text-muted" style="margin-top:0;">
-        Plan recurring tasks by calendar and/or engine hours. Logging work stays on the <strong>Service</strong> page — this section only tracks what is due next.
-      </p>
-      ${meterHours == null ? '<p class="text-muted" style="font-size:0.9rem;">Tip: set <strong>Current engine hours (meter)</strong> above for hour-based status.</p>' : ''}
-      <div id="engine-maint-schedule-body"></div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.75rem;flex-wrap:wrap;">
+        <button type="button" class="maintenance-section-toggle" id="engine-maint-schedule-toggle" aria-expanded="true">
+          <span id="engine-maint-schedule-chevron" class="record-expand-chevron is-expanded" aria-hidden="true">▶</span>
+          <span>
+            <h3 style="margin:0;">Scheduled maintenance</h3>
+            <p id="engine-maint-schedule-summary" class="text-muted maintenance-section-summary" style="margin:0.15rem 0 0;">No scheduled maintenance yet</p>
+          </span>
+        </button>
+        ${archived ? '' : '<button type="button" class="btn-link" id="engine_maint_archived_btn">Archived</button>'}
+      </div>
+      <div id="engine-maint-schedule-content">
+        <p class="text-muted" style="margin-top:0;">
+          Plan recurring tasks by calendar and/or engine hours. Logging work stays on the <strong>Service</strong> page — this section only tracks what is due next.
+        </p>
+        ${meterHours == null ? '<p class="text-muted" style="font-size:0.9rem;">Tip: set <strong>Current engine hours (meter)</strong> above for hour-based status.</p>' : ''}
+        <div id="engine-maint-schedule-body"></div>
+      </div>
     `;
     host.appendChild(card);
+    host.querySelector('#engine-maint-schedule-toggle')?.addEventListener('click', () => {
+      setCollapsed(!isCollapsed);
+    });
+    applyCollapsedUi();
   }
 
   renderShell();
   const body = () => host.querySelector('#engine-maint-schedule-body');
+
+  if (!isNew && !archived) {
+    host.querySelector('#engine_maint_archived_btn')?.addEventListener('click', () => openArchivedModal());
+  }
 
   if (isNew) {
     body().innerHTML =
@@ -118,7 +235,6 @@ export async function mountEngineMaintenanceScheduleSection(host, opts) {
     b.innerHTML = '<p class="text-muted">Loading…</p>';
     const all = await getEngineMaintenanceSchedules(boatId);
     const rows = all.filter((s) => s.engine_id === engineId && s.is_active !== false);
-    const archivedRows = all.filter((s) => s.engine_id === engineId && s.is_active === false);
 
     const engMeter = getEngineMeterReadingHours(engine);
     const today = new Date();
@@ -130,6 +246,17 @@ export async function mountEngineMaintenanceScheduleSection(host, opts) {
         return { s, st, nextDueDate, nextDueHours };
       })
       .sort((a, b) => (a.s.task_name || '').localeCompare(b.s.task_name || ''));
+    const overdueCount = lines.filter((x) => x.st === 'overdue').length;
+    const dueSoonCount = lines.filter((x) => x.st === 'due_soon').length;
+    renderSummary(overdueCount, dueSoonCount, lines.length);
+    const hasStored = (() => {
+      try {
+        return sessionStorage.getItem(collapseKey) != null;
+      } catch (_) {
+        return false;
+      }
+    })();
+    if (!hasStored) setCollapsed(overdueCount === 0);
 
     const rowsHtml = lines.length
       ? lines
@@ -144,7 +271,7 @@ export async function mountEngineMaintenanceScheduleSection(host, opts) {
                 ? escapeHtml(String(nextDueHours))
                 : '<span class="text-muted">—</span>';
             return `
-          <div class="engine-maint-schedule-row card" style="margin-bottom: var(--spacing-md); padding: var(--spacing-md);">
+          <div class="engine-maint-schedule-row card" data-schedule-id="${escapeHtml(s.id)}" style="margin-bottom: var(--spacing-md); padding: var(--spacing-md);">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;flex-wrap:wrap;">
               <div>
                 <strong>${escapeHtml((s.task_name || '').trim() || 'Task')}</strong>
@@ -197,11 +324,6 @@ export async function mountEngineMaintenanceScheduleSection(host, opts) {
         <button type="button" class="btn-primary" id="engine_maint_add_custom">${renderIcon('plus')} Custom item</button>
       </div>
       `
-      }
-      ${
-        archivedRows.length && !archived
-          ? `<p class="text-muted" style="font-size:0.85rem;">${archivedRows.length} archived item(s) hidden.</p>`
-          : ''
       }
     `;
 
@@ -275,7 +397,68 @@ export async function mountEngineMaintenanceScheduleSection(host, opts) {
         });
       });
     }
+    if (!archived && onboardingPreset && !onboardingModalOpened) {
+      onboardingModalOpened = true;
+      openEditDialog(null, onboardingPreset, true);
+    }
+    focusScheduleRowIfNeeded();
   };
+
+  async function openArchivedModal() {
+    const all = await getEngineMaintenanceSchedules(boatId);
+    const archivedList = all
+      .filter((s) => s.engine_id === engineId && s.is_active === false)
+      .sort((a, b) => (a.task_name || '').localeCompare(b.task_name || ''));
+
+    const listHtml = archivedList.length
+      ? archivedList
+          .map((s) => {
+            const interval = formatScheduleIntervalSummary(s);
+            return `
+          <div class="card" style="margin-bottom: var(--spacing-md); padding: var(--spacing-md);">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;flex-wrap:wrap;">
+              <div>
+                <strong>${escapeHtml((s.task_name || '').trim() || 'Task')}</strong>
+                ${s.category ? `<span class="text-muted" style="font-size:0.9rem;"> · ${escapeHtml(s.category)}</span>` : ''}
+                <div class="text-muted" style="font-size:0.9rem;margin-top:0.25rem;">${escapeHtml(interval)}</div>
+              </div>
+              <span class="badge badge-secondary">Archived</span>
+            </div>
+            ${s.notes ? `<p class="text-muted" style="margin:0.5rem 0 0;font-size:0.9rem;">${escapeHtml(s.notes)}</p>` : ''}
+            <div class="form-actions" style="margin-top:0.75rem;margin-bottom:0;">
+              <button type="button" class="btn-secondary engine-archived-restore" data-id="${escapeHtml(s.id)}">Restore</button>
+            </div>
+          </div>`;
+          })
+          .join('')
+      : '<p class="text-muted" style="margin:0;">No archived items</p>';
+
+    openWideModal(
+      `
+      <h2 class="confirm-modal-title">Archived Items</h2>
+      <p class="text-muted" style="margin-top:0;">These schedules are not shown in your active list or dashboard reminders.</p>
+      <div style="overflow-y:auto;flex:1;min-height:0;margin-top:0.5rem;padding-right:2px;">
+        ${listHtml}
+      </div>
+      <div class="confirm-modal-actions" style="margin-top: var(--spacing-md); flex-shrink: 0;">
+        <button type="button" class="btn-secondary" id="engine_archived_modal_close">Close</button>
+      </div>
+    `,
+      (overlay, close) => {
+        overlay.querySelector('#engine_archived_modal_close').onclick = () => close();
+        overlay.querySelectorAll('.engine-archived-restore').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const id = btn.getAttribute('data-id');
+            await updateEngineMaintenanceSchedule(id, { is_active: true, boat_id: boatId });
+            await getEngineMaintenanceSchedules(boatId);
+            showToast('Schedule restored', 'info');
+            close();
+            refresh();
+          });
+        });
+      }
+    );
+  }
 
   function openCompleteDialog(schedule) {
     const today = new Date();
@@ -325,7 +508,7 @@ export async function mountEngineMaintenanceScheduleSection(host, opts) {
     );
   }
 
-  function openEditDialog(existing, prefill = null) {
+  function openEditDialog(existing, prefill = null, onboardingMode = false) {
     const e = existing || {};
     const p = prefill || {};
     const task = e.task_name ?? p.task_name ?? '';
@@ -337,16 +520,16 @@ export async function mountEngineMaintenanceScheduleSection(host, opts) {
 
     openModal(
       `
-      <h2 class="confirm-modal-title">${existing ? 'Edit schedule' : 'Add schedule'}</h2>
-      <p class="text-muted" style="margin-top:0;">Set at least one interval (months and/or hours).</p>
+      <h2 class="confirm-modal-title">${existing ? 'Edit schedule' : (onboardingMode ? 'Set your first reminder' : 'Add schedule')}</h2>
+      <p class="text-muted" style="margin-top:0;">${onboardingMode ? 'Choose what to track and when it should recur.' : 'Set at least one interval (months and/or hours).'}</p>
       <div class="form-group">
         <label for="ems_task">Task name</label>
         <input type="text" id="ems_task" class="form-control" value="${escapeHtml(task)}" required />
       </div>
-      <div class="form-group">
+      ${onboardingMode ? '' : `<div class="form-group">
         <label for="ems_cat">Category (optional)</label>
         <input type="text" id="ems_cat" class="form-control" value="${escapeHtml(cat)}" placeholder="e.g. Engine Oil" />
-      </div>
+      </div>`}
       <div class="form-group">
         <label for="ems_im">Interval (months)</label>
         <input type="number" min="1" id="ems_im" class="form-control" value="${im !== '' && im != null ? escapeHtml(String(im)) : ''}" placeholder="e.g. 12" />
@@ -355,10 +538,10 @@ export async function mountEngineMaintenanceScheduleSection(host, opts) {
         <label for="ems_ih">Interval (engine hours)</label>
         <input type="number" min="1" id="ems_ih" class="form-control" value="${ih !== '' && ih != null ? escapeHtml(String(ih)) : ''}" placeholder="e.g. 100" />
       </div>
-      <div class="form-group">
+      ${onboardingMode ? '' : `<div class="form-group">
         <label for="ems_notes">Notes (optional)</label>
         <textarea id="ems_notes" class="form-control" rows="2">${escapeHtml(notes)}</textarea>
-      </div>
+      </div>`}
       <div class="confirm-modal-actions">
         <button type="button" class="btn-secondary" id="ems_edit_cancel">Cancel</button>
         <button type="button" class="btn-primary" id="ems_edit_save">Save</button>
@@ -383,8 +566,8 @@ export async function mountEngineMaintenanceScheduleSection(host, opts) {
           const payload = {
             engine_id: engineId,
             task_name: taskName,
-            category: overlay.querySelector('#ems_cat')?.value?.trim() || null,
-            notes: overlay.querySelector('#ems_notes')?.value?.trim() || null,
+            category: onboardingMode ? (cat || null) : (overlay.querySelector('#ems_cat')?.value?.trim() || null),
+            notes: onboardingMode ? null : (overlay.querySelector('#ems_notes')?.value?.trim() || null),
             interval_months: imN && imN > 0 ? imN : null,
             interval_hours: ihN && ihN > 0 ? ihN : null,
             template_key: tplKey || null,

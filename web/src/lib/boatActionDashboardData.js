@@ -5,7 +5,6 @@
 
 import {
   serviceHistoryStorage,
-  hauloutStorage,
   projectsStorage,
   inventoryStorage,
   shipsLogStorage,
@@ -14,20 +13,10 @@ import {
   sailsRiggingMaintenanceScheduleStorage
 } from './storage.js';
 import {
-  computeEngineScheduleStatus,
-  computeScheduleNextDue,
-  getEngineMeterReadingHours
-} from './engineMaintenanceScheduleDue.js';
+  buildDueMaintenanceRows
+} from './serviceDueFilter.js';
 import {
-  computeSailsRiggingScheduleStatus,
-  computeSailsScheduleNextDue
-} from './sailsRiggingMaintenanceScheduleDue.js';
-import {
-  getInventoryDetail,
   inventoryItemNeedsReview,
-  inventoryNeedsAttentionStrict,
-  inventoryRecommendedReplacementOffsetDays,
-  inventoryReplacementDueOrSoon,
   normalizeInventoryItem
 } from './inventoryMarine.js';
 
@@ -89,27 +78,112 @@ function truncateText(s, max) {
   return `${t.slice(0, max - 1)}\u2026`;
 }
 
+function inventoryItemLabel(item) {
+  return (
+    (item?.item_name || item?.name || item?.part_name || item?.title || '').trim() ||
+    'Inventory item'
+  );
+}
+
+function issueItemLabel(issue) {
+  return ((issue?.project_name || issue?.title || '').trim() || 'Issue');
+}
+
+function dayOffsetFromDateStr(dateStr) {
+  const d = toDay(dateStr);
+  return dayOffsetFromToday(d);
+}
+
+function toAttentionDueRow(row, status) {
+  const label = (row?.label || '').trim();
+  const isRigging = row.kind === 'sails_schedule' || /^Rigging schedule:\s*/i.test(label);
+  const isEngine = row.kind === 'engine_schedule' || /^Engine schedule:\s*/i.test(label);
+  const source = isRigging ? 'Rigging schedule' : isEngine ? 'Engine schedule' : 'Service history';
+  const title = label
+    .replace(/^Rigging schedule:\s*/i, '')
+    .replace(/^Engine schedule:\s*/i, '')
+    .replace(/^Next due:\s*/i, '')
+    .trim();
+  return {
+    status,
+    dateStr: row.dateStr || '',
+    title: title || 'Maintenance item',
+    context: source,
+    path: row.path,
+    priority: status === 'OVERDUE' ? 10 : 20,
+    sort: Number(row.sort) || 0
+  };
+}
+
+function buildAttentionRows(model, boatId) {
+  const rows = [];
+  for (const row of model.overdue) rows.push(toAttentionDueRow(row, 'OVERDUE'));
+  for (const row of model.dueSoon) rows.push(toAttentionDueRow(row, 'DUE'));
+
+  for (const item of model.lowStockItems) {
+    const stock = item?.in_stock_level != null ? Number(item.in_stock_level) : 0;
+    const req = item?.required_quantity != null ? Number(item.required_quantity) : 0;
+    const itemId = item?.id ? encodeURIComponent(String(item.id)) : '';
+    rows.push({
+      status: 'LOW STOCK',
+      dateStr: '',
+      title: inventoryItemLabel(item),
+      context: 'Inventory',
+      path: itemId
+        ? `/boat/${boatId}/inventory?stock=low&item=${itemId}`
+        : `/boat/${boatId}/inventory?stock=low`,
+      priority: 30,
+      sort: req - stock
+    });
+  }
+
+  for (const issue of model.openIssues) {
+    const d = toDay(issue.date_reported || issue.target_date || issue.updated_at);
+    rows.push({
+      status: 'OPEN',
+      dateStr: d ? fmtYmd(d) : '',
+      title: issueItemLabel(issue),
+      context: 'Projects & Issues',
+      path: `/boat/${boatId}/projects/${issue.id}`,
+      priority: 40,
+      sort: d ? d.getTime() : 0
+    });
+  }
+
+  rows.sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    if (a.priority === 30) return b.sort - a.sort;
+    return a.sort - b.sort;
+  });
+  return rows;
+}
+
 /**
  * One-line contextual summary under the boat name (real data only).
  * @param {string} boatId
  * @param {ReturnType<typeof buildBoatActionDashboardModel>} model
  */
 export function computeBoatDashboardTagline(boatId, model) {
-  const { overdue, dueSoon, counts } = model;
-  if (overdue.length > 0) {
-    const raw = overdue[0].label
-      .replace(/^Next due:\s*/i, '')
-      .replace(/^Project:\s*/i, '')
-      .replace(/^Issue:\s*/i, '');
-    return `Overdue: ${truncateText(raw, 46)}`;
-  }
-  if (dueSoon.length > 0) {
-    const r = dueSoon[0];
-    const d = toDay(r.dateStr);
-    const off = dayOffsetFromToday(d);
-    const raw = r.label.replace(/^Next due:\s*/i, '');
-    if (off === 0) return `Due today: ${truncateText(raw, 44)}`;
-    return `Next due: ${truncateText(raw, 36)} in ${off} day${off === 1 ? '' : 's'}`;
+  const { counts, attentionRows = [] } = model;
+  const top = attentionRows[0];
+  if (top) {
+    if (top.status === 'OVERDUE') {
+      return `Overdue: ${truncateText(`${top.context} — ${top.title}`, 52)}`;
+    }
+    if (top.status === 'DUE') {
+      const off = dayOffsetFromDateStr(top.dateStr);
+      if (off === 0) return `Due today: ${truncateText(`${top.context} — ${top.title}`, 50)}`;
+      if (off != null && off > 0) {
+        return `Due soon: ${truncateText(`${top.context} — ${top.title}`, 40)} in ${off} day${off === 1 ? '' : 's'}`;
+      }
+      return `Due soon: ${truncateText(`${top.context} — ${top.title}`, 50)}`;
+    }
+    if (top.status === 'LOW STOCK') {
+      return `Low stock: ${truncateText(top.title, 44)} below required stock`;
+    }
+    if (top.status === 'OPEN') {
+      return `Open issue: ${truncateText(top.title, 48)}`;
+    }
   }
 
   const services = serviceHistoryStorage.getAll(boatId);
@@ -126,14 +200,8 @@ export function computeBoatDashboardTagline(boatId, model) {
     return `Next service due in ${bestFuture.off} day${bestFuture.off === 1 ? '' : 's'} — ${truncateText(bestFuture.label, 36)}`;
   }
 
-  if (counts.openIssues > 0) {
-    return `${counts.openIssues} open issue${counts.openIssues === 1 ? '' : 's'} need review`;
-  }
   if (counts.inventoryReview > 0) {
     return `${counts.inventoryReview} inventory item${counts.inventoryReview === 1 ? '' : 's'} need review (condition or replacement date)`;
-  }
-  if (counts.lowStock > 0) {
-    return `${counts.lowStock} inventory item${counts.lowStock === 1 ? '' : 's'} at or below required stock`;
   }
 
   const engines = enginesStorage.getAll(boatId);
@@ -152,10 +220,8 @@ export function computeBoatDashboardTagline(boatId, model) {
  */
 export function buildBoatActionDashboardModel(boatId, extras = {}) {
   const fuelLogs = Array.isArray(extras.fuelLogs) ? extras.fuelLogs : [];
-  const calendarEvents = Array.isArray(extras.calendarEvents) ? extras.calendarEvents : [];
 
   const services = serviceHistoryStorage.getAll(boatId);
-  const haulouts = hauloutStorage.getAll(boatId);
   const projects = projectsStorage.getAll(boatId);
   const inventory = inventoryStorage.getAll(boatId);
   const logs = shipsLogStorage.getAll(boatId);
@@ -165,200 +231,22 @@ export function buildBoatActionDashboardModel(boatId, extras = {}) {
   /** @type {{ kind: string, label: string, dateStr: string, sort: number, href: string }[]} */
   const dueSoon = [];
 
-  const pushDateBucket = (day, kind, label, path, buckets) => {
-    const off = dayOffsetFromToday(day);
-    if (off == null) return;
-    const row = { kind, label, dateStr: fmtYmd(day), sort: day.getTime(), path };
-    if (off < 0) buckets.overdue.push(row);
-    else if (off >= 0 && off <= 30) buckets.dueSoon.push(row);
-  };
-
-  const buckets = { overdue, dueSoon };
-
-  for (const s of services) {
-    const due = toDay(s.next_service_due);
-    if (due) {
-      const title = (s.service_type || s.title || 'Service').trim() || 'Service';
-      pushDateBucket(due, 'service', `Next due: ${title}`, `/boat/${boatId}/service/${s.id}`, buckets);
-    }
-  }
-
-  for (const h of haulouts) {
-    const due = toDay(h.next_haulout_due);
-    if (due) {
-      pushDateBucket(due, 'haulout', 'Next haul-out due', `/boat/${boatId}/haulout/${h.id}`, buckets);
-    }
-  }
-
-  for (const p of projects) {
-    if (!isProjectRowOpen(p)) continue;
-    const td = toDay(p.target_date);
-    if (td) {
-      const name = (p.project_name || 'Untitled').trim();
-      const typeLabel = (p.type || 'Project') === 'Issue' ? 'Issue' : 'Project';
-      pushDateBucket(td, 'project', `${typeLabel}: ${name}`, `/boat/${boatId}/projects/${p.id}`, buckets);
-    }
-  }
-
-  for (const ev of calendarEvents) {
-    if (!ev?.date) continue;
-    const d = toDay(ev.date);
-    if (!d) continue;
-    const title = (ev.title || 'Calendar').trim();
-    pushDateBucket(d, 'calendar', title, `/calendar`, buckets);
-  }
-
   const schedules = engineMaintenanceScheduleStorage.getAll(boatId);
   const engines = enginesStorage.getAll(boatId);
-  const enginesById = new Map(engines.map((e) => [e.id, e]));
-  const todayForSched = new Date();
-
-  for (const sch of schedules) {
-    if (sch.is_active === false) continue;
-    const engine = enginesById.get(sch.engine_id);
-    const meter = getEngineMeterReadingHours(engine);
-    const st = computeEngineScheduleStatus(sch, { today: todayForSched, currentEngineHours: meter });
-    if (st !== 'overdue' && st !== 'due_soon') continue;
-
-    const { nextDueDate, nextDueHours } = computeScheduleNextDue(sch);
-    const engLabel = (engine && (engine.label || '').trim()) || 'Engine';
-    const title = (sch.task_name || 'Schedule').trim();
-    const label = `Schedule: ${title} (${engLabel})`;
-    const path = `/boat/${boatId}/engines/${sch.engine_id}`;
-    const t0 = startOfTodayLocal();
-
-    if (st === 'overdue') {
-      let anchor = nextDueDate ? toDay(nextDueDate) : null;
-      if (!anchor) {
-        anchor = new Date(t0);
-        anchor.setDate(anchor.getDate() - 1);
-      }
-      overdue.push({ kind: 'engine_schedule', label, dateStr: fmtYmd(anchor), sort: anchor.getTime(), path });
-    } else {
-      const anchorFromDate = nextDueDate ? toDay(nextDueDate) : null;
-      if (anchorFromDate) {
-        const off = dayOffsetFromToday(anchorFromDate);
-        if (off != null && off >= 0 && off <= 30) {
-          dueSoon.push({
-            kind: 'engine_schedule',
-            label,
-            dateStr: fmtYmd(anchorFromDate),
-            sort: anchorFromDate.getTime(),
-            path
-          });
-        }
-      } else if (
-        nextDueHours != null &&
-        meter != null &&
-        meter < nextDueHours &&
-        nextDueHours - meter <= 10
-      ) {
-        dueSoon.push({
-          kind: 'engine_schedule',
-          label: `${label} · ${Math.round(nextDueHours - meter)}h to due`,
-          dateStr: fmtYmd(t0),
-          sort: t0.getTime(),
-          path
-        });
-      }
-    }
-  }
-
   const sailsSchedules = sailsRiggingMaintenanceScheduleStorage.getAll(boatId);
+  const dueRows = buildDueMaintenanceRows({
+    boatId,
+    serviceEntries: services,
+    engineSchedules: schedules,
+    sailsSchedules,
+    engines
+  });
+  for (const row of dueRows) {
+    if (row.status === 'overdue') overdue.push(row);
+    else if (row.status === 'due_soon') dueSoon.push(row);
+  }
+
   const t0 = startOfTodayLocal();
-
-  const inventoryPath = `/boat/${boatId}/inventory?attention=needs`;
-
-  for (const inv of inventory) {
-    const row = normalizeInventoryItem(inv);
-    const name = (row.name || 'Item').trim() || 'Item';
-    if (inventoryNeedsAttentionStrict(row)) {
-      const d = getInventoryDetail(row);
-      const c = (d.condition || '').trim();
-      const off = inventoryRecommendedReplacementOffsetDays(row);
-      if (off !== null && off < 0) {
-        const anchor = toDay(d.recommended_replacement_date) || (() => {
-          const x = new Date(startOfTodayLocal());
-          x.setDate(x.getDate() - 1);
-          return x;
-        })();
-        overdue.push({
-          kind: 'inventory',
-          label: `Inventory: ${name} — replacement date passed`,
-          dateStr: fmtYmd(anchor),
-          sort: anchor.getTime(),
-          path: inventoryPath
-        });
-      } else if (c === 'Needs Replacement') {
-        const t0 = startOfTodayLocal();
-        overdue.push({
-          kind: 'inventory',
-          label: `Inventory: ${name} — needs replacement`,
-          dateStr: fmtYmd(t0),
-          sort: t0.getTime(),
-          path: inventoryPath
-        });
-      } else {
-        const t0 = startOfTodayLocal();
-        dueSoon.push({
-          kind: 'inventory',
-          label: `Inventory: ${name} — needs attention`,
-          dateStr: fmtYmd(t0),
-          sort: t0.getTime(),
-          path: inventoryPath
-        });
-      }
-      continue;
-    }
-    if (inventoryReplacementDueOrSoon(row)) {
-      const d = getInventoryDetail(row);
-      const day = toDay(d.recommended_replacement_date);
-      const off = inventoryRecommendedReplacementOffsetDays(row);
-      if (day && off !== null && off >= 0) {
-        dueSoon.push({
-          kind: 'inventory',
-          label: `Inventory: ${name} — replacement due in ${off} day${off === 1 ? '' : 's'}`,
-          dateStr: fmtYmd(day),
-          sort: day.getTime(),
-          path: inventoryPath
-        });
-      }
-    }
-  }
-
-  for (const sch of sailsSchedules) {
-    if (sch.is_active === false) continue;
-    const st = computeSailsRiggingScheduleStatus(sch);
-    if (st !== 'overdue' && st !== 'due_soon') continue;
-
-    const { nextDueDate } = computeSailsScheduleNextDue(sch);
-    const title = (sch.task_name || 'Schedule').trim();
-    const label = `Rigging schedule: ${title}`;
-    const path = `/boat/${boatId}/sails-rigging`;
-
-    if (st === 'overdue') {
-      let anchor = nextDueDate ? toDay(nextDueDate) : null;
-      if (!anchor) {
-        anchor = new Date(t0);
-        anchor.setDate(anchor.getDate() - 1);
-      }
-      overdue.push({ kind: 'sails_schedule', label, dateStr: fmtYmd(anchor), sort: anchor.getTime(), path });
-    } else {
-      const anchorFromDate = nextDueDate ? toDay(nextDueDate) : null;
-      if (anchorFromDate) {
-        const off = dayOffsetFromToday(anchorFromDate);
-        if (off != null && off >= 0 && off <= 30) {
-          dueSoon.push({
-            kind: 'sails_schedule',
-            label,
-            dateStr: fmtYmd(anchorFromDate),
-            sort: anchorFromDate.getTime(),
-            path
-          });
-        }
-      }
-    }
-  }
 
   const openIssues = projects.filter(isIssueRowOpen);
 
@@ -445,9 +333,11 @@ export function buildBoatActionDashboardModel(boatId, extras = {}) {
     dueSoon,
     openIssues,
     lowStockItems,
+    attentionRows: [],
     recentTop,
     hasMaintenanceScheduleAttention
   };
+  model.attentionRows = buildAttentionRows(model, boatId);
   model.tagline = computeBoatDashboardTagline(boatId, model);
   return model;
 }

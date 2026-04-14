@@ -1,17 +1,12 @@
 /**
- * Boat Dashboard Guide Page
- * Explains what each dashboard card does and how to use it.
- * Section order and colours match the dashboard cards.
+ * User Guide page (home or per-boat).
+ * Explains dashboard sections in roughly the same order as the boat dashboard cards, with matching accent colours.
  */
 
 import { createYachtHeader, createBackButton } from '../components/header.js';
-import { boatsStorage } from '../lib/storage.js';
-
-let currentBoatId = null;
 
 export function render(params = {}) {
-  currentBoatId = params?.id || window.routeParams?.id;
-  const boat = currentBoatId ? boatsStorage.get(currentBoatId) || {} : null;
+  const currentBoatId = params?.id || window.routeParams?.id;
   const fromHome = !currentBoatId;
 
   const wrapper = document.createElement('div');
@@ -33,7 +28,7 @@ export function render(params = {}) {
     <h2>BoatMatey user guide</h2>
     <p class="text-muted">
       This guide explains every section of BoatMatey and how to use it. From the home screen you can open
-      Calendar &amp; Alerts, Settings, or tap a boat to see its dashboard. Open this guide anytime from the
+      Calendar &amp; Alerts, Settings, or tap a boat to see its dashboard and module cards. Open this guide anytime from the
       &quot;User Guide&quot; card on the home page or from a boat&apos;s dashboard.
     </p>
   `
@@ -48,12 +43,23 @@ export function render(params = {}) {
   guideBody.innerHTML = `
     <div class="card guide-section guide-section-boat">
       <h3>Boat Details</h3>
-      <p><strong>What it is:</strong> The main profile for this boat—name, make &amp; model, type (motor or sailing), photo, dimensions, fuel type, home marina, registration, insurance and purchase date. You can turn on &quot;Watermaker installed&quot; here; when enabled, the Watermaker Service card appears on the dashboard.</p>
+      <p><strong>What it is:</strong> The main profile for this boat—name, make &amp; model, <strong>boat type</strong> (motor, sailing or RIB), photo, dimensions, fuel type, home marina, registration, insurance and purchase date.</p>
       <p><strong>How to use it:</strong></p>
       <ul>
         <li>Tap the Boat Details card, then edit the form and tap <strong>Save</strong>.</li>
-        <li>Set <strong>Boat type</strong> to Sailing if you have a sailboat—this shows the Sails &amp; Rigging card.</li>
+        <li>Set <strong>Boat type</strong> to <strong>Sailing</strong> if you have a sailboat—this shows the <strong>Sails &amp; Rigging</strong> card on the dashboard.</li>
         <li>Attach documents (e.g. registration, insurance) via the attachments area.</li>
+      </ul>
+    </div>
+
+    <div class="card guide-section guide-section-sails-rigging">
+      <h3>Sails &amp; Rigging</h3>
+      <p><em>This card only appears when the boat type is set to <strong>Sailing</strong> in Boat Details.</em></p>
+      <p><strong>What it is:</strong> A single form to record mainsail, headsails, mast and spar, standing and running rigging, winches, last inspection date and general notes. It does <strong>not</strong> log individual services—for that you use the <strong>Service History</strong> card and choose &quot;N/A – Sails &amp; Rigging&quot; and the Sails &amp; Rigging checklist. You can also maintain <strong>sail and rigging maintenance schedules</strong> here with optional calendar reminders.</p>
+      <p><strong>How to use it:</strong></p>
+      <ul>
+        <li>Tap Sails &amp; Rigging to view or edit the details form; tap <strong>Save</strong> when done.</li>
+        <li>To record a sails/rigging <em>service</em>, use the <strong>Service History</strong> card and select &quot;N/A – Sails &amp; Rigging&quot; as the engine, then use the dedicated checklist.</li>
       </ul>
     </div>
 
@@ -64,6 +70,7 @@ export function render(params = {}) {
       <ul>
         <li>Tap Engines, then <strong>Add engine</strong> to create a new entry.</li>
         <li>Fill in make, model, serial number, position and current hours.</li>
+        <li>Open an engine to add <strong>maintenance schedules</strong> (planning layer with optional next due and calendar reminders), separate from individual service log lines in Service History.</li>
         <li>When logging a service in Service History, you choose which engine the service was for.</li>
       </ul>
     </div>
@@ -83,7 +90,7 @@ export function render(params = {}) {
 
     <div class="card guide-section guide-section-watermaker">
       <h3>Watermaker Service</h3>
-      <p><em>This card only appears when &quot;Watermaker installed&quot; is turned on in Boat Details.</em></p>
+      <p><em>This card is on <strong>every</strong> boat dashboard—you do not turn it on in Boat Details.</em></p>
       <p><strong>What it is:</strong> Unit details (make, model, location, rated output, serial number) plus multiple service entries. Each entry has date, tasks (pre-filters, carbon filter, membrane flush, pump oil), notes and an optional <strong>next service due</strong> date. Setting a next service due date adds a reminder to the Calendar 1 day before.</p>
       <p><strong>How to use it:</strong></p>
       <ul>
@@ -134,14 +141,23 @@ export function render(params = {}) {
       </ul>
     </div>
 
-    <div class="card guide-section guide-section-sails-rigging">
-      <h3>Sails &amp; Rigging</h3>
-      <p><em>This card only appears when the boat type is set to Sailing in Boat Details.</em></p>
-      <p><strong>What it is:</strong> A single form to record mainsail, headsails, mast and spar, standing and running rigging, winches, last inspection date and general notes. It does <strong>not</strong> log individual services—for that you use the <strong>Service History</strong> card and choose &quot;N/A – Sails &amp; Rigging&quot; and the Sails &amp; Rigging checklist.</p>
+    <div class="card guide-section guide-section-projects">
+      <h3>Projects &amp; Issues</h3>
+      <p><strong>What it is:</strong> Plan refits and upgrades as <strong>Projects</strong>, and track defects or follow-ups as <strong>Issues</strong>. Each item can have category, priority, status, target date, cost and attachments.</p>
       <p><strong>How to use it:</strong></p>
       <ul>
-        <li>Tap Sails &amp; Rigging to view or edit the details form; tap <strong>Save</strong> when done.</li>
-        <li>To record a sails/rigging <em>service</em>, use the <strong>Service History</strong> card and select &quot;N/A – Sails &amp; Rigging&quot; as the engine, then use the dedicated checklist.</li>
+        <li>Tap <strong>Projects &amp; Issues</strong>, then add a project or issue and update status as work progresses.</li>
+        <li>Use filters and archive options to keep the active list manageable.</li>
+      </ul>
+    </div>
+
+    <div class="card guide-section guide-section-inventory">
+      <h3>Inventory</h3>
+      <p><strong>What it is:</strong> Spares, consumables, sails, winches and rigging-related parts with optional stock levels, stowage locations, condition and replacement dates. Attention and low-stock cues help you restock before passages.</p>
+      <p><strong>How to use it:</strong></p>
+      <ul>
+        <li>Tap <strong>Inventory</strong>, add an item (templates can speed up common kit), then <strong>Save</strong>.</li>
+        <li>Where you track stock, set required quantity and current level; attach manuals or photos if useful.</li>
       </ul>
     </div>
 
@@ -163,7 +179,7 @@ export function render(params = {}) {
       <ul>
         <li>Tap Safety Equipment, then <strong>Add item</strong>.</li>
         <li>Enter type, serial number, location and expiry or next inspection date.</li>
-        <li>Set reminders so you're notified before items need servicing or replacement.</li>
+        <li>Set reminders so you&apos;re notified before items need servicing or replacement.</li>
       </ul>
     </div>
 
@@ -190,7 +206,7 @@ export function render(params = {}) {
     <div class="card guide-section guide-section-calendar">
       <h3>Calendar &amp; Alerts</h3>
       <p><strong>Where:</strong> On the <strong>home page</strong> (not on the boat dashboard).</p>
-      <p><strong>What it is:</strong> A calendar showing reminders from all your boats—warranties, next service, next haul-out—plus your own appointments. You can assign each appointment to a boat and set reminders.</p>
+      <p><strong>What it is:</strong> A calendar showing reminders from all your boats—warranties, engine and rigging maintenance schedules, next service, next haul-out, watermaker and more—plus your own appointments. You can assign each appointment to a boat and set reminders.</p>
       <p><strong>How to use it:</strong></p>
       <ul>
         <li>From the home screen, tap the Calendar &amp; Alerts card.</li>
@@ -218,9 +234,11 @@ export function render(params = {}) {
       <h3>Tips for using the dashboard</h3>
       <ul>
         <li>Tap any card to open that section for the current boat.</li>
+        <li>Above the cards, use <strong>Export Boat Report</strong> to download a PDF summary when you need it (export is a Premium feature).</li>
         <li>Most sections let you attach photos, PDFs or links so everything stays in one place.</li>
-        <li>Use Calendar &amp; Alerts (home screen) to see time-based reminders from engines, service, haul-outs and warranties.</li>
-        <li>Turn on &quot;Watermaker installed&quot; in Boat Details to show the Watermaker Service card; set boat type to Sailing to see the Sails &amp; Rigging card.</li>
+        <li>Use Calendar &amp; Alerts (home screen) to see time-based reminders from engines, maintenance schedules, service, haul-outs, watermaker, warranties and more.</li>
+        <li>Set boat type to <strong>Sailing</strong> in Boat Details to show the Sails &amp; Rigging card. <strong>Watermaker Service</strong> is always on the dashboard for every boat.</li>
+        <li>Cards marked <strong>Premium</strong> may still open for a read-only preview on the free plan; saving in those modules needs an active subscription (except where a small free limit applies, such as one service entry per boat).</li>
         <li>Fill in the Mayday / Distress Call setup form in advance so in an emergency you only need to add position and nature of distress.</li>
         <li>Your data syncs to the cloud when signed in so you can use BoatMatey on multiple devices.</li>
       </ul>
@@ -230,16 +248,19 @@ export function render(params = {}) {
       <h3>Frequently asked questions</h3>
 
       <h4>How do I add a new boat?</h4>
-      <p>From the home screen, open <strong>Settings</strong> (or the Boats list from there). Use <strong>Add boat</strong> and enter name, type (motor/sailing) and other details. The new boat will appear on the home screen; tap it to open its dashboard.</p>
+      <p>From the home screen, open <strong>Settings</strong> (or the Boats list from there). Use <strong>Add boat</strong> and enter name, type (motor, sailing or RIB) and other details. The new boat will appear on the home screen; tap it to open its dashboard.</p>
 
-      <h4>Why don&apos;t I see the Sails &amp; Rigging or Watermaker card?</h4>
-      <p><strong>Sails &amp; Rigging</strong> only appears when the boat type is <strong>Sailing</strong>. Edit the boat in Boat Details and set Boat type to Sailing. <strong>Watermaker Service</strong> only appears when &quot;Watermaker installed&quot; is turned on—enable it in Boat Details.</p>
+      <h4>Why don&apos;t I see the Sails &amp; Rigging card?</h4>
+      <p><strong>Sails &amp; Rigging</strong> only appears when the boat type is <strong>Sailing</strong>. Edit the boat in Boat Details and set Boat type to Sailing. <strong>Watermaker Service</strong> is always shown on the boat dashboard.</p>
 
       <h4>Where do I log a sails and rigging service?</h4>
       <p>Use the <strong>Service History</strong> card. Add a new service, choose <strong>N/A – Sails &amp; Rigging</strong> as the engine (so no engine is linked), and select service type <strong>Sails &amp; Rigging</strong>. You&apos;ll get the dedicated sails/rigging checklist. The Sails &amp; Rigging card itself is for recording sail and rigging <em>details</em> (e.g. mainsail, mast notes), not individual service events.</p>
 
       <h4>How do reminders work?</h4>
-      <p>When you set a &quot;next service due&quot;, &quot;next haul-out due&quot;, warranty expiry or similar date in the relevant section (Service History, Haul-Out, Navigation, Safety, Watermaker), a reminder is created on the <strong>Calendar &amp; Alerts</strong> (home screen). Open the Calendar to see all upcoming reminders and add your own appointments.</p>
+      <p>When you set a &quot;next service due&quot;, engine or rigging <strong>maintenance schedule</strong> due date, &quot;next haul-out due&quot;, warranty expiry or similar date in the relevant section (Service History, Haul-Out, Navigation, Safety, Watermaker, etc.), a reminder is created on the <strong>Calendar &amp; Alerts</strong> (home screen). Open the Calendar to see all upcoming reminders and add your own appointments.</p>
+
+      <h4>What does the free plan include versus Premium?</h4>
+      <p>On the <strong>free</strong> plan you get full use of core areas: <strong>Boat Details</strong>, <strong>Engines</strong>, <strong>Service History</strong> (one completed service entry per boat), <strong>Mayday / Distress Call</strong>, <strong>Web Links</strong>, and access to your boat <strong>reminder</strong> view, plus the guided setup flow on the dashboard. <strong>Premium</strong> unlocks unlimited service history, inventory, projects and issues, passage log, fuel and electrical records, haul-out, navigation and safety registers, sailing and rigging schedules, calendar alerts beyond the free scope, export boat report, and saving across those modules without hitting free preview limits.</p>
 
       <h4>Can I use BoatMatey on more than one device?</h4>
       <p>Yes. Sign in with the same account on each device. Your boats, engines, service history, and other data sync via the cloud so you can view and edit from phone, tablet or computer.</p>
@@ -260,6 +281,4 @@ export function render(params = {}) {
   return wrapper;
 }
 
-export default {
-  render
-};
+export default { render };

@@ -11,8 +11,7 @@ import { confirmAction } from '../components/confirmModal.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getEquipment, createEquipment, updateEquipment } from '../lib/dataService.js';
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
-import { blockFreePlanRecordLimitIfNeeded } from '../lib/premiumSaveGate.js';
-import { navEquipmentStorage } from '../lib/storage.js';
+import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
 import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 
 function render(params = {}) {
@@ -236,10 +235,7 @@ async function onMount(params = {}) {
     e.preventDefault();
     if (archived) return;
     const willCreate = isNew || (itemId && String(itemId).startsWith('nav_'));
-    if (
-      willCreate &&
-      blockFreePlanRecordLimitIfNeeded('navigation', navEquipmentStorage.getAll(boatId).length)
-    ) {
+    if (willCreate && blockPremiumSaveIfNeeded()) {
       return;
     }
     const form = e.target;
@@ -268,9 +264,9 @@ async function onMount(params = {}) {
   });
 
   insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-navigation'), {
-    headline: 'Preview: Navigation equipment',
+    headline: 'Premium preview: Navigation equipment',
     detail:
-      'Basic plan: 1 equipment item per boat. Upgrade for unlimited kit and warranty reminders.'
+      'Store electronics details and warranty dates. Upgrade to save navigation equipment records.'
   });
 }
 

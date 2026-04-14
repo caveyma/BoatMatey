@@ -54,6 +54,7 @@ function render(params = {}) {
       <select id="boat_type" name="boat_type">
         <option value="motor" ${(currentBoat?.boat_type || 'motor') === 'motor' ? 'selected' : ''}>Motor boat</option>
         <option value="sailing" ${currentBoat?.boat_type === 'sailing' ? 'selected' : ''}>Sailing boat</option>
+        <option value="rib" ${currentBoat?.boat_type === 'rib' ? 'selected' : ''}>RIB</option>
       </select>
     </div>
 
@@ -131,21 +132,6 @@ function render(params = {}) {
         <option value="petrol" ${currentBoat?.fuel_type === 'petrol' ? 'selected' : ''}>Petrol</option>
         <option value="electric" ${currentBoat?.fuel_type === 'electric' ? 'selected' : ''}>Electric</option>
       </select>
-    </div>
-
-    <div class="form-group">
-      <label class="checkbox-row">
-        <input
-          type="checkbox"
-          id="watermaker_installed"
-          name="watermaker_installed"
-          ${currentBoat?.watermaker_installed ? 'checked' : ''}
-        >
-        <span>Watermaker installed</span>
-      </label>
-      <p class="text-muted" style="margin-top: 0.25rem; font-size: 0.875rem;">
-        When enabled, a Watermaker Service card appears on your boat dashboard.
-      </p>
     </div>
 
     <div class="form-group">
@@ -237,8 +223,6 @@ async function onMount(params = {}) {
         set('insurance_provider', currentBoat.insurance_provider);
         set('insurance_policy_no', currentBoat.insurance_policy_no);
         set('purchase_date', currentBoat.purchase_date);
-        const watermakerEl = document.getElementById('watermaker_installed');
-        if (watermakerEl) watermakerEl.checked = !!currentBoat.watermaker_installed;
       } else {
         currentBoat = boatsStorage.get(boatId);
       }
@@ -459,7 +443,8 @@ async function saveBoat() {
     beam: formData.get('beam') ? parseFloat(formData.get('beam')) : null,
     draft: formData.get('draft') ? parseFloat(formData.get('draft')) : null,
     fuel_type: formData.get('fuel_type'),
-    watermaker_installed: formData.get('watermaker_installed') === 'on',
+    watermaker_installed:
+      currentBoat?.watermaker_installed ?? boatsStorage.get(currentBoatId)?.watermaker_installed ?? false,
     home_marina: formData.get('home_marina'),
     registration_no: formData.get('registration_no'),
     registration_number: formData.get('registration_number') || null,

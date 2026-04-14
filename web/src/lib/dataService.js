@@ -1249,10 +1249,221 @@ export async function deleteSailsRiggingMaintenanceSchedule(scheduleId) {
 
 // ----------------- Service entries -----------------
 
+/** Not persisted in service_entries.description — links live in service_inventory_links (or local storage fields). */
+const SERVICE_ENTRY_TRANSIENT_KEYS = ['linked_inventory_item_ids', 'linked_inventory_items', 'linked_inventory_links'];
+
+function serviceEntryForDescription(entry) {
+  if (!entry || typeof entry !== 'object') return entry;
+  const o = { ...entry };
+  for (const k of SERVICE_ENTRY_TRANSIENT_KEYS) delete o[k];
+  return o;
+}
+
+function stripTransientLinkFieldsFromParsedEntry(out) {
+  if (!out || typeof out !== 'object') return;
+  for (const k of SERVICE_ENTRY_TRANSIENT_KEYS) delete out[k];
+}
+
+function parseServiceEntryRow(e, boatId) {
+  const out = { ...e, boat_id: boatId, date: e.service_date, service_type: e.title, notes: e.description };
+  try {
+    if (e.description && typeof e.description === 'string' && (e.description.startsWith('{') || e.description.startsWith('['))) {
+      const d = JSON.parse(e.description);
+      if (d && typeof d === 'object' && !Array.isArray(d)) {
+        const { id: _clientId, ...rest } = d;
+        Object.assign(out, rest);
+      }
+    }
+  } catch (_) {}
+  stripTransientLinkFieldsFromParsedEntry(out);
+  return out;
+}
+
+function shouldFallbackServiceInventoryLinks(error) {
+  if (!error) return false;
+  const code = String(error.code || '');
+  const msg = String(error.message || '').toLowerCase();
+  const details = String(error.details || '').toLowerCase();
+  return (
+    code === 'PGRST205' ||
+    code === '42P01' ||
+    msg.includes('could not find the table') ||
+    msg.includes('schema cache') ||
+    (msg.includes('relation') && msg.includes('does not exist')) ||
+    details.includes('does not exist')
+  );
+}
+
+function buildLinkedInventoryItemsFromIds(ids, invMap) {
+  const list = Array.isArray(ids) ? ids : [];
+  return list.map((id) => {
+    const row = invMap.get(id);
+    return row
+      ? { id: row.id, name: row.name, category: row.category }
+      : { id, name: 'Unknown item', category: null };
+  });
+}
+
+function inventoryItemTracksStockByRow(row) {
+  const d = row?.detail && typeof row.detail === 'object' && !Array.isArray(row.detail) ? row.detail : {};
+  if (typeof d.track_stock_quantity === 'boolean') return d.track_stock_quantity;
+  return (
+    row?.in_stock_level != null ||
+    row?.required_quantity != null ||
+    !!row?.unit ||
+    !!row?.critical_spare
+  );
+}
+
+function normalizeIncomingServiceInventoryLinks(input, stockTrackedById = new Map()) {
+  const rows = Array.isArray(input)
+    ? input
+    : Array.isArray(input?.linked_inventory_links)
+      ? input.linked_inventory_links
+      : [];
+  return rows
+    .filter((r) => r && r.inventory_item_id)
+    .map((r) => {
+      const stockTracked = stockTrackedById.get(r.inventory_item_id);
+      const qtyRaw = r.quantity_used;
+      const qty = qtyRaw == null || qtyRaw === '' ? null : Number(qtyRaw);
+      return {
+        inventory_item_id: r.inventory_item_id,
+        quantity_used: Number.isFinite(qty) ? qty : null,
+        affects_stock: typeof r.affects_stock === 'boolean' ? r.affects_stock : !!stockTracked
+      };
+    });
+}
+
+function linksToIds(links) {
+  return [...new Set((links || []).map((r) => r.inventory_item_id).filter(Boolean))];
+}
+
+function validateLinkRowsAgainstStock(linkRows, inventoryRowsById) {
+  for (const row of linkRows || []) {
+    const inv = inventoryRowsById.get(row.inventory_item_id);
+    if (!inv) continue;
+    const stockTracked = inventoryItemTracksStockByRow(inv);
+    if (stockTracked) {
+      if (!row.affects_stock) continue;
+      if (row.quantity_used == null || !Number.isFinite(Number(row.quantity_used)) || Number(row.quantity_used) <= 0) {
+        throw new Error(`Enter a valid quantity used for stock-tracked item "${inv.name || 'Item'}".`);
+      }
+      const currentStock = inv.in_stock_level == null || inv.in_stock_level === '' ? 0 : Number(inv.in_stock_level);
+      if (Number(row.quantity_used) > currentStock) {
+        throw new Error(`Quantity used for "${inv.name || 'Item'}" exceeds current stock (${currentStock}).`);
+      }
+    }
+  }
+}
+
+function stockDeductionsByItem(linkRows, inventoryRowsById) {
+  const out = new Map();
+  for (const row of linkRows || []) {
+    const inv = inventoryRowsById.get(row.inventory_item_id);
+    if (!inv) continue;
+    const stockTracked = inventoryItemTracksStockByRow(inv);
+    if (!stockTracked || !row.affects_stock) continue;
+    const qty = Number(row.quantity_used);
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    out.set(row.inventory_item_id, (out.get(row.inventory_item_id) || 0) + qty);
+  }
+  return out;
+}
+
+async function enrichServiceEntriesWithInventoryLinks(boatId, entries) {
+  if (!entries?.length) return;
+  const session = await getSession();
+
+  if (!session || !isSupabaseEnabled()) {
+    const inv = await getInventory(boatId);
+    const invMap = new Map(inv.map((i) => [i.id, i]));
+    entries.forEach((e, idx) => {
+      const links = Array.isArray(e.linked_inventory_links)
+        ? e.linked_inventory_links
+        : Array.isArray(e.linked_inventory_item_ids)
+          ? e.linked_inventory_item_ids.map((id) => ({ inventory_item_id: id, quantity_used: null, affects_stock: false }))
+          : [];
+      const ids = linksToIds(links);
+      entries[idx] = {
+        ...e,
+        linked_inventory_item_ids: ids,
+        linked_inventory_items: buildLinkedInventoryItemsFromIds(ids, invMap),
+        linked_inventory_links: links
+      };
+    });
+    return;
+  }
+
+  const serviceIds = entries.map((e) => e.id).filter(Boolean);
+  if (!serviceIds.length) return;
+
+  const { data: linkRows, error } = await supabase
+    .from('service_inventory_links')
+    .select('service_id, inventory_item_id, quantity_used, affects_stock')
+    .in('service_id', serviceIds);
+
+  if (error) {
+    if (shouldFallbackServiceInventoryLinks(error)) {
+      logSupabaseFallback('service_inventory_links', error);
+      const inv = await getInventory(boatId);
+      const invMap = new Map(inv.map((i) => [i.id, i]));
+      entries.forEach((e, idx) => {
+        const links = Array.isArray(e.linked_inventory_links)
+          ? e.linked_inventory_links
+          : Array.isArray(e.linked_inventory_item_ids)
+            ? e.linked_inventory_item_ids.map((id) => ({ inventory_item_id: id, quantity_used: null, affects_stock: false }))
+            : [];
+        const ids = linksToIds(links);
+        entries[idx] = {
+          ...e,
+          linked_inventory_item_ids: ids,
+          linked_inventory_items: buildLinkedInventoryItemsFromIds(ids, invMap),
+          linked_inventory_links: links
+        };
+      });
+    }
+    return;
+  }
+
+  const byService = new Map();
+  for (const r of linkRows || []) {
+    if (!byService.has(r.service_id)) byService.set(r.service_id, []);
+    byService.get(r.service_id).push({
+      inventory_item_id: r.inventory_item_id,
+      quantity_used: r.quantity_used == null ? null : Number(r.quantity_used),
+      affects_stock: !!r.affects_stock
+    });
+  }
+  const allInvIds = [...new Set((linkRows || []).map((r) => r.inventory_item_id))];
+  let invMap = new Map();
+  if (allInvIds.length) {
+    const { data: invRows } = await supabase
+      .from('boat_inventory')
+      .select('id, name, category')
+      .eq('boat_id', boatId)
+      .in('id', allInvIds);
+    invMap = new Map((invRows || []).map((r) => [r.id, r]));
+  }
+
+  entries.forEach((e, idx) => {
+    const linkedRows = byService.get(e.id) || [];
+    const linkedIds = linksToIds(linkedRows);
+    entries[idx] = {
+      ...e,
+      linked_inventory_item_ids: linkedIds,
+      linked_inventory_items: buildLinkedInventoryItemsFromIds(linkedIds, invMap),
+      linked_inventory_links: linkedRows
+    };
+  });
+}
+
 export async function getServiceEntries(boatId) {
   const session = await getSession();
   if (!session || !isSupabaseEnabled()) {
-    return serviceHistoryStorage.getAll(boatId);
+    const raw = serviceHistoryStorage.getAll(boatId);
+    await enrichServiceEntriesWithInventoryLinks(boatId, raw);
+    return raw;
   }
 
   const { data, error } = await supabase
@@ -1263,22 +1474,13 @@ export async function getServiceEntries(boatId) {
 
   if (error) {
     console.error('getServiceEntries error:', error);
-    return serviceHistoryStorage.getAll(boatId);
+    const raw = serviceHistoryStorage.getAll(boatId);
+    await enrichServiceEntriesWithInventoryLinks(boatId, raw);
+    return raw;
   }
 
-  const mapped = (data || []).map((e) => {
-    const out = { ...e, boat_id: boatId, date: e.service_date, service_type: e.title, notes: e.description };
-    try {
-      if (e.description && typeof e.description === 'string' && (e.description.startsWith('{') || e.description.startsWith('['))) {
-        const d = JSON.parse(e.description);
-        if (d && typeof d === 'object' && !Array.isArray(d)) {
-          const { id: _clientId, ...rest } = d;
-          Object.assign(out, rest);
-        }
-      }
-    } catch (_) {}
-    return out;
-  });
+  const mapped = (data || []).map((e) => parseServiceEntryRow(e, boatId));
+  await enrichServiceEntriesWithInventoryLinks(boatId, mapped);
   serviceHistoryStorage.replaceForBoat(boatId, mapped);
   return mapped;
 }
@@ -1312,7 +1514,7 @@ export async function createServiceEntry(boatId, entry) {
     owner_id: session.user.id,
     service_date: entry.date,
     title: entry.service_type || 'Service',
-    description: JSON.stringify(entry),
+    description: JSON.stringify(serviceEntryForDescription(entry)),
     cost: entry.cost ?? null,
     cost_currency: entry.cost_currency ?? 'GBP',
     provider: entry.provider ?? null
@@ -1366,7 +1568,7 @@ export async function updateServiceEntry(serviceId, entry) {
     engine_id: entry.engine_id ?? null,
     service_date: entry.date,
     title: entry.service_type || 'Service',
-    description: JSON.stringify(entry),
+    description: JSON.stringify(serviceEntryForDescription(entry)),
     cost: entry.cost ?? null,
     cost_currency: entry.cost_currency ?? 'GBP',
     provider: entry.provider ?? null
@@ -1394,6 +1596,56 @@ function isTempServiceEntryId(id) {
   return typeof id === 'string' && id.startsWith('service_') && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 }
 
+async function getServiceInventoryLinksWithStockMeta(serviceId, boatId) {
+  const { data: linkRows, error: linksErr } = await supabase
+    .from('service_inventory_links')
+    .select('inventory_item_id, quantity_used, affects_stock')
+    .eq('service_id', serviceId);
+  if (linksErr) throw linksErr;
+
+  const invIds = [...new Set((linkRows || []).map((r) => r.inventory_item_id).filter(Boolean))];
+  let inventoryRows = [];
+  if (invIds.length) {
+    const { data: invRows, error: invErr } = await supabase
+      .from('boat_inventory')
+      .select('id, boat_id, name, in_stock_level, required_quantity, unit, critical_spare, detail')
+      .eq('boat_id', boatId)
+      .in('id', invIds);
+    if (invErr) throw invErr;
+    inventoryRows = invRows || [];
+  }
+  const inventoryRowsById = new Map(inventoryRows.map((r) => [r.id, r]));
+  const links = (linkRows || []).map((r) => ({
+    inventory_item_id: r.inventory_item_id,
+    quantity_used: r.quantity_used == null ? null : Number(r.quantity_used),
+    affects_stock: !!r.affects_stock
+  }));
+  return { links, inventoryRowsById };
+}
+
+async function applyInventoryStockAdjustments(linkRows, inventoryRowsById, direction) {
+  // direction: -1 deduct stock, +1 add stock back (reverse)
+  for (const row of linkRows || []) {
+    const inv = inventoryRowsById.get(row.inventory_item_id);
+    if (!inv) continue;
+    const stockTracked = inventoryItemTracksStockByRow(inv);
+    if (!stockTracked || !row.affects_stock) continue;
+    const qty = Number(row.quantity_used);
+    if (!Number.isFinite(qty) || qty <= 0) continue;
+    const currentStock = inv.in_stock_level == null || inv.in_stock_level === '' ? 0 : Number(inv.in_stock_level);
+    const nextStock = direction < 0 ? currentStock - qty : currentStock + qty;
+    if (direction < 0 && nextStock < 0) {
+      throw new Error(`Not enough stock for "${inv.name || 'Item'}" (have ${currentStock}, need ${qty}).`);
+    }
+    const { error } = await supabase
+      .from('boat_inventory')
+      .update({ in_stock_level: nextStock })
+      .eq('id', inv.id);
+    if (error) throw error;
+    inventoryRowsById.set(inv.id, { ...inv, in_stock_level: nextStock });
+  }
+}
+
 /**
  * Delete a service entry (Supabase and/or local storage).
  * @returns {Promise<boolean>} true if delete succeeded, false if Supabase delete failed
@@ -1410,6 +1662,25 @@ export async function deleteServiceEntry(serviceId) {
     return true;
   }
 
+  try {
+    const { data: svcRow, error: svcErr } = await supabase
+      .from('service_entries')
+      .select('boat_id')
+      .eq('id', serviceId)
+      .single();
+    if (svcErr) throw svcErr;
+    const boatId = svcRow?.boat_id || '';
+    const { links, inventoryRowsById } = await getServiceInventoryLinksWithStockMeta(serviceId, boatId);
+    if (links.length) {
+      await applyInventoryStockAdjustments(links, inventoryRowsById, +1);
+    }
+  } catch (e) {
+    if (!shouldFallbackServiceInventoryLinks(e)) {
+      console.error('deleteServiceEntry stock reversal error:', e);
+      return false;
+    }
+  }
+
   const { error } = await supabase
     .from('service_entries')
     .delete()
@@ -1420,6 +1691,193 @@ export async function deleteServiceEntry(serviceId) {
   }
   serviceHistoryStorage.delete(serviceId);
   return true;
+}
+
+/**
+ * Replace all inventory links for a service entry (idempotent).
+ * Persists to local storage when cloud or link table is unavailable.
+ */
+export async function replaceServiceInventoryLinks(serviceId, boatId, inventoryLinks, options = {}) {
+  const session = await getSession();
+  const links = normalizeIncomingServiceInventoryLinks(inventoryLinks, options.stockTrackedById);
+  const ids = linksToIds(links);
+
+  const fallbackSave = () => {
+    const existing = serviceHistoryStorage.get(serviceId) || { id: serviceId, boat_id: boatId };
+    serviceHistoryStorage.save(
+      {
+        ...existing,
+        linked_inventory_item_ids: ids,
+        linked_inventory_links: links,
+        boat_id: boatId || existing.boat_id
+      },
+      boatId || existing.boat_id
+    );
+  };
+
+  if (isTempServiceEntryId(serviceId)) {
+    fallbackSave();
+    return;
+  }
+
+  if (!session || !isSupabaseEnabled()) {
+    fallbackSave();
+    return;
+  }
+
+  let oldLinks = [];
+  let oldInventoryRowsById = new Map();
+  try {
+    const old = await getServiceInventoryLinksWithStockMeta(serviceId, boatId);
+    oldLinks = old.links;
+    oldInventoryRowsById = old.inventoryRowsById;
+  } catch (oldErr) {
+    if (shouldFallbackServiceInventoryLinks(oldErr)) {
+      logSupabaseFallback('service_inventory_links', oldErr);
+      fallbackSave();
+      return;
+    }
+    throw oldErr;
+  }
+
+  const invRowsById = new Map(oldInventoryRowsById);
+  if (ids.length) {
+    const existingIds = new Set(invRowsById.keys());
+    const missingIds = ids.filter((id) => !existingIds.has(id));
+    if (missingIds.length) {
+      const { data: invRows, error: invErr } = await supabase
+        .from('boat_inventory')
+        .select('id, boat_id, name, in_stock_level, required_quantity, unit, critical_spare, detail')
+        .eq('boat_id', boatId)
+        .in('id', missingIds);
+      if (invErr) throw invErr;
+      for (const r of invRows || []) invRowsById.set(r.id, r);
+    }
+  }
+
+  validateLinkRowsAgainstStock(links, invRowsById);
+  const oldDeductByItem = stockDeductionsByItem(oldLinks, invRowsById);
+  const newDeductByItem = stockDeductionsByItem(links, invRowsById);
+  const nextStockByItem = new Map();
+  const affectedIds = new Set([...oldDeductByItem.keys(), ...newDeductByItem.keys()]);
+  for (const id of affectedIds) {
+    const inv = invRowsById.get(id);
+    if (!inv) continue;
+    const current = inv.in_stock_level == null || inv.in_stock_level === '' ? 0 : Number(inv.in_stock_level);
+    const oldQty = oldDeductByItem.get(id) || 0;
+    const newQty = newDeductByItem.get(id) || 0;
+    const next = current + oldQty - newQty;
+    if (next < 0) {
+      throw new Error(`Not enough stock for "${inv.name || 'Item'}" (have ${current}, need ${newQty}).`);
+    }
+    nextStockByItem.set(id, next);
+  }
+
+  const { error: delErr } = await supabase.from('service_inventory_links').delete().eq('service_id', serviceId);
+  if (delErr) {
+    if (shouldFallbackServiceInventoryLinks(delErr)) {
+      logSupabaseFallback('service_inventory_links', delErr);
+      fallbackSave();
+      return;
+    }
+    throw delErr;
+  }
+
+  if (links.length) {
+    const rows = links.map((r) => ({
+      service_id: serviceId,
+      inventory_item_id: r.inventory_item_id,
+      quantity_used: r.quantity_used,
+      affects_stock: !!r.affects_stock,
+      owner_id: session.user.id
+    }));
+    const { error: insErr } = await supabase.from('service_inventory_links').insert(rows);
+    if (insErr) {
+      if (shouldFallbackServiceInventoryLinks(insErr)) {
+        logSupabaseFallback('service_inventory_links', insErr);
+        fallbackSave();
+        return;
+      }
+      throw insErr;
+    }
+  }
+
+  // Apply the net stock change after link rows are safely persisted.
+  for (const [id, nextStock] of nextStockByItem.entries()) {
+    const { error: upErr } = await supabase
+      .from('boat_inventory')
+      .update({ in_stock_level: nextStock })
+      .eq('id', id);
+    if (upErr) throw upErr;
+  }
+}
+
+/**
+ * @deprecated old signature kept for migration context
+ */
+export async function replaceServiceInventoryLinksLegacy(serviceId, boatId, inventoryItemIds) {
+  return replaceServiceInventoryLinks(
+    serviceId,
+    boatId,
+    (inventoryItemIds || []).map((inventory_item_id) => ({ inventory_item_id, quantity_used: null, affects_stock: false }))
+  );
+}
+
+/**
+ * Service entries linked to an inventory item, newest first (same shape as list entries).
+ */
+export async function getLinkedServicesForInventoryItem(boatId, inventoryItemId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    const all = serviceHistoryStorage.getAll(boatId);
+    return all
+      .filter((e) => {
+        if (Array.isArray(e.linked_inventory_links)) {
+          return e.linked_inventory_links.some((r) => r?.inventory_item_id === inventoryItemId);
+        }
+        return Array.isArray(e.linked_inventory_item_ids) && e.linked_inventory_item_ids.includes(inventoryItemId);
+      })
+      .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+  }
+
+  const { data: linkRows, error } = await supabase
+    .from('service_inventory_links')
+    .select('service_id')
+    .eq('inventory_item_id', inventoryItemId);
+
+  if (error) {
+    if (shouldFallbackServiceInventoryLinks(error)) {
+      logSupabaseFallback('service_inventory_links', error);
+      const all = serviceHistoryStorage.getAll(boatId);
+      return all
+        .filter((e) => {
+          if (Array.isArray(e.linked_inventory_links)) {
+            return e.linked_inventory_links.some((r) => r?.inventory_item_id === inventoryItemId);
+          }
+          return Array.isArray(e.linked_inventory_item_ids) && e.linked_inventory_item_ids.includes(inventoryItemId);
+        })
+        .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+    }
+    console.error('getLinkedServicesForInventoryItem:', error);
+    return [];
+  }
+
+  const serviceIds = (linkRows || []).map((r) => r.service_id);
+  if (!serviceIds.length) return [];
+
+  const { data: rows, error: seErr } = await supabase
+    .from('service_entries')
+    .select('*')
+    .eq('boat_id', boatId)
+    .in('id', serviceIds)
+    .order('service_date', { ascending: false });
+
+  if (seErr) {
+    console.error('getLinkedServicesForInventoryItem service_entries:', seErr);
+    return [];
+  }
+
+  return (rows || []).map((e) => parseServiceEntryRow(e, boatId));
 }
 
 // ----------------- Equipment (navigation / safety) -----------------

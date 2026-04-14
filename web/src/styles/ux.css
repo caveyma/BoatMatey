@@ -153,6 +153,12 @@
   opacity: 0;
   transition: opacity 0.2s ease;
 }
+/* Author `display: flex` wins over the native [hidden] rule — without this, a closed overlay
+   stays full-screen, invisible (opacity 0), and still captures all pointer events. */
+.confirm-modal-overlay[hidden] {
+  display: none !important;
+  pointer-events: none !important;
+}
 .confirm-modal-overlay.confirm-modal-visible {
   opacity: 1;
 }

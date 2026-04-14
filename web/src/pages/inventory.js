@@ -14,7 +14,8 @@ import {
   getInventory,
   createInventoryItem,
   updateInventoryItem,
-  deleteInventoryItem
+  deleteInventoryItem,
+  getLinkedServicesForInventoryItem
 } from '../lib/dataService.js';
 import {
   getUploads,
@@ -26,8 +27,8 @@ import {
   LIMITED_UPLOAD_SIZE_BYTES,
   LIMITED_UPLOADS_PER_ENTITY
 } from '../lib/uploads.js';
-import { uploadsStorage, inventoryStorage } from '../lib/storage.js';
-import { blockFreePlanRecordLimitIfNeeded } from '../lib/premiumSaveGate.js';
+import { uploadsStorage } from '../lib/storage.js';
+import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
 import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
 import { enableRecordCardExpand } from '../utils/recordCardExpand.js';
 import {
@@ -41,7 +42,7 @@ import {
   mergeDetail,
   getInventoryDetail,
   normalizeInventoryItem,
-  categoryUsesStockSection,
+  inventoryItemTracksStock,
   isRiggingCategory,
   inventoryNeedsAttentionStrict,
   inventoryReplacementDueOrSoon,
@@ -64,6 +65,7 @@ let editingId = null;
 let inventoryArchived = false;
 let inventoryFileInput = null;
 let currentItemIdForUpload = null;
+let focusInventoryItemId = null;
 
 function addSelectOption(select, value, label) {
   const opt = document.createElement('option');
@@ -89,10 +91,10 @@ function buildInventoryCategoryFilterSelect() {
   addSelectOption(views, INVENTORY_LIST_FILTER.NEEDS_ATTENTION, 'Needs attention');
   addSelectOption(views, INVENTORY_LIST_FILTER.REPLACEMENT_DUE, 'Replacement due (30 days)');
   addSelectOption(views, INVENTORY_LIST_FILTER.RIGGING_ALL, 'All rigging');
-  const marine = addOptgroup(select, 'Categories');
-  MARINE_CATEGORIES.forEach(({ value, label }) => addSelectOption(marine, value, label));
-  const legacy = addOptgroup(select, 'Earlier categories');
-  LEGACY_INVENTORY_CATEGORIES.forEach(({ value, label }) => addSelectOption(legacy, value, label));
+  const categories = addOptgroup(select, 'Categories');
+  [...MARINE_CATEGORIES, ...LEGACY_INVENTORY_CATEGORIES].forEach(({ value, label }) =>
+    addSelectOption(categories, value, label)
+  );
   return select;
 }
 
@@ -217,9 +219,9 @@ async function onMount(params = {}) {
     editingId = itemId === 'new' ? `inventory_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` : itemId;
     await showInventoryForm();
     insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-inventory'), {
-      headline: 'Preview: Inventory',
+      headline: 'Premium preview: Inventory & stock tracking',
       detail:
-        'Basic plan: up to 2 inventory items per boat. Upgrade for unlimited stock tracking.'
+        'Track parts, minimum stock, and service-linked usage. Upgrade to save inventory records and keep full stock history.'
     });
     return;
   }
@@ -267,6 +269,8 @@ async function onMount(params = {}) {
   if (attentionParam === 'needs' && filterCategory) {
     filterCategory.value = INVENTORY_LIST_FILTER.NEEDS_ATTENTION;
   }
+  const itemParam = qs.get('item');
+  focusInventoryItemId = itemParam ? String(itemParam) : null;
 
   [searchEl, filterCategory, filterStock, sortEl].forEach((el) => {
     if (el) el.addEventListener('change', () => loadInventory());
@@ -274,9 +278,9 @@ async function onMount(params = {}) {
   if (searchEl) searchEl.addEventListener('input', () => loadInventory());
 
   insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-inventory'), {
-    headline: 'Preview: Inventory',
+    headline: 'Premium preview: Inventory & stock tracking',
     detail:
-      'Basic plan: up to 2 inventory items per boat. Upgrade for unlimited stock tracking.'
+      'Track parts, minimum stock, and service-linked usage. Upgrade to save inventory records and keep full stock history.'
   });
 
   loadInventory();
@@ -337,7 +341,7 @@ function formatListSubtitle(item) {
 
 function formatListStatus(item) {
   const row = normalizeInventoryItem(item);
-  const useStock = categoryUsesStockSection(row.category);
+  const useStock = inventoryItemTracksStock(row);
   if (useStock) {
     const low = isLowStock(row);
     const critical = isCriticalOutOfStock(row);
@@ -459,6 +463,23 @@ async function loadInventory() {
 
   enableRecordCardExpand(listContainer);
   attachListHandlers();
+  focusInventoryRowIfNeeded();
+}
+
+function focusInventoryRowIfNeeded() {
+  if (!focusInventoryItemId) return;
+  const selectorId = window.CSS?.escape ? CSS.escape(focusInventoryItemId) : focusInventoryItemId;
+  const el = document.querySelector(`.inventory-item-card[data-item-id="${selectorId}"]`);
+  if (!el) return;
+  el.classList.add('inventory-item-card-focus-target');
+  try {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch (_) {
+    el.scrollIntoView();
+  }
+  window.setTimeout(() => {
+    el.classList.remove('inventory-item-card-focus-target');
+  }, 2200);
 }
 
 function getItemThumb(item) {
@@ -500,6 +521,7 @@ function readDetailFromForm(category) {
   const q = (id) => (document.getElementById(id)?.value ?? '').trim();
   const chk = (id) => !!document.getElementById(id)?.checked;
   const d = emptyDetail();
+  d.track_stock_quantity = !!document.getElementById('inv_track_stock_quantity')?.checked;
   d.condition = q('inv_d_condition');
   if (category === 'Sails') {
     d.sail_type = q('inv_d_sail_type');
@@ -538,7 +560,7 @@ function readDetailFromForm(category) {
     d.installed_date = q('inv_d_installed_date_d');
     d.last_inspected_date = q('inv_d_last_inspected_date_d');
   }
-  if (categoryUsesStockSection(category)) {
+  if (d.track_stock_quantity) {
     d.purchase_date = q('inv_d_purchase_date_g');
   }
   return d;
@@ -546,7 +568,7 @@ function readDetailFromForm(category) {
 
 function syncInventoryFormPanels() {
   const cat = document.getElementById('inv_category')?.value || '';
-  const showStock = categoryUsesStockSection(cat);
+  const showStock = !!document.getElementById('inv_track_stock_quantity')?.checked;
   const stockEl = document.getElementById('inv-section-stock');
   if (stockEl) stockEl.style.display = showStock ? '' : 'none';
   const genLife = document.getElementById('inv-section-lifecycle-general');
@@ -586,6 +608,68 @@ function repopulateTemplateSelect(category) {
   });
 }
 
+async function renderInventoryLinkedServicesSection(isNew, itemId) {
+  const host = document.getElementById('inventory-linked-services-host');
+  if (!host || !currentBoatId) return;
+
+  const tempId = String(itemId || '').startsWith('inventory_');
+  if (isNew || tempId) {
+    host.innerHTML = `
+      <div class="form-section">
+        <h4>Linked services</h4>
+        <p class="text-muted" style="margin:0;font-size:0.9rem">Save this item first. You can then link it from Service History when you add or edit a service entry.</p>
+      </div>
+    `;
+    return;
+  }
+
+  host.innerHTML = `
+    <div class="form-section">
+      <h4>Linked services</h4>
+      <p class="text-muted" style="margin:0;font-size:0.9rem">Loading…</p>
+    </div>
+  `;
+
+  try {
+    const svcs = await getLinkedServicesForInventoryItem(currentBoatId, itemId);
+    const last = svcs[0];
+    const lastDate = last?.date ? new Date(last.date).toLocaleDateString() : null;
+
+    const summary =
+      svcs.length === 0
+        ? '<p class="text-muted" style="margin:0;font-size:0.9rem">No linked services yet. Use <strong>Related inventory items</strong> when adding or editing a service entry.</p>'
+        : `<p style="margin:0 0 0.35rem 0"><strong>Last linked service:</strong> ${lastDate ? escapeHtml(lastDate) : '—'} · ${escapeHtml(last?.service_type || 'Service')}</p>
+           <p class="text-muted" style="margin:0;font-size:0.9rem">${svcs.length} linked service record${svcs.length === 1 ? '' : 's'}</p>`;
+
+    const listHtml = svcs.slice(0, 8).map((s) => {
+      const d = s.date ? new Date(s.date).toLocaleDateString() : '';
+      let noteSnip = (s.notes || '').trim();
+      if (noteSnip.startsWith('{')) noteSnip = '';
+      if (noteSnip.length > 120) noteSnip = `${noteSnip.slice(0, 120)}…`;
+      return `<div style="margin-top:0.65rem;padding-top:0.65rem;border-top:1px solid var(--bm-border, rgba(0,0,0,0.08));">
+        <a href="#/boat/${currentBoatId}/service/${s.id}" class="btn-link" onclick="event.preventDefault(); window.navigate('/boat/${currentBoatId}/service/${s.id}')">${escapeHtml(d)} · ${escapeHtml(s.service_type || 'Service')}</a>
+        ${noteSnip ? `<p class="text-muted" style="margin:0.25rem 0 0;font-size:0.85rem">${escapeHtml(noteSnip)}</p>` : ''}
+      </div>`;
+    }).join('');
+
+    host.innerHTML = `
+      <div class="form-section">
+        <h4>Linked services</h4>
+        ${summary}
+        ${svcs.length ? `<div>${listHtml}</div>` : ''}
+        ${svcs.length > 8 ? `<p class="text-muted" style="margin:0.5rem 0 0;font-size:0.85rem">Showing the 8 most recent.</p>` : ''}
+      </div>
+    `;
+  } catch (e) {
+    host.innerHTML = `
+      <div class="form-section">
+        <h4>Linked services</h4>
+        <p class="text-muted" style="margin:0">Could not load related services.</p>
+      </div>
+    `;
+  }
+}
+
 async function showInventoryForm() {
   const items = currentBoatId ? await getInventory(currentBoatId) : [];
   const existing = editingId ? items.find((i) => i.id === editingId) : null;
@@ -608,8 +692,12 @@ async function showInventoryForm() {
           label
         )}</option>`
     ),
-    '</optgroup>',
-    '<optgroup label="Earlier categories">',
+    ...LEGACY_INVENTORY_CATEGORIES.map(
+      ({ value, label }) =>
+        `<option value="${escapeHtml(value)}" ${existing?.category === value ? 'selected' : ''}>${escapeHtml(
+          label
+        )}</option>`
+    ),
     ...LEGACY_INVENTORY_CATEGORIES.map(
       ({ value, label }) =>
         `<option value="${escapeHtml(value)}" ${existing?.category === value ? 'selected' : ''}>${escapeHtml(
@@ -664,6 +752,15 @@ async function showInventoryForm() {
               <label for="inv_d_condition">Condition</label>
               <select id="inv_d_condition">${conditionOptionsHtml}</select>
             </div>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-row">
+              <input type="checkbox" id="inv_track_stock_quantity" ${(existing ? inventoryItemTracksStock(existing) : true) ? 'checked' : ''}>
+              <span>Track stock quantity for this item</span>
+            </label>
+            <p class="text-muted" style="margin:0.25rem 0 0;font-size:0.875rem;">
+              Turn off for fixed assets/equipment tracked for history only.
+            </p>
           </div>
           <div class="form-row">
             <div class="form-group">
@@ -845,6 +942,8 @@ async function showInventoryForm() {
           </div>
         </div>
 
+        <div id="inventory-linked-services-host"></div>
+
         <div class="form-section">
           <h4>Photo</h4>
           <div class="inventory-form-photo" id="inventory-form-photo">
@@ -870,6 +969,8 @@ async function showInventoryForm() {
 
   container.innerHTML = formHtml;
 
+  void renderInventoryLinkedServicesSection(isNew, existing?.id || editingId);
+
   const catEl = document.getElementById('inv_category');
   if (catEl) {
     repopulateTemplateSelect(catEl.value);
@@ -878,6 +979,8 @@ async function showInventoryForm() {
       syncInventoryFormPanels();
     });
   }
+  const trackStockEl = document.getElementById('inv_track_stock_quantity');
+  if (trackStockEl) trackStockEl.addEventListener('change', () => syncInventoryFormPanels());
   const tmplEl = document.getElementById('inv_template');
   if (tmplEl) {
     tmplEl.addEventListener('change', () => {
@@ -920,10 +1023,7 @@ async function showInventoryForm() {
   document.getElementById('inventory-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = document.getElementById('inventory-save-btn');
-    if (
-      isNew &&
-      blockFreePlanRecordLimitIfNeeded('inventory', inventoryStorage.getAll(currentBoatId).length)
-    ) {
+    if (isNew && blockPremiumSaveIfNeeded()) {
       return;
     }
     setSaveButtonLoading(btn, true);
