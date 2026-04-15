@@ -28,6 +28,48 @@ function stableIntId(str) {
   }
 }
 
+export function createStableNotificationId(seed) {
+  return stableIntId(seed);
+}
+
+export async function getOsNotificationPermissionState() {
+  const LN = getLocalNotifications();
+  if (!isNative() || !LN) return 'unavailable';
+  try {
+    const perm = await LN.checkPermissions();
+    if (!perm) return 'prompt';
+    if (perm.display === 'granted' || perm.receive === 'granted') return 'granted';
+    if (perm.display === 'denied' || perm.receive === 'denied') return 'denied';
+    return 'prompt';
+  } catch (_) {
+    return 'prompt';
+  }
+}
+
+export async function requestOsNotificationPermission() {
+  const LN = getLocalNotifications();
+  if (!isNative() || !LN || typeof LN.requestPermissions !== 'function') return 'unavailable';
+  try {
+    const perm = await LN.requestPermissions();
+    if (perm && (perm.display === 'granted' || perm.receive === 'granted')) return 'granted';
+    if (perm && (perm.display === 'denied' || perm.receive === 'denied')) return 'denied';
+    return 'prompt';
+  } catch (_) {
+    return 'prompt';
+  }
+}
+
+export async function openOsNotificationSettings() {
+  try {
+    const app = window.Capacitor?.Plugins?.App;
+    if (app && typeof app.openSettings === 'function') {
+      await app.openSettings();
+      return true;
+    }
+  } catch (_) {}
+  return false;
+}
+
 /**
  * Compute when to fire the notification (event time minus reminder offset).
  * @param item { id, title, date, time?, reminder_minutes? }
@@ -167,6 +209,52 @@ export async function syncOsNotifications(items) {
   }
 
   return { ok: true, scheduled: toSchedule.length, cancelled: toCancel.length };
+}
+
+/**
+ * Schedule one maintenance notification on native platforms.
+ * @param {{ notificationId:number, title:string, body:string, at:Date }} input
+ */
+export async function scheduleSingleOsNotification(input) {
+  if (!canUseCapacitorLocalNotifications()) return { ok: false, reason: 'plugin_unavailable' };
+  const LN = getLocalNotifications();
+  if (!LN) return { ok: false, reason: 'plugin_missing' };
+  const ok = await ensurePermsAndChannel();
+  if (!ok.ok) return ok;
+  if (!input?.at || Number.isNaN(input.at.getTime())) return { ok: false, reason: 'invalid_date' };
+  if (input.at.getTime() <= Date.now()) return { ok: false, reason: 'in_past' };
+  try {
+    await LN.schedule({
+      notifications: [{
+        id: Number(input.notificationId),
+        title: input.title || 'Maintenance Due Soon',
+        body: input.body || '',
+        schedule: { at: input.at },
+        extra: { source: 'boatmatey', type: 'maintenance_schedule' },
+        channelId: 'boatmatey_reminders'
+      }]
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: String(e?.message || e) };
+  }
+}
+
+/**
+ * Cancel one scheduled OS notification by id.
+ * @param {number|null|undefined} notificationId
+ */
+export async function cancelSingleOsNotification(notificationId) {
+  if (!notificationId) return { ok: true, skipped: true };
+  if (!canUseCapacitorLocalNotifications()) return { ok: false, reason: 'plugin_unavailable' };
+  const LN = getLocalNotifications();
+  if (!LN) return { ok: false, reason: 'plugin_missing' };
+  try {
+    await LN.cancel({ notifications: [{ id: Number(notificationId) }] });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: String(e?.message || e) };
+  }
 }
 
 function canUseBrowserNotifications() {

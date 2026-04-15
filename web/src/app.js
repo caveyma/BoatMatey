@@ -46,6 +46,7 @@ import maydayPage from './pages/mayday.js';
 import inventoryPage from './pages/inventory.js';
 import boatReminderPage from './pages/boat-reminder.js';
 import reminderSetupPage from './pages/reminder-setup.js';
+import maintenanceSchedulesPage from './pages/maintenance-schedules.js';
 import { initPageFullscreenViewport } from './lib/pageFullscreenViewport.js';
 
 /**
@@ -70,6 +71,7 @@ export async function init() {
     route('/boat/:id/service/:entryId', servicePage);
     route('/boat/:id/reminder', boatReminderPage);
     route('/boat/:id/reminder/setup', reminderSetupPage);
+    route('/boat/:id/maintenance-schedules', maintenanceSchedulesPage);
     route('/boat/:id/haulout', hauloutPage);
     route('/boat/:id/haulout/:entryId', hauloutPage);
     route('/boat/:id/projects', projectsPage);

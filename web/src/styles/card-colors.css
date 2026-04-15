@@ -23,6 +23,7 @@
   --card-mayday: #C44536;      /* Red / distress */
   --card-projects: #2D7D6E;   /* Teal / planning */
   --card-inventory: #6B5B95;  /* Muted purple / stock */
+  --card-maintenance-schedules: #AA7A46; /* Unified maintenance schedules */
 }
 
 /* Card color classes */
@@ -44,6 +45,7 @@
 .card-color-mayday { --card-color: var(--card-mayday); }
 .card-color-projects { --card-color: var(--card-projects); }
 .card-color-inventory { --card-color: var(--card-inventory); }
+.card-color-maintenance-schedules { --card-color: var(--card-maintenance-schedules); }
 
 
 /* Inner page background colours (solid soft pastel) */
@@ -65,3 +67,4 @@ body.page-color-electrical { --page-bg: color-mix(in srgb, var(--card-electrical
 body.page-color-mayday { --page-bg: color-mix(in srgb, var(--card-mayday) 30%, white); }
 body.page-color-projects { --page-bg: color-mix(in srgb, var(--card-projects) 30%, white); }
 body.page-color-inventory { --page-bg: color-mix(in srgb, var(--card-inventory) 30%, white); }
+body.page-color-maintenance-schedules { --page-bg: color-mix(in srgb, var(--card-maintenance-schedules) 30%, white); }

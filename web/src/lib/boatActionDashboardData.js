@@ -10,7 +10,8 @@ import {
   shipsLogStorage,
   enginesStorage,
   engineMaintenanceScheduleStorage,
-  sailsRiggingMaintenanceScheduleStorage
+  sailsRiggingMaintenanceScheduleStorage,
+  maintenanceSchedulesStorage
 } from './storage.js';
 import {
   buildDueMaintenanceRows
@@ -98,10 +99,12 @@ function toAttentionDueRow(row, status) {
   const label = (row?.label || '').trim();
   const isRigging = row.kind === 'sails_schedule' || /^Rigging schedule:\s*/i.test(label);
   const isEngine = row.kind === 'engine_schedule' || /^Engine schedule:\s*/i.test(label);
-  const source = isRigging ? 'Rigging schedule' : isEngine ? 'Engine schedule' : 'Service history';
+  const isCentral = row.kind === 'maintenance_schedule' || /^Schedule:\s*/i.test(label);
+  const source = isRigging ? 'Rigging schedule' : isEngine ? 'Engine schedule' : isCentral ? 'Maintenance schedule' : 'Service history';
   const title = label
     .replace(/^Rigging schedule:\s*/i, '')
     .replace(/^Engine schedule:\s*/i, '')
+    .replace(/^Schedule:\s*/i, '')
     .replace(/^Next due:\s*/i, '')
     .trim();
   return {
@@ -206,12 +209,12 @@ export function computeBoatDashboardTagline(boatId, model) {
 
   const engines = enginesStorage.getAll(boatId);
   if (!engines.length) {
-    return 'Your boat record is just getting started — add your engine or first service below';
+    return 'Your boat record is just getting started — add your engine or first maintenance schedule';
   }
   if (!services.length) {
-    return 'Your boat record is just getting started — log your first service below';
+    return 'Your boat record is just getting started — add your first maintenance schedule';
   }
-  return 'Your boat record is just getting started — add your first service or set a next due date below';
+  return 'Track upcoming maintenance and reminders from your central schedules.';
 }
 
 /**
@@ -234,11 +237,13 @@ export function buildBoatActionDashboardModel(boatId, extras = {}) {
   const schedules = engineMaintenanceScheduleStorage.getAll(boatId);
   const engines = enginesStorage.getAll(boatId);
   const sailsSchedules = sailsRiggingMaintenanceScheduleStorage.getAll(boatId);
+  const maintenanceSchedules = maintenanceSchedulesStorage.getAll(boatId);
   const dueRows = buildDueMaintenanceRows({
     boatId,
-    serviceEntries: services,
+    serviceEntries: [],
     engineSchedules: schedules,
     sailsSchedules,
+    maintenanceSchedules,
     engines
   });
   for (const row of dueRows) {
@@ -318,8 +323,8 @@ export function buildBoatActionDashboardModel(boatId, extras = {}) {
   dueSoon.sort((a, b) => a.sort - b.sort);
 
   const hasMaintenanceScheduleAttention =
-    overdue.some((r) => r.kind === 'engine_schedule' || r.kind === 'sails_schedule') ||
-    dueSoon.some((r) => r.kind === 'engine_schedule' || r.kind === 'sails_schedule');
+    overdue.some((r) => r.kind === 'engine_schedule' || r.kind === 'sails_schedule' || r.kind === 'maintenance_schedule') ||
+    dueSoon.some((r) => r.kind === 'engine_schedule' || r.kind === 'sails_schedule' || r.kind === 'maintenance_schedule');
 
   const model = {
     counts: {

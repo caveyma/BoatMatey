@@ -72,8 +72,17 @@ function render(params = {}) {
   addBtn.onclick = () => navigate(`/boat/${currentBoatId}/engines/new`);
   addBtn.style.marginBottom = 'var(--spacing-lg)';
 
+  const schedulesBtn = document.createElement('button');
+  schedulesBtn.id = 'engines-schedules-btn';
+  schedulesBtn.className = 'btn-secondary';
+  schedulesBtn.innerHTML = 'View Engine Schedules';
+  schedulesBtn.onclick = () => navigate(`/boat/${currentBoatId}/maintenance-schedules?scope=engine`);
+  schedulesBtn.style.marginBottom = 'var(--spacing-lg)';
+  schedulesBtn.style.marginLeft = '0.5rem';
+
   container.appendChild(attachmentsCard);
   container.appendChild(addBtn);
+  container.appendChild(schedulesBtn);
   container.appendChild(listTools);
   container.appendChild(listContainer);
   pageContent.appendChild(container);

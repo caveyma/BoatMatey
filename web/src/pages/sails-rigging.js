@@ -12,7 +12,6 @@ import { getBoat, updateBoat, isBoatArchived } from '../lib/dataService.js';
 import { boatsStorage } from '../lib/storage.js';
 import { blockPremiumSaveIfNeeded } from '../lib/premiumSaveGate.js';
 import { insertPremiumPreviewBanner } from '../components/premiumPreviewBanner.js';
-import { mountSailsRiggingMaintenanceScheduleSection } from '../components/sailsRiggingMaintenanceScheduleSection.js';
 
 let currentBoatId = null;
 let currentBoat = null;
@@ -48,6 +47,15 @@ function render(params = {}) {
   scheduleHost.id = 'sails-rigging-schedule-host';
   scheduleHost.className = 'sails-rigging-schedule-host';
   container.appendChild(scheduleHost);
+
+  const centralLinkCard = document.createElement('div');
+  centralLinkCard.className = 'card';
+  centralLinkCard.innerHTML = `
+    <h3 style="margin-top:0;">Maintenance Schedules</h3>
+    <p class="text-muted">Manage all sail, rigging, and winch reminders in one place.</p>
+    <button type="button" class="btn-secondary" id="sails-rigging-central-schedules-btn">View Sail &amp; Rigging Schedules</button>
+  `;
+  container.appendChild(centralLinkCard);
 
   const form = document.createElement('form');
   form.className = 'form-container';
@@ -117,11 +125,6 @@ function populateForm(data) {
 
 async function onMount(params = {}) {
   const boatId = params?.id || window.routeParams?.id;
-  const hash = window.location.hash || '';
-  const queryString = hash.includes('?') ? hash.split('?')[1] : '';
-  const query = new URLSearchParams(queryString);
-  const targetScheduleId = query.get('schedule') || null;
-  const onboardingSchedule = query.get('onboarding_schedule') || null;
   if (boatId) {
     currentBoatId = boatId;
     try {
@@ -139,15 +142,6 @@ async function onMount(params = {}) {
     populateForm(getSailsData(currentBoat));
 
     const archived = await isBoatArchived(boatId);
-    const scheduleMountEl = document.getElementById('sails-rigging-schedule-host');
-    if (scheduleMountEl) {
-      await mountSailsRiggingMaintenanceScheduleSection(scheduleMountEl, {
-        boatId,
-        archived,
-        targetScheduleId,
-        onboardingSchedule
-      });
-    }
     if (archived) {
       const form = document.getElementById('sails-rigging-form');
       if (form) {
@@ -171,6 +165,13 @@ async function onMount(params = {}) {
   const cancelBtn = document.getElementById('sails-cancel-btn');
   if (cancelBtn) {
     cancelBtn.addEventListener('click', () => window.history.back());
+  }
+
+  const centralSchedulesBtn = document.getElementById('sails-rigging-central-schedules-btn');
+  if (centralSchedulesBtn) {
+    centralSchedulesBtn.addEventListener('click', () => {
+      navigate(`/boat/${currentBoatId}/maintenance-schedules?scope=sails-rigging`);
+    });
   }
 
   insertPremiumPreviewBanner(document.querySelector('.page-content.card-color-sails-rigging'), {

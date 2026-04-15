@@ -35,6 +35,7 @@ import {
 import { getUploads, saveUpload, deleteUpload, openUpload, formatFileSize, getUpload, LIMITED_UPLOAD_SIZE_BYTES, LIMITED_UPLOADS_PER_ENTITY, saveLinkAttachment } from '../lib/uploads.js';
 import { enableRecordCardExpand } from '../utils/recordCardExpand.js';
 import { buildDueMaintenanceRows, DUE_SOON_DAYS } from '../lib/serviceDueFilter.js';
+import { getUnifiedMaintenanceSchedules, rollForwardUnifiedMaintenanceSchedule } from '../lib/maintenanceSchedules.js';
 import {
   LEGACY_SAILING_SERVICE_TYPE,
   SAILING_SERVICE_TYPES,
@@ -2483,6 +2484,44 @@ async function saveService() {
       }
     } catch (e) {
       console.warn('[BoatMatey] Maintenance schedule prompt failed:', e?.message || e);
+    }
+  }
+
+  if (entry.engine_id) {
+    try {
+      const unified = await getUnifiedMaintenanceSchedules(currentBoatId);
+      const matches = unified.filter((s) => {
+        if (s.source !== 'central') return false;
+        if (s.linked_entity_type !== 'engine' || s.linked_entity_id !== entry.engine_id) return false;
+        if (!entry.service_type) return true;
+        const type = String(entry.service_type).toLowerCase();
+        const title = String(s.title || '').toLowerCase();
+        const schedType = String(s.schedule_type || '').toLowerCase();
+        return title.includes(type) || schedType.includes(type);
+      });
+      if (matches.length === 1) {
+        const ok = await confirmAction({
+          title: 'Update linked maintenance schedule?',
+          message: `Roll "${matches[0].title}" forward based on this completed service log?`,
+          confirmLabel: 'Update schedule'
+        });
+        if (ok) {
+          await rollForwardUnifiedMaintenanceSchedule(matches[0], entry.date, entry.engine_hours ?? null);
+        }
+      } else if (matches.length > 1) {
+        const ok = await confirmAction({
+          title: 'Update linked schedules?',
+          message: `Found ${matches.length} linked schedules for this engine. Roll all forward using this completion?`,
+          confirmLabel: 'Update all'
+        });
+        if (ok) {
+          for (const m of matches) {
+            await rollForwardUnifiedMaintenanceSchedule(m, entry.date, entry.engine_hours ?? null);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[BoatMatey] Unified schedule roll-forward failed:', e?.message || e);
     }
   }
 

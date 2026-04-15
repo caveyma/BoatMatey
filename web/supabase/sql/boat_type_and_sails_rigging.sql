@@ -4,9 +4,9 @@
 -- 1) boats.boat_type ---------------------------------------------------------
 alter table public.boats
   add column if not exists boat_type text not null default 'motor'
-  check (boat_type in ('motor', 'sailing'));
+  check (boat_type in ('motor', 'sailing', 'rib'));
 
-comment on column public.boats.boat_type is 'motor = power boat; sailing = sailboat (shows Sails & Rigging card and service type)';
+comment on column public.boats.boat_type is 'motor = power boat; sailing = sailboat (shows Sails & Rigging card and service type); rib = rigid inflatable boat';
 
 -- 2) boats.sails_rigging_data (JSONB for sailing boat details) ---------------
 alter table public.boats

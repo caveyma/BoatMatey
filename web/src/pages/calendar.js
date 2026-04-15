@@ -15,8 +15,15 @@ import { showToast } from '../components/toast.js';
 import { confirmAction, chooseRecurringScope } from '../components/confirmModal.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { boatsStorage, enginesStorage, serviceHistoryStorage, hauloutStorage, navEquipmentStorage } from '../lib/storage.js';
-import { getBoats, getCalendarEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '../lib/dataService.js';
+import {
+  getBoats,
+  getCalendarEvents,
+  createCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent
+} from '../lib/dataService.js';
 import { ensureNotificationSetup, syncOsNotifications, scheduleBrowserNotifications } from '../lib/notifications.js';
+import { backfillMaintenanceScheduleCalendarEvents, getUnifiedMaintenanceSchedules } from '../lib/maintenanceSchedules.js';
 
 let allBoats = [];
 let boatMap = {}; // id -> { boat_name, ... }
@@ -340,14 +347,45 @@ async function loadAllCalendarData() {
 
   for (const boat of allBoats) {
     if (!boat.id) continue;
-    const events = await getCalendarEvents(boat.id);
-    const withBoat = events.map((e) => ({
+    await backfillMaintenanceScheduleCalendarEvents(boat.id);
+    const [events, schedules] = await Promise.all([
+      getCalendarEvents(boat.id),
+      getUnifiedMaintenanceSchedules(boat.id)
+    ]);
+    const withBoat = (events || []).map((e) => ({
       ...e,
       boat_id: boat.id,
       recurrence_type: e.repeat || 'none',
       recurrence_until: e.repeat_until
     }));
-    baseEvents.push(...withBoat);
+    const scheduleDrivenEvents = (schedules || [])
+      .filter((s) => !s?.is_archived && !!s?.next_due_at)
+      .map((s) => ({
+        id: `maintenance-${s.source || 'central'}-${s.id}`,
+        boat_id: boat.id,
+        date: s.next_due_at,
+        time: null,
+        title: s.title || 'Maintenance schedule',
+        notes: s.notes || null,
+        type: 'maintenance_schedule',
+        schedule_id: s.source === 'central' ? s.id : null,
+        maintenance_source: s.source || 'central',
+        maintenance_source_id: s.id,
+        repeat: null,
+        repeat_until: null,
+        recurrence_type: 'none',
+        recurrence_until: null
+      }));
+    const existingMaintenanceByScheduleId = new Set(
+      withBoat
+        .filter((ev) => ev?.type === 'maintenance_schedule' && ev?.schedule_id)
+        .map((ev) => String(ev.schedule_id))
+    );
+    const missingFromEvents = scheduleDrivenEvents.filter((ev) => {
+      if (!ev.schedule_id) return true;
+      return !existingMaintenanceByScheduleId.has(String(ev.schedule_id));
+    });
+    baseEvents.push(...withBoat, ...missingFromEvents);
     reminders.push(...buildRemindersForBoat(boat.id));
   }
 
@@ -601,8 +639,19 @@ function renderAppointmentsForSelectedDate(baseEvents) {
       const recurrenceType = ev.recurrence_type && ev.recurrence_type !== 'none' ? ev.recurrence_type : null;
       const recurrenceLabel = recurrenceType ? recurrenceLabels[recurrenceType] || '' : '';
       const boatLabel = ev.boat_id && boatMap[ev.boat_id] ? boatMap[ev.boat_id].boat_name : '';
-      const metaParts = [boatLabel, timeLabel, recurrenceLabel].filter(Boolean).join(' • ');
+      const isMaintenance = ev.type === 'maintenance_schedule';
+      const metaParts = [boatLabel, timeLabel, recurrenceLabel, isMaintenance ? 'Maintenance' : ''].filter(Boolean).join(' • ');
       const notes = ev.notes ? `<p class="text-muted">${ev.notes}</p>` : '';
+      const maintenanceViewBtn =
+        isMaintenance && ev.boat_id
+          ? `<button type="button" class="btn-link calendar-event-view-schedule" data-boat-id="${ev.boat_id}" data-schedule-id="${ev.schedule_id || ''}" data-maint-source="${ev.maintenance_source || ''}" data-maint-source-id="${ev.maintenance_source_id || ''}">View schedule</button>`
+          : '';
+      const editDeleteButtons = isMaintenance
+        ? ''
+        : `
+            <button type="button" class="btn-link calendar-event-edit" data-event-id="${ev.id}" data-occurrence-date="${ev.date}">Edit</button>
+            <button type="button" class="btn-link btn-danger calendar-event-delete" data-event-id="${ev.id}" data-occurrence-date="${ev.date}">Delete</button>
+          `;
       return `
         <div class="calendar-appointment-row">
           <div class="calendar-appointment-main">
@@ -611,13 +660,28 @@ function renderAppointmentsForSelectedDate(baseEvents) {
             ${notes}
           </div>
           <div class="calendar-appointment-actions">
-            <button type="button" class="btn-link calendar-event-edit" data-event-id="${ev.id}" data-occurrence-date="${ev.date}">Edit</button>
-            <button type="button" class="btn-link btn-danger calendar-event-delete" data-event-id="${ev.id}" data-occurrence-date="${ev.date}">Delete</button>
+            ${maintenanceViewBtn}
+            ${editDeleteButtons}
           </div>
         </div>
       `;
     })
     .join('');
+
+  listEl.querySelectorAll('.calendar-event-view-schedule').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const boatId = btn.getAttribute('data-boat-id');
+      const scheduleId = btn.getAttribute('data-schedule-id');
+      const source = btn.getAttribute('data-maint-source') || '';
+      const sourceId = btn.getAttribute('data-maint-source-id') || '';
+      if (!boatId) return;
+      let query = '';
+      if (scheduleId) query = `?schedule=${encodeURIComponent(scheduleId)}`;
+      else if (source === 'legacy_engine' && sourceId) query = `?scope=engine&schedule=${encodeURIComponent(sourceId)}`;
+      else if (source === 'legacy_sails' && sourceId) query = `?scope=sails-rigging&schedule=${encodeURIComponent(sourceId)}`;
+      navigate(`/boat/${boatId}/maintenance-schedules${query}`);
+    });
+  });
 
   listEl.querySelectorAll('.calendar-event-edit').forEach((btn) => {
     btn.addEventListener('click', () => {

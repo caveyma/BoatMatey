@@ -86,6 +86,7 @@ export function buildDueMaintenanceRows({
   serviceEntries = [],
   engineSchedules = [],
   sailsSchedules = [],
+  maintenanceSchedules = [],
   engines = [],
   now = new Date()
 }) {
@@ -116,6 +117,24 @@ export function buildDueMaintenanceRows({
         `/boat/${boatId}/service/${s.id}`,
         s.id,
         { sourceId: s.id, engineId: s.engine_id || null }
+      )
+    );
+  }
+
+  for (const m of maintenanceSchedules) {
+    if (m.is_archived) continue;
+    const dueDay = toDay(m.next_due_at);
+    const dueStatus = dueDay ? getServiceDueStatus(m.next_due_at, now) : 'ok';
+    if (dueStatus === 'ok') continue;
+    rows.push(
+      toDueRow(
+        'maintenance_schedule',
+        dueStatus,
+        `Schedule: ${(m.title || 'Maintenance').trim()}`,
+        dueDay || today,
+        `/boat/${boatId}/maintenance-schedules?status=${dueStatus}&schedule=${encodeURIComponent(m.id)}`,
+        m.id,
+        { sourceId: m.id, engineId: m.linked_entity_type === 'engine' ? m.linked_entity_id : null }
       )
     );
   }
@@ -154,7 +173,7 @@ export function buildDueMaintenanceRows({
         status,
         label,
         anchor,
-        `/boat/${boatId}/engines/${sch.engine_id}?schedule=${encodeURIComponent(sch.id)}`,
+        `/boat/${boatId}/maintenance-schedules?scope=engine&engine=${encodeURIComponent(sch.engine_id)}&schedule=${encodeURIComponent(sch.id)}`,
         sch.id,
         { sourceId: sch.id, engineId: sch.engine_id || null }
       )
@@ -178,7 +197,7 @@ export function buildDueMaintenanceRows({
         status,
         `Rigging schedule: ${title}`,
         anchor,
-        `/boat/${boatId}/sails-rigging?schedule=${encodeURIComponent(sch.id)}`,
+        `/boat/${boatId}/maintenance-schedules?scope=sails-rigging&schedule=${encodeURIComponent(sch.id)}`,
         sch.id,
         { sourceId: sch.id, engineId: null }
       )

@@ -342,6 +342,10 @@
   background: color-mix(in srgb, var(--card-inventory) 26%, #ffffff);
 }
 
+.page-content.card-color-maintenance-schedules .card {
+  background: color-mix(in srgb, var(--card-maintenance-schedules) 26%, #ffffff);
+}
+
 .page-content.card-color-watermaker .card {
   background: color-mix(in srgb, var(--card-watermaker) 26%, #ffffff);
 }

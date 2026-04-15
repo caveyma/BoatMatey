@@ -8,7 +8,6 @@ import { renderIcon } from '../components/icons.js';
 import { createYachtHeader, createBackButton } from '../components/header.js';
 import { setSaveButtonLoading } from '../utils/saveButton.js';
 import { isBoatArchived, getEngines, createEngine, updateEngine } from '../lib/dataService.js';
-import { mountEngineMaintenanceScheduleSection } from '../components/engineMaintenanceScheduleSection.js';
 
 function render(params = {}) {
   const boatId = params?.id || window.routeParams?.id;
@@ -131,7 +130,11 @@ function render(params = {}) {
         </div>
       </form>
     </div>
-    <div id="engine-maint-schedule-host" class="container" style="padding-left:0;padding-right:0;max-width:100%;"></div>
+    <div class="card">
+      <h3>Maintenance Schedules</h3>
+      <p class="text-muted">Manage engine reminders from the central Maintenance Schedules area.</p>
+      <button type="button" class="btn-secondary" id="engine-view-central-schedules">View Engine Schedules</button>
+    </div>
   `;
 
   pageContent.appendChild(container);
@@ -143,12 +146,6 @@ async function onMount(params = {}) {
   const boatId = params?.id || window.routeParams?.id;
   const engineId = params?.engineId || window.routeParams?.engineId;
   const isNew = !engineId || engineId === 'new';
-  const hash = window.location.hash || '';
-  const queryString = hash.includes('?') ? hash.split('?')[1] : '';
-  const query = new URLSearchParams(queryString);
-  const targetScheduleId = query.get('schedule') || null;
-  const onboardingSchedule = query.get('onboarding_schedule') || null;
-
   if (!boatId) return;
 
   const archived = await isBoatArchived(boatId);
@@ -189,16 +186,11 @@ async function onMount(params = {}) {
     }
   }
 
-  const schedHost = document.getElementById('engine-maint-schedule-host');
-  if (schedHost) {
-    await mountEngineMaintenanceScheduleSection(schedHost, {
-      boatId,
-      engineId,
-      engine: loadedEngine,
-      isNew,
-      archived,
-      targetScheduleId,
-      onboardingSchedule
+  const centralSchedulesBtn = document.getElementById('engine-view-central-schedules');
+  if (centralSchedulesBtn) {
+    centralSchedulesBtn.addEventListener('click', () => {
+      const query = !isNew && engineId ? `&engine=${encodeURIComponent(engineId)}` : '';
+      navigate(`/boat/${boatId}/maintenance-schedules?scope=engine${query}`);
     });
   }
 

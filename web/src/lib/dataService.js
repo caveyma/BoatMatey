@@ -14,7 +14,8 @@ import {
   uploadsStorage,
   calendarEventsStorage,
   engineMaintenanceScheduleStorage,
-  sailsRiggingMaintenanceScheduleStorage
+  sailsRiggingMaintenanceScheduleStorage,
+  maintenanceSchedulesStorage
 } from './storage.js';
 
 // Boat limits (design allows future tiers to override without schema change)
@@ -1244,6 +1245,223 @@ export async function deleteSailsRiggingMaintenanceSchedule(scheduleId) {
     }
   } else {
     sailsRiggingMaintenanceScheduleStorage.delete(scheduleId);
+  }
+}
+
+function mapMaintenanceScheduleFromRemote(row, boatId) {
+  const intervalMeta = row.interval_metadata || null;
+  return {
+    id: row.id,
+    boat_id: boatId || row.boat_id,
+    owner_id: row.owner_id,
+    category: row.category || 'General Maintenance',
+    linked_entity_type: row.linked_entity_type || null,
+    linked_entity_id: row.linked_entity_id || null,
+    title: row.title || 'Maintenance reminder',
+    notes: row.notes || null,
+    frequency_type: row.frequency_type || row.frequency_mode || 'date',
+    frequency_mode: row.frequency_mode || row.frequency_type || 'date',
+    schedule_type: row.schedule_type || 'Custom',
+    interval_metadata: intervalMeta,
+    interval_months:
+      row.interval_months != null && row.interval_months !== ''
+        ? Number(row.interval_months)
+        : (intervalMeta?.interval_months != null ? Number(intervalMeta.interval_months) : null),
+    interval_hours:
+      row.interval_hours != null && row.interval_hours !== ''
+        ? Number(row.interval_hours)
+        : (intervalMeta?.interval_hours != null ? Number(intervalMeta.interval_hours) : null),
+    last_completed_at: row.last_completed_at || null,
+    last_completed_hours:
+      row.last_completed_hours != null && row.last_completed_hours !== ''
+        ? Number(row.last_completed_hours)
+        : null,
+    next_due_at: row.next_due_at || null,
+    next_due_hours:
+      row.next_due_hours != null && row.next_due_hours !== ''
+        ? Number(row.next_due_hours)
+        : null,
+    remind_offset_days:
+      row.remind_offset_days != null && row.remind_offset_days !== ''
+        ? Number(row.remind_offset_days)
+        : 7,
+    notification_enabled: row.notification_enabled !== false,
+    notification_id:
+      row.notification_id != null && row.notification_id !== ''
+        ? Number(row.notification_id)
+        : null,
+    is_archived: !!row.is_archived,
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
+}
+
+// ----------------- Unified maintenance schedules (central reminders) -----------------
+
+export async function getMaintenanceSchedules(boatId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    return maintenanceSchedulesStorage.getAll(boatId);
+  }
+  const { data, error } = await supabase
+    .from('maintenance_schedules')
+    .select('*')
+    .eq('boat_id', boatId)
+    .order('is_archived', { ascending: true })
+    .order('next_due_at', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true });
+  if (error) {
+    if (shouldFallbackMaintenanceScheduleToLocal(error)) {
+      logSupabaseFallback('maintenance_schedules', error);
+    } else {
+      console.error('getMaintenanceSchedules error:', error);
+    }
+    return maintenanceSchedulesStorage.getAll(boatId);
+  }
+  const mapped = (data || []).map((row) => mapMaintenanceScheduleFromRemote(row, boatId));
+  const localRows = maintenanceSchedulesStorage.getAll(boatId) || [];
+  const remoteIds = new Set(mapped.map((row) => String(row.id)));
+  const merged = mapped.concat(localRows.filter((row) => !remoteIds.has(String(row.id))));
+  maintenanceSchedulesStorage.replaceForBoat(boatId, merged);
+  return merged;
+}
+
+export async function createMaintenanceSchedule(boatId, payload) {
+  if (await isBoatArchived(boatId)) return null;
+  const session = await getSession();
+  const intervalMonths =
+    payload.interval_months != null && payload.interval_months !== ''
+      ? Number(payload.interval_months)
+      : null;
+  const intervalHours =
+    payload.interval_hours != null && payload.interval_hours !== ''
+      ? Number(payload.interval_hours)
+      : null;
+  const frequencyMode = payload.frequency_mode || payload.frequency_type || 'date';
+  const rowLocal = {
+    category: (payload.category || 'General Maintenance').trim(),
+    linked_entity_type: payload.linked_entity_type || null,
+    linked_entity_id: payload.linked_entity_id || null,
+    title: (payload.title || '').trim() || 'Maintenance reminder',
+    notes: payload.notes || null,
+    frequency_type: frequencyMode,
+    frequency_mode: frequencyMode,
+    schedule_type: payload.schedule_type || 'Custom',
+    interval_metadata: payload.interval_metadata || {
+      interval_months: intervalMonths,
+      interval_hours: intervalHours
+    },
+    interval_months: intervalMonths,
+    interval_hours: intervalHours,
+    last_completed_at: payload.last_completed_at || null,
+    last_completed_hours:
+      payload.last_completed_hours != null && payload.last_completed_hours !== ''
+        ? Number(payload.last_completed_hours)
+        : null,
+    next_due_at: payload.next_due_at || null,
+    next_due_hours:
+      payload.next_due_hours != null && payload.next_due_hours !== ''
+        ? Number(payload.next_due_hours)
+        : null,
+    remind_offset_days:
+      payload.remind_offset_days != null && payload.remind_offset_days !== ''
+        ? Number(payload.remind_offset_days)
+        : 7,
+    notification_enabled: payload.notification_enabled !== false,
+    notification_id:
+      payload.notification_id != null && payload.notification_id !== ''
+        ? Number(payload.notification_id)
+        : null,
+    is_archived: !!payload.is_archived
+  };
+  if (!session || !isSupabaseEnabled()) {
+    const toSave = { ...rowLocal, owner_id: 'local' };
+    maintenanceSchedulesStorage.save(toSave, boatId);
+    return maintenanceSchedulesStorage.get(toSave.id);
+  }
+  const { data, error } = await supabase
+    .from('maintenance_schedules')
+    .insert({
+      boat_id: boatId,
+      owner_id: session.user.id,
+      ...rowLocal
+    })
+    .select('*')
+    .single();
+  if (error) {
+    if (shouldFallbackMaintenanceScheduleToLocal(error)) {
+      logSupabaseFallback('maintenance_schedules', error);
+      const toSave = { ...rowLocal, owner_id: session.user?.id || 'local' };
+      maintenanceSchedulesStorage.save(toSave, boatId);
+      return maintenanceSchedulesStorage.get(toSave.id);
+    }
+    console.error('createMaintenanceSchedule error:', error);
+    return null;
+  }
+  const mapped = mapMaintenanceScheduleFromRemote(data, boatId);
+  maintenanceSchedulesStorage.save(mapped, boatId);
+  return mapped;
+}
+
+export async function updateMaintenanceSchedule(scheduleId, payload) {
+  const session = await getSession();
+  const existing = maintenanceSchedulesStorage.get(scheduleId);
+  const boatId = existing?.boat_id || payload.boat_id;
+  if (!session || !isSupabaseEnabled()) {
+    if (existing) {
+      maintenanceSchedulesStorage.save({ ...existing, ...payload, id: scheduleId }, boatId);
+    }
+    return;
+  }
+  const update = {};
+  if ('category' in payload) update.category = payload.category;
+  if ('linked_entity_type' in payload) update.linked_entity_type = payload.linked_entity_type;
+  if ('linked_entity_id' in payload) update.linked_entity_id = payload.linked_entity_id;
+  if ('title' in payload) update.title = (payload.title || '').trim() || 'Maintenance reminder';
+  if ('notes' in payload) update.notes = payload.notes;
+  if ('frequency_type' in payload) update.frequency_type = payload.frequency_type;
+  if ('frequency_mode' in payload) update.frequency_mode = payload.frequency_mode;
+  if ('schedule_type' in payload) update.schedule_type = payload.schedule_type;
+  if ('interval_metadata' in payload) update.interval_metadata = payload.interval_metadata;
+  if ('interval_months' in payload) update.interval_months = payload.interval_months != null ? Number(payload.interval_months) : null;
+  if ('interval_hours' in payload) update.interval_hours = payload.interval_hours != null ? Number(payload.interval_hours) : null;
+  if ('last_completed_at' in payload) update.last_completed_at = payload.last_completed_at;
+  if ('last_completed_hours' in payload) update.last_completed_hours = payload.last_completed_hours;
+  if ('next_due_at' in payload) update.next_due_at = payload.next_due_at;
+  if ('next_due_hours' in payload) update.next_due_hours = payload.next_due_hours;
+  if ('remind_offset_days' in payload) update.remind_offset_days = payload.remind_offset_days;
+  if ('notification_enabled' in payload) update.notification_enabled = !!payload.notification_enabled;
+  if ('notification_id' in payload) update.notification_id = payload.notification_id;
+  if ('is_archived' in payload) update.is_archived = !!payload.is_archived;
+  const { error } = await supabase.from('maintenance_schedules').update(update).eq('id', scheduleId);
+  if (error) {
+    if (shouldFallbackMaintenanceScheduleToLocal(error)) {
+      logSupabaseFallback('maintenance_schedules', error);
+      if (existing) maintenanceSchedulesStorage.save({ ...existing, ...update, id: scheduleId }, boatId);
+      return;
+    }
+    console.error('updateMaintenanceSchedule error:', error);
+    return;
+  }
+  if (existing) maintenanceSchedulesStorage.save({ ...existing, ...update, id: scheduleId }, boatId);
+}
+
+export async function deleteMaintenanceSchedule(scheduleId) {
+  const session = await getSession();
+  if (!session || !isSupabaseEnabled()) {
+    maintenanceSchedulesStorage.delete(scheduleId);
+    return;
+  }
+  const { error } = await supabase.from('maintenance_schedules').delete().eq('id', scheduleId);
+  if (error) {
+    if (shouldFallbackMaintenanceScheduleToLocal(error)) {
+      logSupabaseFallback('maintenance_schedules', error);
+      maintenanceSchedulesStorage.delete(scheduleId);
+    } else {
+      console.error('deleteMaintenanceSchedule error:', error);
+    }
+  } else {
+    maintenanceSchedulesStorage.delete(scheduleId);
   }
 }
 
@@ -2766,20 +2984,34 @@ export async function getCalendarEvents(boatId) {
     return calendarEventsStorage.getAll(boatId);
   }
 
-  return (data || []).map((e) => ({
+  const remoteEvents = (data || []).map((e) => ({
     ...e,
     time: e.time ? (typeof e.time === 'string' ? e.time.slice(0, 5) : e.time) : null,
+    type: e.type || 'appointment',
+    schedule_id: e.schedule_id || null,
     exception_dates: Array.isArray(e.exception_dates) ? e.exception_dates.map(String) : [],
     occurrence_overrides:
       e.occurrence_overrides && typeof e.occurrence_overrides === 'object' && !Array.isArray(e.occurrence_overrides)
         ? e.occurrence_overrides
         : {}
   }));
+  const localEvents = calendarEventsStorage.getAll(boatId) || [];
+  const remoteIds = new Set(remoteEvents.map((e) => String(e.id)));
+  const merged = remoteEvents.concat(localEvents.filter((e) => !remoteIds.has(String(e.id))));
+  merged.sort((a, b) => new Date(a.date) - new Date(b.date));
+  return merged;
+}
+
+function normalizeCalendarScheduleId(scheduleId) {
+  if (!scheduleId) return null;
+  return isSupabaseUuid(scheduleId) ? scheduleId : null;
 }
 
 export async function createCalendarEvent(boatId, payload) {
   if (await isBoatArchived(boatId)) return null;
-  if (!hasActiveSubscription()) {
+  const isMaintenanceScheduleEvent =
+    payload?.type === 'maintenance_schedule' && !!payload?.schedule_id;
+  if (!hasActiveSubscription() && !isMaintenanceScheduleEvent) {
     return null;
   }
   const session = await getSession();
@@ -2790,6 +3022,8 @@ export async function createCalendarEvent(boatId, payload) {
     time: payload.time || null,
     title: payload.title,
     notes: payload.notes || null,
+    type: payload.type || 'appointment',
+    schedule_id: normalizeCalendarScheduleId(payload.schedule_id),
     repeat: payload.repeat || null,
     repeat_until: payload.repeat_until || null,
     reminder_minutes: payload.reminder_minutes ?? null,
@@ -2818,6 +3052,12 @@ export async function createCalendarEvent(boatId, payload) {
     data = retry.data;
     error = retry.error;
   }
+  if (error && isMissingCalendarLinkageColumnsError(error)) {
+    const { type: _type, schedule_id: _scheduleId, ...legacyPayload } = dbPayload;
+    const retry = await supabase.from('calendar_events').insert(legacyPayload).select('*').single();
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error) {
     logSupabaseFallback('calendar_events', error);
@@ -2831,6 +3071,8 @@ export async function createCalendarEvent(boatId, payload) {
 
 function normalizeCalendarEventRow(row) {
   const out = { ...row };
+  out.type = out.type || 'appointment';
+  out.schedule_id = out.schedule_id || null;
   out.exception_dates = Array.isArray(out.exception_dates) ? out.exception_dates.map(String) : [];
   out.occurrence_overrides =
     out.occurrence_overrides && typeof out.occurrence_overrides === 'object' && !Array.isArray(out.occurrence_overrides)
@@ -2846,12 +3088,20 @@ function isMissingCalendarSeriesColumnsError(error) {
   return /exception_dates|occurrence_overrides/i.test(msg);
 }
 
+function isMissingCalendarLinkageColumnsError(error) {
+  if (!error) return false;
+  const msg = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`;
+  return /schedule_id|calendar_events\.type|\btype\b/i.test(msg);
+}
+
 function calendarEventBaseUpdatePayload(merged) {
   return {
     date: merged.date,
     time: merged.time ?? null,
     title: merged.title,
     notes: merged.notes ?? null,
+    type: merged.type || 'appointment',
+    schedule_id: normalizeCalendarScheduleId(merged.schedule_id),
     repeat: merged.repeat ?? null,
     repeat_until: merged.repeat_until ?? null,
     reminder_minutes: merged.reminder_minutes ?? null
@@ -2859,7 +3109,9 @@ function calendarEventBaseUpdatePayload(merged) {
 }
 
 export async function updateCalendarEvent(eventId, payload) {
-  if (!hasActiveSubscription()) {
+  const isMaintenanceScheduleEvent =
+    payload?.type === 'maintenance_schedule' || !!payload?.schedule_id;
+  if (!hasActiveSubscription() && !isMaintenanceScheduleEvent) {
     return;
   }
   const session = await getSession();
@@ -2898,6 +3150,15 @@ export async function updateCalendarEvent(eventId, payload) {
       .eq('id', eventId);
     error = retry.error;
   }
+  if (error && isMissingCalendarLinkageColumnsError(error)) {
+    const basePayload = calendarEventBaseUpdatePayload(merged);
+    const { type: _type, schedule_id: _scheduleId, ...legacyBasePayload } = basePayload;
+    const retry = await supabase
+      .from('calendar_events')
+      .update(legacyBasePayload)
+      .eq('id', eventId);
+    error = retry.error;
+  }
 
   if (error) {
     logSupabaseFallback('calendar_events', error);
@@ -2907,8 +3168,9 @@ export async function updateCalendarEvent(eventId, payload) {
   }
 }
 
-export async function deleteCalendarEvent(eventId) {
-  if (!hasActiveSubscription()) {
+export async function deleteCalendarEvent(eventId, options = {}) {
+  const allowWithoutSubscription = !!options?.allowWithoutSubscription;
+  if (!hasActiveSubscription() && !allowWithoutSubscription) {
     return;
   }
   const session = await getSession();

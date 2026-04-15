@@ -146,7 +146,23 @@ export function createYachtHeader(title, options = {}) {
     baseButtonStyles(homeBtn);
     homeBtn.onclick = (e) => {
       e.preventDefault();
-      navigate('/');
+      const hashPath = (window.location.hash || '').replace(/^#/, '') || '/';
+      const pathOnly = hashPath.split('?')[0] || '/';
+      const boatMatch = pathOnly.match(/^\/boat\/([^\/]+)(?:\/(.*))?$/);
+      if (!boatMatch) {
+        navigate('/');
+        return;
+      }
+      const boatId = boatMatch[1];
+      const subPath = (boatMatch[2] || '').trim();
+      // Home behavior:
+      // - on boat dashboard (/boat/:id) => app home
+      // - inside a boat card/section (/boat/:id/...) => boat dashboard
+      if (!subPath) {
+        navigate('/');
+      } else {
+        navigate(`/boat/${boatId}`);
+      }
     };
     actionsSection.appendChild(homeBtn);
   }
